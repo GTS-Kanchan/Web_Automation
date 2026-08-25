@@ -1,0 +1,5 @@
+Sender ID,Entity ID,Country Code,Description
+AB,ENT001,IN,Too short (2 chars)
+A,ENT001,IN,Too short (1 char)
+TOOLONGSIDXX,ENT001,IN,Too long (12 chars)
+VERYLONGID123,ENT001,IN,Too long (13 chars)

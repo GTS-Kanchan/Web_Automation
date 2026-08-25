@@ -1,0 +1,5 @@
+Sender ID,Entity ID,Country Code,Description
+DUPTEST1,ENT001,IN,Duplicate test 1
+DUPTEST1,ENT001,IN,Duplicate test 1 again
+DUPTEST2,ENT001,IN,Duplicate test 2
+DUPTEST2,ENT002,SG,Duplicate test 2 again

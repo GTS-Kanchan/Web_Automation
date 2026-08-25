@@ -1,0 +1,4 @@
+Sender ID,Entity ID,Country Code,Description
+AUTOTEST1,ENT001,IN,Auto test sender 1
+AUTOTEST2,ENT001,IN,Auto test sender 2
+AUTOTEST3,ENT002,SG,Auto test sender 3

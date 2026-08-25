@@ -1,0 +1,6 @@
+Sender ID,Entity ID,Country Code,Description
+MIXVALID1,ENT001,IN,Valid row
+MIXVALID2,ENT001,SG,Valid row
+AB,ENT001,IN,Invalid — too short
+TEST!@#,ENT001,IN,Invalid — special chars
+MIXVALID3,ENT002,MY,Valid row

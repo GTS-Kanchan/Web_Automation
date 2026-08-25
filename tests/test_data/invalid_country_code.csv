@@ -1,0 +1,4 @@
+Sender ID,Entity ID,Country Code,Description
+CNTTEST1,ENT001,XX,Invalid country XX
+CNTTEST2,ENT001,ZZ,Invalid country ZZ
+CNTTEST3,ENT001,99,Invalid country 99

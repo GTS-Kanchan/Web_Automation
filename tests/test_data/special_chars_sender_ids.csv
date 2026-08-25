@@ -1,0 +1,4 @@
+Sender ID,Entity ID,Country Code,Description
+TEST!@#,ENT001,IN,Special chars
+SID$%^&,ENT001,IN,Special chars 2
+ID<>?/,ENT001,IN,Special chars 3
