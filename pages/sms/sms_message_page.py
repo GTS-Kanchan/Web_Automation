@@ -526,8 +526,8 @@ class SMSMessagePage(BasePage):
         def _has_visible_toggle():
             try:
                 return self.page.locator(
-                    "xpath=//input[@type='checkbox'][not(ancestor::table)]"
-                ).first.is_visible()
+                    "xpath=//input[@type='checkbox'][not(ancestor::table)] >> visible=true"
+                ).count() > 0
             except Exception:
                 return False
 
@@ -567,7 +567,7 @@ class SMSMessagePage(BasePage):
         select-all toggle.
         """
         try:
-            all_cbs = self.page.locator("xpath=//input[@type='checkbox'][not(ancestor::table)]")
+            all_cbs = self.page.locator("xpath=//input[@type='checkbox'][not(ancestor::table)] >> visible=true")
             try:
                 all_cbs.first.wait_for(state="attached", timeout=3000)
             except Exception:
@@ -576,12 +576,6 @@ class SMSMessagePage(BasePage):
             seen = set()
             for i in range(all_cbs.count()):
                 cb = all_cbs.nth(i)
-                try:
-                    if not cb.is_visible():
-                        continue
-                except Exception:
-                    continue
-
                 label_text = ""
 
                 # 1) for= attribute on a sibling <label>
@@ -696,12 +690,12 @@ class SMSMessagePage(BasePage):
     # ── Pagination controls ───────────────────────────────────────────────────
 
     def click_next_page(self):
-        self._js_click(self.NEXT_PAGE_BTN + " >> visible=true", timeout=10000)
+        self._js_click(self.BTN_NEXT + " >> visible=true", timeout=10000)
         self.page.wait_for_timeout(1500)
 
 
     def click_prev_page(self):
-        self._js_click(self.PREV_PAGE_BTN + " >> visible=true", timeout=10000)
+        self._js_click(self.BTN_PREV + " >> visible=true", timeout=10000)
         self.page.wait_for_timeout(1500)
 
 

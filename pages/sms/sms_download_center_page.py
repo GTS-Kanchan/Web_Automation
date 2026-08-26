@@ -765,7 +765,7 @@ class SMSDownloadCenterPage(BasePage):
             return True
         try:
             el = self.page.locator(self.SWAL2_CONTAINER).first
-            el.wait_for(state="visible", timeout=3000)
+            el.wait_for(state="visible", timeout=6000)
             return True
         except Exception:
             pass

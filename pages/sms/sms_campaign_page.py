@@ -372,15 +372,9 @@ class SMSCampaignPage(BasePage):
         inp = self.page.locator(self.INPUT_SEARCH).first
         inp.wait_for(state="attached", timeout=8000)
         inp.fill(value)
-        # fill() only dispatches an 'input' event. If this field's Livewire
-        # binding is wire:model.lazy/.blur (fires on 'change'/blur) rather
-        # than wire:model.live/.debounce (fires on 'input'), fill() alone
-        # never triggers the search request and the table silently stays
-        # unfiltered — which is exactly what made TC005 flake: the
-        # no-records state never arrives because no search ever ran.
-        # Dispatching 'change' + blurring covers both binding styles.
-        inp.dispatch_event("change")
+        self.page.wait_for_timeout(500)
         inp.press("Enter")
+        self.page.wait_for_timeout(500)
         inp.blur()
         self.page.wait_for_timeout(1500)
 
@@ -408,6 +402,8 @@ class SMSCampaignPage(BasePage):
                     var tbody = document.querySelector('table tbody');
                     if (!tbody) return true;
                     var rows = Array.from(tbody.querySelectorAll('tr')).filter(function(r) {
+                        var tds = r.querySelectorAll('td');
+                        if (tds.length === 1 && tds[0].hasAttribute('colspan')) return false;
                         return r.offsetHeight > 0 && r.textContent.trim().length > 0;
                     });
                     return rows.length === 0;

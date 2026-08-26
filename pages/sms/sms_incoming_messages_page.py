@@ -113,34 +113,42 @@ class SmsIncomingMessagesPage(BasePage):
     # ── Search ───────────────────────────────────────────────────────────────
 
     def _wait_for_search_to_settle(self, timeout=8000):
+        # We need to wait for a period of stability, not just exit immediately
+        # if the state hasn't changed once. Livewire might clear the table
+        # during loading, which drops row count to 0 temporarily.
         end_time = self.page.evaluate("() => Date.now()") + timeout
+        stable_count = 0
         last_state = None
         while self.page.evaluate("() => Date.now()") < end_time:
             current = self.get_row_count()
-            no_msg = self.is_element_present(self.NO_RECORDS_MSG, timeout=500)
+            no_msg = self.is_element_present(self.NO_RECORDS_MSG, timeout=200)
             state = (current, no_msg)
-            if state == last_state:
-                return
+            if state == last_state and current >= 0:
+                stable_count += 1
+                if stable_count >= 3:  # Must be stable for ~1.5s
+                    return
+            else:
+                stable_count = 0
             last_state = state
-            self.page.wait_for_timeout(600)
+            self.page.wait_for_timeout(500)
 
     def search(self, value):
         """JS-driven single 'input' dispatch (not type char-by-char) to
-        avoid a wire:model.live per-keystroke race -- same fix proven
-        necessary on the SMS Error Codes and Blocked Numbers pages."""
-        box = self.h.wait_for_element_visible(self.SEARCH_BOX)
+        minimize erratic Livewire renders."""
+        box = self.page.locator(self.SEARCH_BOX).first
+        box.wait_for(state="attached", timeout=8000)
         box.evaluate(
-            "(el, v) => { el.value = v; "
-            "el.dispatchEvent(new Event('input', {bubbles: true})); "
-            "el.dispatchEvent(new Event('change', {bubbles: true})); }",
+            """(el, val) => {
+                el.value = val;
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+            }""",
             value
         )
-        box.focus()
+        self.page.wait_for_timeout(500)
         box.press("Enter")
         box.blur()
-        self.page.wait_for_timeout(500)
         self._wait_for_search_to_settle()
-        self.page.wait_for_timeout(300)
 
     def clear_search(self):
         box = self.h.wait_for_element_visible(self.SEARCH_BOX)
@@ -247,7 +255,6 @@ class SmsIncomingMessagesPage(BasePage):
             "(el, v) => { el.value = v; el.dispatchEvent(new Event('change', {bubbles: true})); }",
             from_value
         )
-        box.press("Enter")
         self.page.wait_for_timeout(500)
         to_input = self.h.wait_for_element_visible(self.FILTER_RECEIVED_TO_DATE)
         to_value = date.today().isoformat()
@@ -255,7 +262,6 @@ class SmsIncomingMessagesPage(BasePage):
             "(el, v) => { el.value = v; el.dispatchEvent(new Event('change', {bubbles: true})); }",
             to_value
         )
-        box.press("Enter")
         self.page.wait_for_timeout(1500)
         return True
 

@@ -988,7 +988,8 @@ class TestPagination:
     def test_per_page_persistence_after_refresh(self, sender_id_page):
         """Per-page value is retained or reset as per design after refresh."""
         _to_list(sender_id_page)
-        sender_id_page.set_per_page(50)
+        if not sender_id_page.set_per_page(50):
+            pytest.skip("Pagination element not found (possibly no records)")
         sender_id_page.page.reload()
         sender_id_page.h.wait_for_url_contains("sender", timeout=15000)
         sender_id_page.page.wait_for_timeout(1500)

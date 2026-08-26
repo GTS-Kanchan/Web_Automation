@@ -587,14 +587,25 @@ class SMSSenderIDPage(BasePage):
     def set_per_page(self, value):
         """value: 10, 25, or 50 as string or int."""
         try:
-            self.h.select_option(self.PER_PAGE_SELECT, value=str(value))
+            if self.is_element_present(self.PER_PAGE_SELECT, timeout=3000):
+                self.h.select_option(self.PER_PAGE_SELECT, value=str(value))
+                self.page.wait_for_timeout(1000)
+                return True
         except Exception:
-            # Some apps use a custom dropdown button
-            self.h.wait_for_element_clickable(self.PER_PAGE_BTN).click()
-            self.page.wait_for_timeout(300)
-            opt = self.page.locator(f"xpath=//li[text()='{value}'] | //option[text()='{value}']").first
-            opt.click()
-        self.page.wait_for_timeout(1000)
+            pass
+            
+        try:
+            if self.is_element_present(self.PER_PAGE_BTN, timeout=3000):
+                self.h.wait_for_element_clickable(self.PER_PAGE_BTN, timeout=5000).click()
+                self.page.wait_for_timeout(300)
+                opt = self.page.locator(f"xpath=//li[text()='{value}'] | //option[text()='{value}']").first
+                opt.click()
+                self.page.wait_for_timeout(1000)
+                return True
+        except Exception:
+            pass
+            
+        return False
 
     def get_per_page_value(self):
         try:

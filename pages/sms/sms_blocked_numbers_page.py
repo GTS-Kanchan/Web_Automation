@@ -23,7 +23,7 @@ class SmsBlockedNumbersPage(BasePage):
 
     # ── Top action buttons (confirmed) ──────────────────────────────────────
     ADD_NEW_BTN = (
-        "xpath=//a[contains(@href,'/blocked-numbers/create') and contains(normalize-space(.),'Add New Blocked Number')]"
+        "xpath=//a[contains(@href,'/blocked-numbers/create')] | //button[contains(.,'Add') and contains(.,'Blocked Number')] | //a[contains(.,'Add New')]"
     )
     UPLOAD_BTN = "xpath=//button[@title='Upload Blocked Numbers from Excel/CSV file']"
     MODAL_CONTAINER = "#modal-container"
@@ -249,16 +249,24 @@ class SmsBlockedNumbersPage(BasePage):
     # ── Search ───────────────────────────────────────────────────────────────
 
     def _wait_for_search_to_settle(self, timeout=8000):
+        # We need to wait for a period of stability, not just exit immediately
+        # if the state hasn't changed once. Livewire might clear the table
+        # during loading, which drops row count to 0 temporarily.
         end_time = self.page.evaluate("() => Date.now()") + timeout
+        stable_count = 0
         last_state = None
         while self.page.evaluate("() => Date.now()") < end_time:
             current = self.get_row_count()
-            no_msg = self.is_element_present(self.NO_RECORDS_MSG, timeout=500)
+            no_msg = self.is_element_present(self.NO_RECORDS, timeout=200)
             state = (current, no_msg)
-            if state == last_state:
-                return
+            if state == last_state and current >= 0:
+                stable_count += 1
+                if stable_count >= 3:  # Must be stable for ~1.5s
+                    return
+            else:
+                stable_count = 0
             last_state = state
-            self.page.wait_for_timeout(600)
+            self.page.wait_for_timeout(500)
 
     def search(self, value):
         """Sets the full value via a single JS-driven 'input' dispatch

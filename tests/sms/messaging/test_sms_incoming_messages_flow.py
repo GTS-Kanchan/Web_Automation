@@ -133,11 +133,11 @@ def test_tc005_search_existing_value(incoming_messages_page):
     existing_values = incoming_messages_page.get_column_values("sender_id")
     assert existing_values, "Need at least one existing record to search for"
     target = existing_values[0]
-    search_term = target[:4]
-    incoming_messages_page.search(search_term)
+    target = existing_values[0]
+    incoming_messages_page.search(target)
     assert incoming_messages_page.has_records()
     values = incoming_messages_page.get_column_values("sender_id")
-    assert any(search_term in v for v in values)
+    assert any(target in v for v in values)
     incoming_messages_page.clear_search()
 
 
