@@ -135,6 +135,9 @@ class SmsIncomingMessagesPage(BasePage):
             "el.dispatchEvent(new Event('change', {bubbles: true})); }",
             value
         )
+        box.focus()
+        box.press("Enter")
+        box.blur()
         self.page.wait_for_timeout(500)
         self._wait_for_search_to_settle()
         self.page.wait_for_timeout(300)
@@ -244,6 +247,7 @@ class SmsIncomingMessagesPage(BasePage):
             "(el, v) => { el.value = v; el.dispatchEvent(new Event('change', {bubbles: true})); }",
             from_value
         )
+        box.press("Enter")
         self.page.wait_for_timeout(500)
         to_input = self.h.wait_for_element_visible(self.FILTER_RECEIVED_TO_DATE)
         to_value = date.today().isoformat()
@@ -251,6 +255,7 @@ class SmsIncomingMessagesPage(BasePage):
             "(el, v) => { el.value = v; el.dispatchEvent(new Event('change', {bubbles: true})); }",
             to_value
         )
+        box.press("Enter")
         self.page.wait_for_timeout(1500)
         return True
 

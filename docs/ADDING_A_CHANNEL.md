@@ -6,17 +6,16 @@ or one new line in a registry; nothing existing is edited except step 6.
 
 ## 1. Page objects
 
-Reuse the existing flat `pages/` convention (matching WhatsApp/RCS/Email
-today) or start the new channel in its own subfolder — either is fine,
-`BasePage` doesn't care:
+Every existing channel (SMS/RCS/WhatsApp/Email) now lives in its own
+`pages/<channel>/` subfolder — that's the current convention to match:
 
 ```
-pages/telegram_overview_page.py
-pages/telegram_message_page.py
+pages/telegram/telegram_overview_page.py
+pages/telegram/telegram_message_page.py
 ```
 
-Each subclasses `pages.base_page.BasePage`, same as every other page
-object in the suite — no changes needed there.
+Each subclasses `pages.common.base_page.BasePage`, same as every other
+page object in the suite — no changes needed there.
 
 ## 2. Channel class
 
@@ -91,7 +90,7 @@ pytest_plugins = [
 # tests/telegram/messaging/test_telegram_message_flow.py
 import pytest
 from channels.telegram_channel import TelegramChannel
-from pages.telegram_message_page import TelegramMessagePage
+from pages.telegram.telegram_message_page import TelegramMessagePage
 
 pytestmark = [pytest.mark.telegram, pytest.mark.messaging]
 

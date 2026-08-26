@@ -20,23 +20,31 @@ Report features (unchanged from the Selenium suite):
 
 import os
 import base64
+import json
 import platform
 import datetime
 import sys
 
 import pytest
 
+from utils.auth_state import (
+    AuthenticationError,
+    ensure_authenticated_state,
+    reauthenticate_if_still_stale,
+    state_mtime,
+)
 from utils.config import Config
 from utils.error_monitor import check_page_for_errors, ERROR_SCREENSHOT_DIR
 from utils.parallel import worker_id, worker_scoped_dir
 from pages.common.login_page import LoginPage
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Channel/fixture plugin registration — see fixtures/*.py. Additive: these
-# only ADD new opt-in fixtures (sms_channel, correlation_id, test_logger,
-# authenticated_storage_state, ...); nothing here changes the behavior of
-# the fixtures already defined below in this file, which every existing
-# test file already depends on.
+# Channel/fixture plugin registration — see fixtures/*.py. These add
+# channel-scoped fixtures (sms_channel, correlation_id, test_logger, ...)
+# plus `authenticated_storage_state` (fixtures/common_fixtures.py), the
+# single-login-per-run authentication fixture that `logged_in_page` /
+# `module_logged_in_page` below are built on top of — see
+# utils/auth_state.py for the cross-worker login-once mechanism itself.
 # ══════════════════════════════════════════════════════════════════════════════
 pytest_plugins = [
     "fixtures.common_fixtures",
@@ -147,21 +155,79 @@ def browser_context_args(browser_context_args):
 
 @pytest.fixture(scope="function")
 def login_page(page):
+    """Deliberately built on pytest-playwright's own `page` fixture, which
+    is a genuinely fresh, unauthenticated context — NOT the shared
+    storage_state used by logged_in_page/module_logged_in_page below. This
+    fixture (and tests/common/test_login.py, test_forgot_password.py, which
+    depend on it) exercises the login form itself, including invalid-
+    credential/empty-field negative cases, so it must never start
+    pre-authenticated."""
     lp = LoginPage(page)
     lp.navigate()
     return lp
 
 
+def _open_authenticated_context(browser, storage_state_path):
+    """Build a context+page from `storage_state_path` and confirm it's
+    actually authenticated (landed inside the app, not bounced back to
+    /login). Returns (context, page).
+
+    Session expiration handling (requirement #12): if the cached session
+    turns out to be expired, this does exactly ONE controlled
+    re-authentication via reauthenticate_if_still_stale() — lock-guarded
+    AND mtime-guarded, so even if several contexts hit this at the same
+    instant, only one of them performs the real re-login; the rest detect
+    that someone else already refreshed the file (its mtime moved past
+    what they observed) and just reuse it instead of relogging in
+    themselves. It never loops/retries login on its own beyond that one
+    attempt, and never sleeps an arbitrary delay; if the retry still isn't
+    authenticated, it raises AuthenticationError so the fixture fails
+    loudly instead of silently running tests against a logged-out session."""
+    def _new_context(path):
+        ctx = browser.new_context(
+            storage_state=path,
+            **_viewport_context_args(),
+            accept_downloads=True,
+        )
+        pg = ctx.new_page()
+        pg.goto(Config.BASE_URL)
+        return ctx, pg
+
+    observed_mtime = state_mtime()
+    context, pg = _new_context(storage_state_path)
+    if "login" not in pg.url:
+        return context, pg
+
+    # Cached session didn't hold -- controlled single-flight re-auth. Pass
+    # the mtime we observed BEFORE opening this context so a concurrent
+    # worker that already fixed this can't have its fresh file clobbered.
+    context.close()
+    refreshed_path = reauthenticate_if_still_stale(browser, observed_mtime)
+    context, pg = _new_context(refreshed_path)
+    if "login" in pg.url:
+        context.close()
+        raise AuthenticationError(
+            "Re-authentication did not recover a valid session -- still on "
+            "/login after a fresh login. Not retrying further."
+        )
+    return context, pg
+
+
 @pytest.fixture(scope="function")
-def logged_in_page(page):
-    """Equivalent of the old `logged_in_driver` fixture — logs in and
-    returns the raw Playwright Page (page objects can be constructed from
-    it directly, e.g. DashboardPage(logged_in_page))."""
-    lp = LoginPage(page)
-    lp.navigate()
-    lp.login(Config.VALID_EMAIL, Config.VALID_PASSWORD)
-    lp.h.wait_for_url_contains("/", timeout=15000)
-    return page
+def logged_in_page(browser):
+    """Equivalent of the old `logged_in_driver` fixture — returns a
+    Playwright Page that is already authenticated, WITHOUT performing its
+    own UI login. Builds a fresh, isolated context per test (worker-safe:
+    no context/page is ever shared across tests or workers) from the
+    shared, single-login storage_state (see utils/auth_state.py) instead of
+    navigating to /login and submitting credentials every time this fixture
+    is used — this is what turns "one login per test" into "one login for
+    the entire run" across every test that uses this fixture, directly or
+    via module_logged_in_page below."""
+    state_path = ensure_authenticated_state(browser)
+    context, pg = _open_authenticated_context(browser, state_path)
+    yield pg
+    context.close()
 
 
 @pytest.fixture(scope="module")
@@ -183,14 +249,94 @@ def module_page(browser):
 
 
 @pytest.fixture(scope="module")
-def module_logged_in_page(module_page):
-    """Module-scoped equivalent of `logged_in_page` — logs in once per test
-    module instead of once per test function."""
-    lp = LoginPage(module_page)
-    lp.navigate()
-    lp.login(Config.VALID_EMAIL, Config.VALID_PASSWORD)
-    lp.h.wait_for_url_contains("/", timeout=15000)
-    return module_page
+def module_logged_in_page(browser):
+    """Module-scoped equivalent of `logged_in_page` — one context/page
+    shared by every test function in the module (see module_page's
+    docstring above for why some suites need this), authenticated from the
+    shared, single-login storage_state instead of performing its own UI
+    login. This is the fixture the majority of the suite (SMS/RCS/WhatsApp/
+    Email's module-scoped "single sequential flow" files) depends on, so
+    this one change is what eliminates the login storm for ~55 test files
+    without editing any of them."""
+    state_path = ensure_authenticated_state(browser)
+    context, pg = _open_authenticated_context(browser, state_path)
+    yield pg
+    context.close()
+
+
+def _apply_storage_state_to_page(page, storage_state_path):
+    """Replace an ALREADY-OPEN page/context's cookies + localStorage with
+    the contents of `storage_state_path`, in place -- used for mid-run
+    session recovery (see _recover_if_logged_out below). We can't just open
+    a fresh context/page the way _open_authenticated_context() does at
+    fixture setup: module-scoped tests already hold a reference to THIS
+    EXACT `page` object (module_logged_in_page yields it once for the whole
+    module), so recovery has to refresh what that object is authenticated
+    as, not replace it."""
+    with open(storage_state_path, encoding="utf-8") as f:
+        state = json.load(f)
+    page.context.clear_cookies()
+    if state.get("cookies"):
+        page.context.add_cookies(state["cookies"])
+    for origin in state.get("origins", []):
+        # localStorage is per-origin -- navigate there before setting it so
+        # each key lands on the right origin's storage.
+        page.goto(origin["origin"])
+        for item in origin.get("localStorage", []):
+            page.evaluate(
+                "([k, v]) => window.localStorage.setItem(k, v)",
+                [item["name"], item["value"]],
+            )
+    page.goto(Config.BASE_URL)
+
+
+def _recover_if_logged_out(page):
+    """Call at the START of every test that uses a shared authenticated
+    page (module_logged_in_page / logged_in_page). _open_authenticated_context()
+    above only guards fixture SETUP -- once a module-scoped page has been
+    running for a while (a long SMS/RCS/WhatsApp/Email "single sequential
+    flow" file, or just real elapsed time / real app session TTL), the
+    underlying session can still expire mid-file, silently bouncing the
+    shared page to /login with no recovery. Left unhandled, every remaining
+    test in that module then fails or errors against a logged-out page --
+    exactly the "redirected to /login mid-suite, never logs back in, rest
+    of the file fails/skips" failure mode this fixes.
+
+    Same single-flight, lock-guarded, mtime-guarded re-authentication as
+    fixture setup (reauthenticate_if_still_stale) -- if several parallel
+    workers detect this at the same moment, only one of them performs the
+    real re-login; the rest reuse whatever it produces."""
+    if "login" not in page.url:
+        return
+    observed_mtime = state_mtime()
+    browser = page.context.browser
+    refreshed_path = reauthenticate_if_still_stale(browser, observed_mtime)
+    _apply_storage_state_to_page(page, refreshed_path)
+    if "login" in page.url:
+        raise AuthenticationError(
+            "Mid-run session recovery failed -- still on /login after "
+            "re-authenticating. Not retrying further."
+        )
+
+
+@pytest.fixture(autouse=True)
+def _recover_shared_session(request):
+    """Autouse, function-scoped: runs before every test in the suite.
+    Cheap no-op for tests that don't use a shared authenticated page (e.g.
+    test_login.py/test_forgot_password.py, which must stay unauthenticated
+    -- they don't request logged_in_page/module_logged_in_page so this
+    exits immediately). For tests that do, this is what catches a session
+    that expired mid-module and recovers it BEFORE the test body runs,
+    instead of letting the test fail/error against a logged-out page.
+
+    request.getfixturevalue() on an already-created module-scoped fixture
+    returns the cached page rather than creating a second one, so this is
+    safe to call regardless of fixture declaration order."""
+    for fixture_name in ("module_logged_in_page", "logged_in_page"):
+        if fixture_name in request.fixturenames:
+            _recover_if_logged_out(request.getfixturevalue(fixture_name))
+            break
+    yield
 
 
 # ══════════════════════════════════════════════════════════════════════════════

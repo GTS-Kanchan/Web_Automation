@@ -350,14 +350,26 @@ class TestTC09ViewModal:
     """TC_09: Clicking the View (Eye) icon opens the summary modal."""
 
     def test_tc09_view_modal_opens(self, download_center_page):
+        """test_tc09_modal_content_nonempty and test_tc09_modal_closes below
+        both depend on this test leaving the modal genuinely open (there's
+        no fixture re-opening it — they reuse this test's ambient page
+        state). A single fixed-wait check here risked reporting the modal
+        closed/never-opened right as Livewire's render was still catching
+        up, which would cascade into both those tests skipping with
+        "Summary modal not open" even though the modal did open a moment
+        later. Poll instead of checking once."""
         ensure_on_dc_page(download_center_page)
         if download_center_page.get_row_count() == 0:
             pytest.skip("No rows available to test view icon")
+        if not download_center_page.has_view_icon():
+            pytest.skip("No view icon available in the current table")
         download_center_page.click_view_icon(row_idx=0)
-        download_center_page.page.wait_for_timeout(1500)
-        assert download_center_page.is_popup_open(), (
-            "Summary modal did not open after clicking View icon"
-        )
+        end_time = time.time() + 6
+        opened = download_center_page.is_popup_open()
+        while not opened and time.time() < end_time:
+            time.sleep(0.5)
+            opened = download_center_page.is_popup_open()
+        assert opened, "Summary modal did not open after clicking View icon"
 
     def test_tc09_modal_content_nonempty(self, download_center_page):
         if not download_center_page.is_popup_open():
@@ -545,8 +557,16 @@ class TestTC12ConfirmDelete:
     def test_tc12_confirm_delete(self, download_center_page):
         ensure_on_dc_page(download_center_page)
         download_center_page.search(self.REPORT_NAME)
-        download_center_page.page.wait_for_timeout(1500)
+        # Poll for the row instead of checking once after a fixed wait --
+        # the same search-debounce race already found and fixed for
+        # TC005/TC007/TC019 elsewhere in this project. A freshly-created
+        # report can also still be processing, so give it real time
+        # rather than concluding "not found" after a single 1.5s look.
+        end_time = time.time() + 8
         before_count = download_center_page.get_row_count()
+        while before_count == 0 and time.time() < end_time:
+            time.sleep(0.5)
+            before_count = download_center_page.get_row_count()
         if before_count == 0:
             reset_filters(download_center_page)
             pytest.skip(

@@ -311,7 +311,12 @@ class RcsTemplateAnalyticsPage(BasePage):
         return True
 
     def get_date_range_value(self):
-        return self.h.wait_for_element_visible(self.DATE_RANGE_PICKER).get_attribute("value")
+        # flatpickr sets the input's live DOM *value property* via JS, not
+        # the static HTML "value" *attribute* -- browsers never sync the
+        # attribute back when script assigns .value, so get_attribute
+        # ("value") always read None here even after a real selection.
+        # input_value() reads the live property instead.
+        return self.h.wait_for_element_visible(self.DATE_RANGE_PICKER).input_value()
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
 

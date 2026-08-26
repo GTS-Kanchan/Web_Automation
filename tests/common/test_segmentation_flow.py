@@ -25,11 +25,11 @@ Run:
     pytest tests/test_segmentation_flow.py -v
 """
 
-import time
 import pytest
 
 from pages.common.segmentation_page import SegmentationPage
 from utils.config import Config
+from utils.parallel import short_unique_tag
 
 
 pytestmark = [pytest.mark.common]
@@ -64,7 +64,11 @@ def _reset_after_test(segmentation_page):
         pass
 
 
-RUN_TAG = str(int(time.time()))[-6:]
+# Worker-safe: short_unique_tag() (millisecond resolution + worker tag +
+# random suffix) instead of a bare second-resolution timestamp, so two
+# parallel workers -- or two separate pytest invocations against this same
+# shared account -- can never both create "AutoQASegment<tag>" at once.
+RUN_TAG = short_unique_tag()
 NEW_SEGMENT_NAME = f"AutoQASegment{RUN_TAG}"
 NEW_SEGMENT_DESC = "Created by automation"
 NEW_KEY_NAME = f"autoqa_key_{RUN_TAG}"
@@ -257,7 +261,7 @@ def test_segmentation_TC009_delete(segmentation_page):
     list) — deleting whatever happened to be first would risk deleting an
     unrelated real segment."""
     ensure_on_segmentation_page(segmentation_page)
-    scratch_name = f"AutoQADel{str(int(time.time()))[-8:]}"
+    scratch_name = f"AutoQADel{short_unique_tag(width=8)}"
 
     segmentation_page.click_create_segment()
     if not segmentation_page.is_create_segment_modal_open():

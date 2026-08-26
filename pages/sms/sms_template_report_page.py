@@ -262,7 +262,12 @@ class SmsTemplateReportPage(BasePage):
         return True
 
     def get_date_range_value(self):
-        return self.h.wait_for_element_visible(self.DATE_RANGE_PICKER).get_attribute("value")
+        # flatpickr sets the input's live DOM *value property* via JS, not
+        # the static HTML "value" *attribute* -- browsers never sync the
+        # attribute back when script assigns .value, so get_attribute
+        # ("value") always read None here even after a real selection.
+        # input_value() reads the live property instead.
+        return self.h.wait_for_element_visible(self.DATE_RANGE_PICKER).input_value()
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
 
@@ -317,16 +322,16 @@ class SmsTemplateReportPage(BasePage):
 
     def is_next_page_enabled(self):
         """Returns True if the Next Page button exists, is visible, and is not disabled."""
-        loc = self.page.locator(self.NEXT_PAGE_BTN).first
-        try:
-            loc.wait_for(state='visible', timeout=3000)
-        except Exception:
-            return False
-        return loc.get_attribute("disabled") is None
+        locators = self.page.locator(self.NEXT_PAGE_BTN).all()
+        for loc in locators:
+            if loc.is_visible():
+                return loc.get_attribute("disabled") is None
+        return False
 
     def click_next_page(self):
-        self._js_click(self.NEXT_PAGE_BTN, timeout=10000)
+        self._js_click(self.NEXT_PAGE_BTN + " >> visible=true", timeout=10000)
         self.page.wait_for_timeout(1500)
+
 
     # ── Performance ──────────────────────────────────────────────────────────
 

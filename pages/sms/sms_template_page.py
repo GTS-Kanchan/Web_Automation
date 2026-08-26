@@ -123,7 +123,7 @@ class SMSTemplatePage(BasePage):
     VALIDATION_ERROR = "label.text-negative-600, [class*='text-negative']"
 
     # ── Preview / View popup ──────────────────────────────────────────────────
-    PREVIEW_POPUP = "[role='dialog'], [class*='modal']"
+    PREVIEW_POPUP = "[role='dialog'] >> visible=true, [class*='modal'] >> visible=true"
     BTN_CLOSE_PREVIEW = "xpath=//button[contains(.,'Close')] | //button[@aria-label='Close'] | //button[@aria-label='close']"
 
     # ── Toast ──────────────────────────────────────────────────────────────────
@@ -451,12 +451,30 @@ class SMSTemplatePage(BasePage):
             return None
 
     def click_next_page(self):
-        self.h.wait_for_element_clickable(self.BTN_NEXT_PAGE).click()
-        self.page.wait_for_timeout(1000)
+        self._js_click(self.NEXT_PAGE_BTN + " >> visible=true", timeout=10000)
+        self.page.wait_for_timeout(1500)
+
+    def is_next_page_enabled(self):
+        """Returns True if the Next Page button exists, is visible, and is not disabled."""
+        locators = self.page.locator(self.NEXT_PAGE_BTN).all()
+        for loc in locators:
+            if loc.is_visible():
+                return loc.get_attribute("disabled") is None
+        return False
+
+    def is_prev_page_enabled(self):
+        """Returns True if the Previous Page button exists, is visible, and is not disabled."""
+        locators = self.page.locator(self.PREV_PAGE_BTN).all()
+        for loc in locators:
+            if loc.is_visible():
+                return loc.get_attribute("disabled") is None
+        return False
+
 
     def click_prev_page(self):
-        self.h.wait_for_element_clickable(self.BTN_PREV_PAGE).click()
-        self.page.wait_for_timeout(1000)
+        self._js_click(self.PREV_PAGE_BTN + " >> visible=true", timeout=10000)
+        self.page.wait_for_timeout(1500)
+
 
     # ── Row actions ────────────────────────────────────────────────────────────
 
@@ -616,7 +634,7 @@ class SMSTemplatePage(BasePage):
                 el = elements.nth(i)
                 if el.is_visible():
                     text = el.inner_text().strip()
-                    if text:
+                    if text and "importing" not in text.lower() and "processing" not in text.lower():
                         return text
         except Exception:
             pass

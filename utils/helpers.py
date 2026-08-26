@@ -111,7 +111,7 @@ class Helpers:
         dropdown panels, WireUI modals, etc.)."""
         loc = self.page.locator(locator).first
         loc.wait_for(state="attached", timeout=timeout or self.timeout_ms)
-        loc.scroll_into_view_if_needed()
+        loc.scroll_into_view_if_needed(timeout=timeout or self.timeout_ms)
         loc.click(force=True)
         return loc
 

@@ -26,6 +26,8 @@ and wired into the `browser_type_launch_args` fixture in conftest.py.
 import os
 from dotenv import load_dotenv
 
+from utils.parallel import worker_scoped_dir
+
 _ENV_NAME = os.getenv("ENV")
 if _ENV_NAME:
     _env_file = os.path.join(
@@ -44,9 +46,20 @@ load_dotenv(override=False)
 # relying on the browser writing to a fixed OS folder the way the old
 # driver_factory.DOWNLOAD_DIR + Chrome prefs/CDP override did — this
 # constant is now just the destination `download.save_as()` is pointed at.
-DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "reports", "downloads")
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-DOWNLOAD_DIR = os.path.abspath(DOWNLOAD_DIR)
+#
+# Worker-scoped (reports/downloads/<worker_id>/ -- "master" outside of -n,
+# so a plain single-process run is unaffected): every download-center page
+# object across every channel (sms/rcs/whatsapp/email) falls back to
+# `f"..._{int(time.time() * 1000)}..."` for a filename when the app doesn't
+# suggest one, and the app's suggested filename itself is frequently a
+# fixed name (e.g. "campaign_report.csv") -- neither is unique enough to
+# share a single directory once two parallel workers can download a report
+# at close to the same instant. Scoping the directory itself per worker
+# (here, once, for every consumer of this constant) closes that gap without
+# having to touch each page object's own filename logic individually.
+DOWNLOAD_DIR = worker_scoped_dir(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "reports", "downloads"))
+)
 
 # Reports root — screenshots/logs/downloads/html report all live under here.
 REPORTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "reports"))
@@ -57,11 +70,25 @@ class Config:
     ENV            = os.getenv("ENV", "qa")
     TENANT         = os.getenv("TENANT", "default")
     API_URL        = os.getenv("API_URL", "")
+    # Same worker-scoped directory as the module-level DOWNLOAD_DIR constant
+    # above (`from utils.config import DOWNLOAD_DIR`, used directly by every
+    # download-center page object) -- exposed here too so `Config.DOWNLOAD_DIR`
+    # is also valid, matching every other constant's Config.<NAME> convention.
+    DOWNLOAD_DIR   = DOWNLOAD_DIR
     # Configurable worker count (requirement: PLAYWRIGHT_WORKERS env var) —
-    # read by conftest.py's pytest_configure to default `-n`/`--dist` when
-    # not passed explicitly on the CLI. 0/unset = don't force a value;
+    # read by scripts/run_tests.py to turn into a real `-n`/`--dist` flag
+    # when not passed explicitly on the CLI. 0/unset = don't force a value;
     # plain `pytest` (no -n) still runs single-process exactly as before.
     PLAYWRIGHT_WORKERS = os.getenv("PLAYWRIGHT_WORKERS", "")
+
+    # Where the shared single-login Playwright storage_state file lives
+    # (see utils/auth_state.py). Every worker/test that needs an
+    # authenticated session reuses this same file instead of logging in
+    # itself. Read directly from the env by utils/auth_state.py (it needs
+    # the value at import time, before Config's own module-level code
+    # necessarily runs first in every import order) -- exposed here too so
+    # it's discoverable/documented alongside every other .env variable.
+    AUTH_STATE_PATH = os.getenv("AUTH_STATE_PATH", "")
 
     # ── Browser / driver ────────────────────────────────────────────────────
     BASE_URL       = os.getenv("BASE_URL", "https://testqa.gtsstaging.com")

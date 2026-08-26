@@ -16,11 +16,11 @@ Run:
 """
 
 import os
-import time
 import pytest
 
 from pages.common.contacts_page import ContactsPage
 from utils.config import Config
+from utils.parallel import short_unique_digits, short_unique_tag
 
 pytestmark = [pytest.mark.common]
 
@@ -86,8 +86,10 @@ def _reset_after_test(contacts_page):
         pass
 
 
-# Unique-per-run test data (avoids collisions across repeated runs)
-RUN_TAG = str(int(time.time()))[-6:]
+# Unique-per-run test data (avoids collisions across repeated runs -- and,
+# via short_unique_tag()'s worker tag, across parallel workers within one
+# run, or two pytest invocations against this same shared account at once)
+RUN_TAG = short_unique_tag()
 
 # Demo contact data provided for the Create New Contact test — a realistic,
 # fixed record (not randomized) so it matches the reference table exactly.
@@ -183,7 +185,13 @@ def test_contacts_TC007_delete_contact(contacts_page):
     risk removing a real contact (including DEMO_CONTACT, which the View
     Contact tests below depend on)."""
     ensure_on_contacts_page(contacts_page)
-    ts = str(int(time.time()))[-9:]
+    # short_unique_digits (not short_unique_tag): scratch_phone below must
+    # look like a phone number, so this stays digits-only while still
+    # being worker-safe -- see utils/parallel.py. width=5 keeps the total
+    # length at 9 digits (5 + 2-digit worker index + 2 random digits),
+    # matching the original bare-timestamp value's length exactly, so
+    # scratch_phone ("9" + ts) is still a plausible 10-digit number.
+    ts = short_unique_digits(width=5)
     scratch_first = "AutoQA"
     scratch_last = f"Del{ts}"
     scratch_phone = "9" + ts

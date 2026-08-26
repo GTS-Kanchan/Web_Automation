@@ -14,13 +14,16 @@ count unchanged → deliver). The **common pages** batch (`base_page.py`,
 `contacts_page.py`, `segmentation_page.py`, `tags_page.py`,
 `communication_flow_page.py` → `pages/common/`; their 6 test files →
 `tests/common/`) went last, as one deliberate pass — it's the one batch
-that touches every other channel's imports at once, since all 63 page
-objects subclass `BasePage`. All 1,846 tests still collect (1,844 across
-the four channels + common, plus 2 pre-existing scratch/debug test files
-at the flat `tests/` root that predate this migration and were left
+that touches every other channel's imports at once, since 61 of the 62
+page objects subclass `BasePage`. All 1,844 tests still collect (1,842
+across the four channels + common, plus 2 pre-existing scratch/debug test
+files at the flat `tests/` root that predate this migration and were left
 alone); per-channel path-based (`pytest tests/<channel>`) and marker-based
 (`pytest -m <channel>`) selection agree exactly for every channel and for
-`common` (SMS 647, RCS 585, WhatsApp 402, Email 136, common 74).
+`common` (SMS 645, RCS 585, WhatsApp 402, Email 136, common 74). These
+counts include the four function-scoped "parallel example" test files
+added after the channel migration itself (§12) — one per channel, none
+for `common`.
 
 Stack: **Python + pytest + pytest-playwright** (the request's spec was
 written in TypeScript/Playwright-Test conventions; every deliverable below
@@ -31,7 +34,7 @@ before implementation).
 
 ## 1. What was analyzed
 
-- 61 test files, 63 page objects, one 409-line `conftest.py`, all flat
+- 61 test files, 62 page objects, one 409-line `conftest.py`, all flat
   under `tests/` and `pages/`.
 - Every SMS/WhatsApp/RCS/Email flow test follows one architecture: a
   **module-scoped "single sequential flow"** — one login, one browser
@@ -51,7 +54,7 @@ before implementation).
 - Common utilities already existed and were reused, not duplicated:
   `utils/helpers.py` (`Helpers` — waiting, retry, screenshot, download),
   `utils/config.py` (`Config`), `utils/error_monitor.py`,
-  `pages/base_page.py` (`BasePage`, superclass of all 63 page objects).
+  `pages/base_page.py` (`BasePage`, superclass of the other 61 page objects).
 - Test-data collision risk found: campaign names used
   `f"{prefix}_{suffix}_{int(time.time())}"` — second-resolution only, so
   two parallel workers creating a campaign in the same second could
@@ -144,13 +147,18 @@ cpaas_playwright_tests/
 │   ├── common/                     # MOVED — 6 cross-channel test files:
 │   │   ├── test_login.py, test_dashboard.py, test_forgot_password.py,
 │   │   └── test_contacts_flow.py, test_segmentation_flow.py, test_tags_flow.py
-│   ├── sms/                        # MOVED — 19 test files, 6 subfolders:
+│   ├── sms/                        # MOVED — 20 test files, 6 subfolders
+│   │   │                           #   (19 from the migration + 1 parallel-
+│   │   │                           #   example file added after, see §12):
 │   │   ├── campaigns/  templates/  sender_id/  messaging/  reports/  opt_out/
-│   ├── rcs/                        # MOVED — 18 test files, 6 subfolders:
+│   ├── rcs/                        # MOVED — 19 test files, 6 subfolders
+│   │   │                           #   (18 + 1 parallel-example file):
 │   │   ├── campaigns/  templates/  agent/  messaging/  opt_out/  reports/
-│   ├── whatsapp/                   # MOVED — 11 test files, 2 subfolders:
+│   ├── whatsapp/                   # MOVED — 12 test files, 2 subfolders
+│   │   │                           #   (11 + 1 parallel-example file):
 │   │   ├── reports/  opt_out/
-│   ├── email/                      # MOVED — 4 test files, 3 subfolders:
+│   ├── email/                      # MOVED — 5 test files, 3 subfolders
+│   │   │                           #   (4 + 1 parallel-example file):
 │   │   ├── campaigns/  templates/  reports/
 │   ├── test_temp_dump.py, test_temp_dump_modal.py   # pre-existing scratch/
 │   │                                #   debug files, unrelated to this
@@ -253,11 +261,11 @@ module-scoped one instead.
       SMS         WhatsApp        RCS          Email
        |             |             |             |
        v             v             v             v
-  6 subfolders    (flat today)  (flat today)  (flat today)
-  19 files,       10 files      14 files      3 files
-  each file =     each file =   each file =   each file =
-  1 worker-unit   1 worker-unit 1 worker-unit 1 worker-unit
-  (loadscope)     (loadscope)   (loadscope)   (loadscope)
+  6 subfolders   2 subfolders  6 subfolders  3 subfolders
+  20 files       12 files      19 files      5 files
+  each file =    each file =   each file =   each file =
+  1 worker-unit  1 worker-unit 1 worker-unit 1 worker-unit
+  (loadscope)    (loadscope)   (loadscope)   (loadscope)
 ```
 
 ---
@@ -298,7 +306,7 @@ workers; a laptop and a CI runner do not have the same CPU/RAM).
 ## 6. Channel-specific execution
 
 ```bash
-pytest tests/sms                       # SMS only (647 tests)
+pytest tests/sms                       # SMS only (645 tests)
 pytest tests/rcs                       # RCS only (585 tests)
 pytest tests/whatsapp                  # WhatsApp only (402 tests)
 pytest tests/email                     # Email only (136 tests)
@@ -344,25 +352,189 @@ Wired in:
 
 ---
 
-## 8. Authentication isolation
+## Authentication architecture
 
-`fixtures/common_fixtures.py`:
+Every worker runs against **one** CPaaS+ account, and repeated login
+attempts in a short window trigger a ~5 minute account lockout. So the
+hard requirement isn't "log in efficiently" — it's that a whole run, at
+any `-n`/`PLAYWRIGHT_WORKERS` count, must perform **exactly one** real UI
+login, and every worker/test after that reuses the same authenticated
+session. `fixtures/common_fixtures.py` originally had a session-scoped
+`authenticated_storage_state` fixture that logged in once **per worker
+process** — still `N` real logins under `-n N`, not good enough for this
+platform's lockout window. That fixture (and `authenticated_module_page`,
+built on top of it) was **not removed** — new/migrated channel test files
+can still request it directly — but it was rewired to delegate to
+`utils/auth_state.py::ensure_authenticated_state()` below instead of
+performing its own login, so it, `conftest.py`'s `logged_in_page`/
+`module_logged_in_page`, and any future consumer all share the exact same
+one-login-for-the-whole-run guarantee rather than each enforcing it
+separately (or not enforcing it at all).
 
-- `authenticated_storage_state` (session-scoped): logs in via a throwaway
-  context **once per worker process** and saves Playwright
-  `storage_state` to `reports/.auth/<worker_id>.json`; a second call in
-  the same worker reuses the cached file. The path itself is worker-scoped,
-  so parallel workers never share or race on the same auth file, and each
-  worker only pays the UI-login cost once instead of once per test module.
-- `authenticated_module_page` (module-scoped): builds a context from that
-  cached `storage_state` instead of performing a fresh UI login.
+### Design: a single, file-locked, disk-persisted `storage_state`
 
-This is **opt-in** — the existing `module_logged_in_page` /
-`logged_in_page` fixtures in `conftest.py`, which every existing test file
-depends on, are unchanged. New/migrated channel work is the intended
-adopter. Different tenants/environments/channels are handled through
+`utils/auth_state.py` owns a single shared Playwright `storage_state` JSON
+file (`STATE_PATH`, default `reports/.auth/state.json`, overridable via
+`AUTH_STATE_PATH`) guarded by a cross-process file lock:
+
+- The first caller — in any worker, in any test, in the whole run — to
+  reach `ensure_authenticated_state()` acquires the lock (an atomic
+  `os.O_CREAT | os.O_EXCL` lockfile create; atomic on POSIX and Windows,
+  no `filelock`/`portalocker` dependency needed at this project's scale),
+  finds no state file, performs the one real UI login
+  (`utils/auth_state.py::_perform_login`, via a throwaway
+  `browser.new_context()`/page, never the shared per-test page), writes
+  `storage_state` to a temp file in the same directory, and
+  `os.replace()`s it into place — atomic on both POSIX and Windows, so no
+  concurrent reader ever observes a partially-written file — then
+  releases the lock.
+- Every other caller, before or after that, either finds the state file
+  already present (fast path, no lock touched at all) or briefly blocks
+  on the lock and picks up the file once the first caller finishes.
+  Nobody else ever calls the login page.
+- A lock older than `_LOCK_STALE_SECONDS` (180s) is treated as abandoned
+  by a crashed worker and force-cleared, so the run can't deadlock
+  forever on a lock nobody will release. A waiter gives up after
+  `_LOCK_WAIT_TIMEOUT` (150s, deliberately shorter than the stale
+  threshold so a slow-but-legitimate login is never preempted) and raises
+  `AuthenticationError` rather than attempting its own login.
+- There is no `time.sleep(300)`/arbitrary fixed delay anywhere in this
+  module — a waiting worker polls `_LOCK_POLL_SECONDS` (0.5s) against a
+  real timeout, so it waits only as long as the one real login actually
+  takes.
+
+`conftest.py` wires this in for the two fixtures the whole suite already
+depends on — `logged_in_page` (function-scoped) and `module_logged_in_page`
+(module-scoped) — via a shared helper, `_open_authenticated_context()`:
+both call `ensure_authenticated_state(browser)` to get the shared state
+path, then build their own fresh, isolated Playwright context from it
+(`browser.new_context(storage_state=state_path, ...)`). No context or page
+is ever shared across tests or workers — only the underlying cookies/
+storage in the state file are shared. This is what turns "one login per
+test (or per module)" into "one login for the entire run" without editing
+any of the ~55 existing SMS/RCS/WhatsApp/Email test files that depend on
+these two fixtures.
+
+### Session-expiry re-authentication
+
+`_open_authenticated_context()` opens its context from the cached state
+and checks the landing URL; if it's bounced back to `/login`, the cached
+session has expired. It then calls
+`reauthenticate_if_still_stale(browser, observed_mtime)`, passing the
+state file's mtime **as observed before** this context was opened. That
+function:
+
+1. Re-acquires the lock.
+2. Compares the file's *current* mtime against `observed_mtime`. If the
+   file is now newer, another worker already detected the same
+   staleness and finished re-authenticating first — this caller just
+   reuses that fresh file instead of logging in again.
+3. Otherwise it performs exactly one more real login
+   (`_perform_login_recording_failure`), again writing via
+   temp-file-then-atomic-`os.replace()` — deliberately **not**
+   delete-then-relogin (see the race-condition note below) — and
+   releases the lock.
+
+The caller then reopens a context from the (possibly refreshed) state
+path; if it's *still* on `/login`, it raises `AuthenticationError` rather
+than looping — the suite fails loudly instead of silently running against
+a logged-out session.
+
+### Failure handling
+
+If the one real login attempt itself fails (bad credentials, unexpected
+redirect, platform error), `_record_failure()` writes a marker file
+(`STATE_PATH + ".failed"`, TTL `_FAILURE_MARKER_TTL_SECONDS` = 1800s so it
+doesn't block a later, separate rerun) **while the lock is still held**,
+then re-raises. Every other caller — already waiting on the lock, or
+arriving afterward — checks that marker (`_raise_if_recently_failed()`,
+called both before and after acquiring the lock) and raises the *same*
+`AuthenticationError` immediately instead of attempting its own login.
+pytest reports this as a fixture-setup error on every dependent test, so
+one root-cause failure (bad `.env` credentials, app unreachable) shows up
+once, clearly, across the whole run — not as one confusing failure per
+worker plus a login storm on top of it.
+
+### Race conditions found and fixed during parallel dry-run validation
+
+Three races surfaced only under genuine concurrent load (`pytest -n 5/10/20`
+against a local mock login server — see "Validation" below) and are now
+covered by the design above:
+
+1. **Duplicate login on concurrent session-expiry** — two workers detecting
+   the same expired session at nearly the same instant could both decide
+   to re-authenticate. Fixed by making `reauthenticate_if_still_stale()`
+   lock-guarded *and* mtime-guarded: a worker only re-logs-in if the file
+   on disk is still the exact stale copy it originally observed; if
+   someone else already refreshed it, it reuses that instead.
+2. **`FileNotFoundError` from a delete-then-relogin race** — an earlier
+   version deleted `STATE_PATH` before performing the fresh login, which
+   opened a window where a concurrent `browser.new_context(storage_state=
+   STATE_PATH)` call elsewhere could hit a missing file. Fixed by never
+   deleting the file on the re-auth path — `_perform_login()` always
+   overwrites it via an atomic `os.replace()`, so a concurrent reader
+   always sees either the old-but-valid content or the new content, never
+   nothing.
+3. **Login storm on the failure path** — without a failure marker, a
+   failed login left no state file behind, so every other waiting/arriving
+   worker independently concluded "no state file yet" and attempted its
+   own login — the exact storm this whole module exists to prevent, now
+   triggered *by* a failure instead of prevented by the lock. Fixed by the
+   failure-marker mechanism described above.
+
+`invalidate_authenticated_state()` is a separate, deliberately blunt
+maintenance tool (unconditional delete, no lock) for a human forcing a
+clean login before the next run — e.g. after rotating `.env` credentials —
+and is not used anywhere in the automatic session-expiry path.
+
+Different tenants/environments/channels are handled through
 `Config`/`config/environments/<ENV>.env` (§9), not by branching inside the
-auth fixture itself.
+auth module itself.
+
+### Validation
+
+The real CPaaS+ app is not reachable from a network-restricted sandbox, so
+this architecture is validated two ways instead of (and in addition to,
+once a network-enabled environment is available for) a real staging run:
+
+1. **`scripts/validate_auth_lock.py`** — an offline harness that spawns N
+   real OS processes calling `ensure_authenticated_state()` concurrently
+   with `LoginPage` swapped for a fake that records call counts instead of
+   doing network I/O. Verifies the lock logic itself in isolation. Run
+   with `python3 scripts/validate_auth_lock.py <N>`; passed at N=5, 10,
+   and 20 with exactly 1 recorded login call each time.
+2. **`scripts/validate_auth_e2e.sh`** (+ `scripts/mock_login_server.py`,
+   `scripts/_auth_e2e/`) — a genuine end-to-end run: real Playwright
+   browsers, real `pytest -n N` worker *processes*, and the actual
+   `conftest.py` fixtures every real test file depends on
+   (`logged_in_page` / `module_logged_in_page`, completely unmodified),
+   pointed at a small local HTTP server that mimics just the `/login`
+   form-submit-redirect flow `LoginPage` drives, instead of the real app.
+   This is what proves the fixture wiring itself — not just the
+   underlying lock — behaves correctly under real concurrency. Run with
+   `./scripts/validate_auth_e2e.sh <N>` (see that script and
+   `scripts/mock_login_server.py` for the `PYTHON_BIN`/
+   `EXTRA_PYTEST_ARGS` override used to point at a Playwright client
+   version matched to whatever browser binaries are actually installed in
+   a given environment — a sandbox-only concern, not something the real
+   project's normal `pytest` invocation needs).
+
+   Results at N=5, 10, and 20 workers, for both `logged_in_page` and
+   `module_logged_in_page`: every test passed, and the mock server's
+   `/__stats` counter recorded **exactly one** real `POST /login` per
+   pytest invocation regardless of worker count. A follow-up run with a
+   deliberately wrong password (N=8) produced 24/24 tests failing with
+   the same `AuthenticationError` fixture-setup error and, critically,
+   still only **one** real login attempt recorded — confirming the
+   failure-marker mechanism (race #3 above) actually prevents a login
+   storm on the failure path, not just in theory.
+
+   Not a substitute for a real staging-environment run: it cannot catch a
+   locator drifting from the live app's real login page, a slower real
+   network round-trip changing timing behavior, or a subtlety in the
+   platform's own session-expiry behavior. It exercises the concurrency
+   and locking logic — the part that's otherwise very hard to trust
+   without either real parallel load or a stand-in for it.
 
 ---
 
@@ -444,7 +616,7 @@ rather than inventing untested new page-object methods.
 `sms`, `whatsapp`, `rcs`, `email`, `campaign`, `template`, `sender_id`,
 `messaging`, `report`, `opt_out`, `agent` (added during the RCS migration,
 RCS-only concept), `common` (added during the common-pages batch, no
-feature pairing — just `pytest.mark.common`). Every one of the 68 moved
+feature pairing — just `pytest.mark.common`). Every one of the 62 moved
 test files (19 SMS + 18 RCS + 11 WhatsApp + 4 Email + 6 common, plus the 4
 example files with `.<channel>`/`.report` tags) got a `pytestmark = [...]`
 line (mechanical, additive — doesn't touch any test logic). Python/pytest's
@@ -457,8 +629,8 @@ pytest -m "sms or whatsapp"
 pytest -m "sms and smoke"
 ```
 
-Verified: `pytest -m sms --collect-only` selects exactly the 647 SMS tests;
-`pytest tests/sms --collect-only` selects the same 647 — path-based and
+Verified: `pytest -m sms --collect-only` selects exactly the 645 SMS tests;
+`pytest tests/sms --collect-only` selects the same 645 — path-based and
 marker-based selection agree.
 
 ---

@@ -263,6 +263,15 @@ class SMSDownloadCenterPage(BasePage):
             box = self.h.wait_for_element_clickable(self.SEARCH_BOX, timeout=10000)
             box.fill("")
             box.fill(text)
+            # fill() only dispatches an 'input' event. If this field's
+            # Livewire binding only reacts to 'change'/blur (wire:model
+            # .lazy/.blur) rather than 'input' (wire:model.live/.debounce),
+            # fill() alone silently never triggers the search -- same bug
+            # class already found and fixed for the SMS Campaigns search
+            # box (TC005). Dispatching 'change' + blurring covers both
+            # binding styles.
+            box.dispatch_event("change")
+            box.blur()
             self.page.wait_for_timeout(1500)
         except Exception:
             pass
@@ -755,10 +764,9 @@ class SMSDownloadCenterPage(BasePage):
         if getattr(self, "_pending_native_dialog", False):
             return True
         try:
-            els = self.page.locator(self.SWAL2_CONTAINER)
-            for i in range(els.count()):
-                if els.nth(i).is_visible():
-                    return True
+            el = self.page.locator(self.SWAL2_CONTAINER).first
+            el.wait_for(state="visible", timeout=3000)
+            return True
         except Exception:
             pass
         return False
@@ -771,6 +779,10 @@ class SMSDownloadCenterPage(BasePage):
             except Exception:
                 pass
             self._pending_native_dialog = False
+
+    def has_view_icon(self):
+        """Returns True if any row has a View icon."""
+        return self.is_element_present(self.ROW_VIEW_ICON, timeout=3000)
 
     # -------------------------------------------------------------------------
     # Summary / View popup
@@ -832,11 +844,9 @@ class SMSDownloadCenterPage(BasePage):
     # -------------------------------------------------------------------------
 
     def click_next_page(self):
-        try:
-            self._js_click(self.BTN_NEXT, timeout=5000)
-            self.page.wait_for_timeout(2000)
-        except Exception:
-            pass
+        self._js_click(self.NEXT_PAGE_BTN + " >> visible=true", timeout=10000)
+        self.page.wait_for_timeout(1500)
+
 
     def is_next_page_enabled(self):
         try:

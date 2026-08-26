@@ -69,6 +69,57 @@ def unique_name(prefix: str, max_len: int = None) -> str:
     return name
 
 
+def short_unique_tag(width: int = 6) -> str:
+    """A compact, worker-safe alternative to the pre-existing
+    `str(int(time.time()))[-N:]` pattern found at a handful of call sites
+    (test_segmentation_flow.py, test_tags_flow.py, test_contacts_flow.py,
+    the RCS template/campaign creation flows) that predate parallel
+    execution being a concern. Those call sites use a bare second-
+    resolution timestamp tail as their only uniqueness mechanism -- two
+    workers (or two separate pytest invocations against the same shared
+    account, since this whole suite runs on ONE account) creating a record
+    in the same wall-clock second produce the exact same name.
+
+    Prefer unique_name()/unique_suffix() when the target field has enough
+    room (they're more strongly collision-proof, per-call not just
+    per-second). This exists for fields with a tight, previously
+    hand-tuned character budget, where swapping in the full
+    unique_suffix() (20+ chars) would meaningfully change or exceed the
+    field's length limit.
+
+    NOTE: `width` sizes only the millisecond-timestamp portion -- the
+    worker tag (1-2 chars) and random suffix (2 chars) add up to 4 more
+    chars on top, so the total length is `width + up to 4`, not `width`.
+    Pick `width` with that headroom in mind when a field has a hard cap."""
+    ms_tail = str(int(time.time() * 1000))[-width:]
+    w = worker_id()
+    wtag = "m" if w == "master" else w[-2:]
+    rand = "".join(random.choices(string.ascii_uppercase + string.digits, k=2))
+    return f"{ms_tail}{wtag}{rand}"
+
+
+def short_unique_digits(width: int = 5) -> str:
+    """Digits-only counterpart to short_unique_tag() -- for a handful of
+    call sites that build a scratch value from a bare timestamp tail and
+    then also use it somewhere that must look like a phone number/numeric
+    ID (e.g. test_contacts_flow.py's scratch-contact phone field), where
+    short_unique_tag()'s letters would be invalid input. Combines a
+    millisecond timestamp tail with a numeric worker index and a short
+    random digit suffix, so it's still effectively worker-safe. Same
+    `width` caveat as short_unique_tag(): total length is `width + 4`
+    (a 2-digit worker index + 2 random digits) -- the width=5 default
+    yields 9 digits total, matching the original bare-timestamp call
+    sites' length exactly."""
+    ms_tail = str(int(time.time() * 1000))[-width:]
+    w = worker_id()
+    try:
+        worker_num = int(w[2:]) if w.startswith("gw") else 0
+    except ValueError:
+        worker_num = 0
+    rand = "".join(random.choices(string.digits, k=2))
+    return f"{ms_tail}{worker_num % 100:02d}{rand}"
+
+
 def worker_scoped_dir(base_dir: str) -> str:
     """base_dir/<worker_id>/ — created if missing. Use for any output each
     worker writes independently (screenshots, downloads, temp files) so two

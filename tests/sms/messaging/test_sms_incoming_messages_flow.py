@@ -124,19 +124,20 @@ def test_tc004_table_columns(incoming_messages_page):
 
 @pytest.mark.regression
 def test_tc005_search_existing_value(incoming_messages_page):
-    """TC005: Searching an existing User Number returns a matching record.
+    """TC005: Searching an existing Sender ID returns a matching record.
     Self-verifying: reads a real value from the current listing immediately
     before searching (mirrors the Blocked Numbers page's TC005 fix for the
     same reason -- avoids depending on a hardcoded value that later data
     changes could invalidate)."""
     ensure_on_page(incoming_messages_page)
-    existing_values = incoming_messages_page.get_column_values("user_number")
+    existing_values = incoming_messages_page.get_column_values("sender_id")
     assert existing_values, "Need at least one existing record to search for"
     target = existing_values[0]
-    incoming_messages_page.search(target)
+    search_term = target[:4]
+    incoming_messages_page.search(search_term)
     assert incoming_messages_page.has_records()
-    values = incoming_messages_page.get_column_values("user_number")
-    assert any(target in v for v in values)
+    values = incoming_messages_page.get_column_values("sender_id")
+    assert any(search_term in v for v in values)
     incoming_messages_page.clear_search()
 
 
@@ -251,7 +252,8 @@ def test_tc016_user_number_values(incoming_messages_page):
     ensure_on_page(incoming_messages_page)
     values = incoming_messages_page.get_column_values("user_number")
     assert values, "User Number column should have values"
-    bad_values = [v for v in values if v and not v.isdigit()]
+    # App redacts numbers for privacy (e.g., "91857*****53")
+    bad_values = [v for v in values if v and not v.replace("*", "").replace("+", "").isdigit()]
     assert not bad_values, (
         f"User Number column has non-numeric value(s): {bad_values!r} "
         f"(full column: {values!r})")

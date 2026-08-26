@@ -3,27 +3,31 @@ fixtures/common_fixtures.py — cross-channel pytest fixtures, registered as a
 pytest plugin from the root conftest.py (`pytest_plugins = [...]`) so every
 test in the suite can request them without a per-file import.
 
-These are ADDITIVE: nothing here replaces the existing `module_logged_in_page`
-/ `logged_in_page` / `module_page` fixtures in conftest.py, which every
-existing test file already depends on and continues to work unchanged.
-New/migrated channel test files are encouraged to build on these instead of
-repeating patterns from scratch (see fixtures/sms_fixtures.py for an
-example, and channels/fixture_factory.py for the page-object-fixture
+`authenticated_storage_state` is the single source of truth for the
+suite's one-login-per-run authentication (see utils/auth_state.py) —
+conftest.py's `logged_in_page` / `module_logged_in_page` fixtures, which
+every existing test file already depends on, are built on top of it, so
+existing test files keep working with zero changes even though the
+underlying login mechanism changed (a fresh UI login per fixture call ->
+one shared login for the whole run). New/migrated channel test files can
+also use `authenticated_module_page` directly instead of repeating the
+module_logged_in_page pattern from scratch (see fixtures/sms_fixtures.py
+for an example, and channels/fixture_factory.py for the page-object-fixture
 helper).
 
 Safe for parallel execution: every fixture here either returns a
-worker-derived path/id (no cross-worker sharing) or plain immutable data —
-nothing here is global mutable state.
+worker-derived path/id, plain immutable data, or the shared authenticated
+storage_state path (itself made cross-process-safe by
+utils/auth_state.py's file lock) — nothing here is global mutable state.
 """
 import os
 
 import pytest
 
+from utils.auth_state import ensure_authenticated_state
 from utils.config import Config
 from utils.logger import TestLogger
 from utils.parallel import unique_suffix, worker_id, worker_scoped_dir
-
-AUTH_DIR = os.path.join(os.path.dirname(__file__), "..", "reports", ".auth")
 
 
 @pytest.fixture(scope="session")
@@ -56,52 +60,31 @@ def test_logger(request, correlation_id) -> TestLogger:
 
 
 @pytest.fixture(scope="session")
-def worker_storage_state_path() -> str:
-    """reports/.auth/<worker_id>.json — the on-disk Playwright storage_state
-    (cookies + localStorage) for this worker's session. Isolated per worker
-    by construction (the path itself is worker-scoped), so parallel workers
-    never share or race on the same auth file, but each worker only has to
-    perform the actual UI login once per run instead of once per test
-    module. Opt-in — see authenticated_storage_state below for the fixture
-    that actually performs/reuses the login."""
-    os.makedirs(AUTH_DIR, exist_ok=True)
-    return os.path.join(AUTH_DIR, f"{worker_id()}.json")
+def authenticated_storage_state(browser) -> str:
+    """The shared, single-login-per-run Playwright storage_state path (see
+    utils/auth_state.py). Session-scoped so each worker process calls this
+    at most once per fixture cache, but the ONE real login is enforced
+    across the whole run -- not per worker -- by ensure_authenticated_state's
+    cross-process file lock: whichever worker/test gets here first performs
+    the real UI login and every other caller (this worker's later tests, or
+    any other worker) reuses the same file. Returns the path, ready to pass
+    as `storage_state=` to `browser.new_context(...)`.
 
-
-@pytest.fixture(scope="session")
-def authenticated_storage_state(browser, worker_storage_state_path):
-    """Session-scoped (once per worker process): logs in via a throwaway
-    context/page exactly once per worker and saves storage_state to disk;
-    on a second call within the same worker (e.g. a second test module),
-    reuses the cached file instead of logging in again. Returns the path,
-    ready to pass as `storage_state=` to `browser.new_context(...)`.
-
-    This is the mechanism for requirement #8 (reuse auth via storageState
-    without letting parallel workers interfere with each other) — opt-in,
-    not wired into the existing module_logged_in_page fixture, so it does
-    not change behavior for any currently-passing test."""
-    if os.path.exists(worker_storage_state_path):
-        return worker_storage_state_path
-
-    from pages.common.login_page import LoginPage
-
-    context = browser.new_context()
-    page = context.new_page()
-    lp = LoginPage(page)
-    lp.navigate()
-    lp.login(Config.VALID_EMAIL, Config.VALID_PASSWORD)
-    lp.h.wait_for_url_contains("/", timeout=15000)
-    context.storage_state(path=worker_storage_state_path)
-    context.close()
-    return worker_storage_state_path
+    This is the fixture conftest.py's `logged_in_page` / `module_logged_in_page`
+    build on -- see conftest.py for how the majority of the suite consumes
+    it. Also usable directly by new/migrated test files via
+    `authenticated_module_page` below."""
+    return ensure_authenticated_state(browser)
 
 
 @pytest.fixture(scope="module")
 def authenticated_module_page(browser, authenticated_storage_state):
     """Like conftest.py's `module_page` -> `module_logged_in_page`, but
-    builds the context from the cached per-worker storage_state instead of
-    performing a fresh UI login for every module. Opt-in for new/migrated
-    channel test files; existing files keep using module_logged_in_page."""
+    builds the context directly from the shared, single-login storage_state
+    instead of going through conftest.py's fixtures. Equivalent alternative
+    for new/migrated channel test files; existing files keep using
+    module_logged_in_page (which now reuses the exact same storage_state
+    under the hood)."""
     from conftest import _viewport_context_args
     context = browser.new_context(
         storage_state=authenticated_storage_state,
@@ -115,6 +98,18 @@ def authenticated_module_page(browser, authenticated_storage_state):
 
 @pytest.fixture(scope="module")
 def module_download_dir() -> str:
-    """Worker-scoped download directory — reports/downloads/<worker_id>/ —
-    so two workers downloading a same-named export file can never collide."""
-    return worker_scoped_dir(Config.DOWNLOAD_DIR)
+    """utils.config.DOWNLOAD_DIR — reports/downloads/<worker_id>/ — so two
+    workers downloading a same-named export file can never collide. The
+    directory itself is already worker-scoped at the source (see
+    utils/config.py), so this fixture is now just a documented, explicit
+    way for a test to ask for it; every page object that imports
+    DOWNLOAD_DIR directly (`from utils.config import DOWNLOAD_DIR`) already
+    gets the same isolation without needing this fixture at all.
+
+    NOTE: this used to read `Config.DOWNLOAD_DIR` before DOWNLOAD_DIR was
+    also exposed as a Config class attribute (see utils/config.py) — it was
+    previously only a module-level constant, so this line would have
+    raised AttributeError the first time anything actually called this
+    fixture. Nothing did (0 consumers before this pass), which is how it
+    went unnoticed."""
+    return Config.DOWNLOAD_DIR

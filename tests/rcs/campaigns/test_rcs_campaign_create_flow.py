@@ -16,12 +16,11 @@ Run:
     pytest tests/rcs/campaigns/test_rcs_campaign_create_flow.py -v -m smoke
     pytest tests/rcs/campaigns/test_rcs_campaign_create_flow.py -v -m regression
 """
-import time
-
 import pytest
 
 from pages.rcs.rcs_campaign_create_page import RcsCampaignCreatePage
 from utils.config import Config
+from utils.parallel import short_unique_tag
 
 
 pytestmark = [pytest.mark.rcs, pytest.mark.campaign]
@@ -31,8 +30,11 @@ pytestmark = [pytest.mark.rcs, pytest.mark.campaign]
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _unique_name(prefix="RCS_CAMP"):
-    """Return a timestamped unique campaign name (< 30 chars)."""
-    return f"{prefix[:8]}_{int(time.time())}"
+    """Return a worker-safe unique campaign name (< 30 chars) -- see
+    utils/parallel.py's short_unique_tag() for why this isn't a bare
+    timestamp: two parallel workers (or two pytest invocations against the
+    same shared account) must never produce the same name."""
+    return f"{prefix[:8]}_{short_unique_tag()}"
 
 
 def _future_datetime():

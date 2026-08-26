@@ -23,8 +23,9 @@ Test Design Notes:
   - scope="module" — page object shared across all tests (same pattern as
     every other suite in this project).
   - autouse _reset_after_test fixture re-navigates after each test.
-  - Name-field unique suffix (int(time.time())) prevents duplicate-name
-    collisions on the live app (same pattern as test_email_template_flow.py).
+  - Name-field unique suffix (utils.parallel.short_unique_tag()) prevents
+    duplicate-name collisions on the live app, including across parallel
+    workers (same pattern as test_email_template_flow.py).
   - TC004 (Name field validation / required-field enforcement) is a
     DOCUMENTED SKIP: no validation-error markup was observed in the
     supplied DOM (errors:[] in the wire:snapshot at rest) — per this
@@ -40,19 +41,21 @@ Test Design Notes:
 Run:
     pytest tests/test_rcs_template_create_flow.py -v
 """
-import time
-
 import pytest
 
 from pages.rcs.rcs_template_create_page import RcsTemplateCreatePage
+from utils.parallel import short_unique_tag
 
 
 pytestmark = [pytest.mark.rcs, pytest.mark.template]
 
 def _unique_name(prefix="RCS_TPL"):
-    # Using time.time() instead of ms to keep total length <= 20 chars
-    # (e.g. RCS_TPL_1720000000 is 18 chars)
-    return f"{prefix[:4]}_{int(time.time())}"
+    # Worker-safe: short_unique_tag() combines ms resolution + a worker tag
+    # + a short random suffix (~10 chars) so two parallel workers can never
+    # produce the same name, while staying close to the original
+    # second-resolution-only tag's length to keep total length <= 20 chars
+    # (e.g. RCS_TPL_482913w2K7 is ~18 chars). See utils/parallel.py.
+    return f"{prefix[:4]}_{short_unique_tag()}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

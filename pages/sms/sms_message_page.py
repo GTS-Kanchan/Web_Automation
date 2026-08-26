@@ -495,50 +495,64 @@ class SMSMessagePage(BasePage):
 
     def open_column_panel(self):
         """
-        Open the column visibility dropdown. Idempotent — if the panel is already
-        open (aria-expanded='true') clicking again would close it, so we skip.
+        Open the column visibility dropdown.
 
         A real pytest run showed get_column_toggles() finding zero visible
         checkboxes right after this returned — aria-expanded said 'true'
         (or the click above ran) but the panel's own open transition
         hadn't actually rendered visible checkboxes yet, most likely
         following a preceding test's own rapid open/toggle/close sequence
-        on the same widget. Rather than trust aria-expanded alone, this
-        now polls for an actual visible checkbox, and if one still isn't
-        there after a few seconds, clicks the trigger once more as a last
-        resort (covers a genuinely stuck/desynced state, not just a slow
-        transition).
+        on the same widget. TC022/TC023 still hit this after the previous
+        fix (poll, then one last-resort click with a blind return) — that
+        version trusted aria-expanded to decide whether to click at all,
+        which is exactly what's unreliable here: a stray click elsewhere
+        (e.g. Alpine's own @click.outside handler) can visually close the
+        panel without the button's aria-expanded ever flipping back, so
+        "already open" was often false. It also returned unconditionally
+        after the last-resort click instead of confirming it actually
+        worked.
+
+        This version ignores aria-expanded entirely and drives off
+        observed checkbox visibility only: poll first (covers "already
+        open, just still rendering"); if that never appears, click and
+        poll again; if it *still* never appears (rare — genuinely stuck
+        toggle), click once more and do a final poll. Every branch ends
+        by having actually verified a visible checkbox, or having
+        genuinely exhausted retries, rather than assuming success.
         """
         btn = self.h.wait_for_element_clickable(self.BTN_COLUMNS, timeout=10000)
         btn.scroll_into_view_if_needed()
-        expanded = btn.get_attribute("aria-expanded") or ""
-        if expanded.lower() != "true":
-            btn.click()
-            self.page.wait_for_timeout(500)
 
         def _has_visible_toggle():
             try:
-                cbs = self.page.locator("xpath=//input[@type='checkbox'][not(ancestor::table)]")
-                for i in range(cbs.count()):
-                    if cbs.nth(i).locator("xpath=..").is_visible():
-                        return True
-                return False
+                return self.page.locator(
+                    "xpath=//input[@type='checkbox'][not(ancestor::table)]"
+                ).first.is_visible()
             except Exception:
                 return False
 
-        if _has_visible_toggle():
+        def _poll(attempts=6, interval_ms=300):
+            for _ in range(attempts):
+                if _has_visible_toggle():
+                    self.page.wait_for_timeout(500)
+                    return True
+                self.page.wait_for_timeout(interval_ms)
+            if _has_visible_toggle():
+                self.page.wait_for_timeout(500)
+                return True
+            return False
+
+        if _poll():
             return
 
-        for _ in range(6):
-            self.page.wait_for_timeout(300)
-            if _has_visible_toggle():
-                return
-
-        try:
-            btn.click()
+        for _ in range(2):
+            try:
+                btn.click()
+            except Exception:
+                pass
             self.page.wait_for_timeout(500)
-        except Exception:
-            pass
+            if _poll():
+                return
 
     # Labels that represent "toggle all" controls — skip these
     _SKIP_TOGGLE_LABELS = {
@@ -554,12 +568,16 @@ class SMSMessagePage(BasePage):
         """
         try:
             all_cbs = self.page.locator("xpath=//input[@type='checkbox'][not(ancestor::table)]")
+            try:
+                all_cbs.first.wait_for(state="attached", timeout=3000)
+            except Exception:
+                pass
             result = []
             seen = set()
             for i in range(all_cbs.count()):
                 cb = all_cbs.nth(i)
                 try:
-                    if not cb.locator("xpath=..").is_visible():
+                    if not cb.is_visible():
                         continue
                 except Exception:
                     continue
@@ -678,48 +696,14 @@ class SMSMessagePage(BasePage):
     # ── Pagination controls ───────────────────────────────────────────────────
 
     def click_next_page(self):
-        """Navigate to next page. Falls back to Livewire JS if button not found."""
-        clicked = False
-        try:
-            btn = self.h.wait_for_element_clickable(self.BTN_NEXT, timeout=5000)
-            btn.scroll_into_view_if_needed()
-            btn.click()
-            clicked = True
-            self.page.wait_for_timeout(3000)
-        except Exception:
-            pass
-        if not clicked:
-            try:
-                self.page.evaluate(
-                    "() => { window.Livewire && window.Livewire.all().forEach(function(c) {"
-                    "  try { c.call('nextPage', 'sms_messagesPage'); } catch(e) {}"
-                    "}); }"
-                )
-                self.page.wait_for_timeout(3000)
-            except Exception:
-                pass
+        self._js_click(self.NEXT_PAGE_BTN + " >> visible=true", timeout=10000)
+        self.page.wait_for_timeout(1500)
+
 
     def click_prev_page(self):
-        """Navigate to previous page. Falls back to Livewire JS if button not found."""
-        clicked = False
-        try:
-            btn = self.h.wait_for_element_clickable(self.BTN_PREV, timeout=5000)
-            btn.scroll_into_view_if_needed()
-            btn.click()
-            clicked = True
-            self.page.wait_for_timeout(3000)
-        except Exception:
-            pass
-        if not clicked:
-            try:
-                self.page.evaluate(
-                    "() => { window.Livewire && window.Livewire.all().forEach(function(c) {"
-                    "  try { c.call('previousPage', 'sms_messagesPage'); } catch(e) {}"
-                    "}); }"
-                )
-                self.page.wait_for_timeout(3000)
-            except Exception:
-                pass
+        self._js_click(self.PREV_PAGE_BTN + " >> visible=true", timeout=10000)
+        self.page.wait_for_timeout(1500)
+
 
     def get_page_info_text(self):
         try:

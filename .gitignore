@@ -3,3 +3,4 @@
 .env.*
 
 config/environments/*.env
+reports/

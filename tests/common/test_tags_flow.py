@@ -16,10 +16,10 @@ Run:
     pytest tests/test_tags_flow.py -v
 """
 
-import time
 import pytest
 
 from pages.common.tags_page import TagsPage
+from utils.parallel import short_unique_tag
 
 
 pytestmark = [pytest.mark.common]
@@ -55,7 +55,10 @@ def _reset_after_test(tags_page):
         pass
 
 
-RUN_TAG = str(int(time.time()))[-6:]
+# Worker-safe (see utils/parallel.py's short_unique_tag): two parallel
+# workers, or two separate pytest invocations against this same shared
+# account, must never both create "AutoQATag<tag>" at once.
+RUN_TAG = short_unique_tag()
 NEW_TAG_NAME = f"AutoQATag{RUN_TAG}"
 NEW_TAG_DESC = "Created by automation"
 
@@ -109,8 +112,8 @@ def test_tags_TC004_edit_tag(tags_page):
         pytest.skip("Edit control not found on first row")
     if not tags_page.is_modal_open():
         pytest.skip("Edit modal did not open — locator may need updating")
-    tags_page.fill_tag_name(f"AutoQATagEdited{str(int(time.time()))[-6:]}")
-    tags_page.fill_tag_description("Edited by automation " + str(int(time.time())))
+    tags_page.fill_tag_name(f"AutoQATagEdited{short_unique_tag()}")
+    tags_page.fill_tag_description("Edited by automation " + short_unique_tag())
     tags_page.click_modal_save()
     assert tags_page.is_success_toast_shown(), "Edit should show success toast"
     ensure_on_tags_page(tags_page)

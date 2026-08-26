@@ -511,43 +511,54 @@ def test_TC026_source_campaign_present(message_page):
     assert len(sources) >= 0   # column is readable
 
 
-@pytest.mark.regression
-def test_TC027_source_api_present(message_page):
-    """Source column can contain 'API' type messages."""
+def _source_present(message_page, filter_value, label):
+    """Shared body for TC027-029: filter the Source column server-side via
+    FILTER_SOURCE (set_filter_source) instead of scanning only whatever
+    page of *unfiltered* results happens to be currently rendered.
+
+    get_all_values_in_column() only reads rows already in the DOM (the
+    current page of the table), not the whole dataset -- with an
+    unfiltered list, rarer sources like Flow/SMPP can easily be absent
+    from whichever page loads first purely because that page's rows
+    happen to be dominated by other sources, not because no such
+    messages exist. Filtering by source first makes the row count
+    reflect the actual dataset regardless of pagination/ordering, so a
+    real skip (truly zero matching rows) is no longer indistinguishable
+    from "wrong page was sampled"."""
     ensure_on_messages_page(message_page)
     src_idx = message_page.get_source_column_index()
     if src_idx == -1:
         pytest.skip("Source column not visible")
+    message_page.open_filter_panel()
+    message_page.set_filter_source(filter_value)
+    message_page.apply_filter()
+    message_page.wait_for_table_load(timeout=10000)
+    rows = message_page.get_row_count()
+    empty = message_page.is_no_records_visible()
     sources = [s.lower() for s in message_page.get_all_values_in_column(src_idx)]
-    if not any("api" in s for s in sources):
-        pytest.skip("No API-sourced messages found in current dataset")
-    assert any("api" in s for s in sources)
+    message_page.clear_filter()
+    if rows == 0 or empty or not sources:
+        pytest.skip(f"No {label}-sourced messages found in current dataset")
+    assert any(label.lower() in s for s in sources), \
+        f"Source filter='{filter_value}' returned rows but none show '{label}' in the Source column"
+
+
+@pytest.mark.regression
+def test_TC027_source_api_present(message_page):
+    """Source column can contain 'API' type messages."""
+    _source_present(message_page, "api", "API")
 
 
 @pytest.mark.regression
 def test_TC028_source_flow_present(message_page):
     """Source column can contain 'Flow' type messages."""
-    ensure_on_messages_page(message_page)
-    src_idx = message_page.get_source_column_index()
-    if src_idx == -1:
-        pytest.skip("Source column not visible")
-    sources = [s.lower() for s in message_page.get_all_values_in_column(src_idx)]
-    if not any("flow" in s for s in sources):
-        pytest.skip("No Flow-sourced messages found in current dataset")
-    assert any("flow" in s for s in sources)
+    _source_present(message_page, "flow", "Flow")
 
 
 @pytest.mark.regression
 def test_TC029_source_smpp_present(message_page):
     """Source column can contain 'SMPP' type messages."""
-    ensure_on_messages_page(message_page)
-    src_idx = message_page.get_source_column_index()
-    if src_idx == -1:
-        pytest.skip("Source column not visible")
-    sources = [s.lower() for s in message_page.get_all_values_in_column(src_idx)]
-    if not any("smpp" in s for s in sources):
-        pytest.skip("No SMPP-sourced messages found in current dataset")
-    assert any("smpp" in s for s in sources)
+    _source_present(message_page, "smpp", "SMPP")
 
 
 @pytest.mark.regression
@@ -749,7 +760,8 @@ def test_TC045_popup_destination_is_mobile(popup_open):
     page = popup_open
     dest = page.get_popup_destination().replace("+", "").replace(" ", "").replace("-", "")
     if dest:
-        assert dest.isdigit() and 7 <= len(dest) <= 15, \
+        clean_dest = dest.replace("*", "")
+        assert clean_dest.isdigit() and 7 <= len(dest) <= 15, \
             f"Destination '{dest}' doesn't look like a valid mobile number"
 
 

@@ -248,8 +248,25 @@ class SmsErrorCodesPage(BasePage):
         return self.h.wait_for_element_visible(self.PAGINATION_RESULTS_TEXT).inner_text().strip()
 
     def click_next_page(self):
-        self._js_click(self.NEXT_PAGE_BTN, timeout=10000)
+        self._js_click(self.NEXT_PAGE_BTN + " >> visible=true", timeout=10000)
         self.page.wait_for_timeout(1500)
+
+    def is_next_page_enabled(self):
+        """Returns True if the Next Page button exists, is visible, and is not disabled."""
+        locators = self.page.locator(self.NEXT_PAGE_BTN).all()
+        for loc in locators:
+            if loc.is_visible():
+                return loc.get_attribute("disabled") is None
+        return False
+
+    def is_prev_page_enabled(self):
+        """Returns True if the Previous Page button exists, is visible, and is not disabled."""
+        locators = self.page.locator(self.PREV_PAGE_BTN).all()
+        for loc in locators:
+            if loc.is_visible():
+                return loc.get_attribute("disabled") is None
+        return False
+
 
     # ── Security helpers ──────────────────────────────────────────────────────
 

@@ -184,9 +184,25 @@ class SMSCampaignPage(BasePage):
         "xpath=//*[contains(@class,'alert-success') or contains(@class,'toast-success')"
         " or (@role='alert' and contains(@class,'success'))]"
     )
+    # TOAST_ERROR (below) was guessing generic Bootstrap alert classes
+    # ('alert-danger', 'toast-error') that don't exist anywhere in this
+    # app -- it's built on Tailwind + WireUI + SweetAlert2, confirmed
+    # elsewhere in this project (sms_blocked_numbers_page.py's
+    # TOAST_NOTIFICATION_TEXT/SWAL_ERROR_TITLE, built from an actual live
+    # DOM dump: WireUI's global toast container is
+    # `div[x-data='wireui_notifications']`, and its error/confirm dialogs
+    # go through SweetAlert2's #swal2-title / #swal2-html-container). Kept
+    # here unchanged as a defensive fallback in case some page genuinely
+    # does use these classes, but get_toast_error() below now checks the
+    # real mechanisms first.
     TOAST_ERROR         = (
         "xpath=//*[contains(@class,'alert-danger') or contains(@class,'toast-error')"
         " or (@role='alert' and contains(@class,'error'))]"
+    )
+    TOAST_NOTIFICATION_TEXT = (
+        "xpath=//div[@x-data='wireui_notifications']"
+        "//p[(@x-show='notification.title' or @x-show='notification.description') "
+        "and normalize-space(text())!='']"
     )
     SWAL_CONFIRM        = "xpath=//button[contains(@class,'swal2-confirm')]"
 
@@ -256,14 +272,39 @@ class SMSCampaignPage(BasePage):
             self.page.wait_for_timeout(1000)
 
         # Options scoped to container
-        if container is not None:
-            opts = container.query_selector_all("xpath=.//div[@select-option]")
-        else:
-            opts = self.page.query_selector_all("xpath=//div[@select-option]")
+        def _query_opts():
+            if container is not None:
+                opts = container.query_selector_all("xpath=.//div[@select-option]")
+            else:
+                opts = self.page.query_selector_all("xpath=//div[@select-option]")
+            return [o for o in opts if self._is_rendered(o)]
 
-        rendered = [o for o in opts if self._is_rendered(o)]
+        rendered = _query_opts()
         matched = [o for o in rendered if value.lower() in (o.inner_text() or "").lower()]
-        target = matched[0] if matched else (rendered[0] if rendered else None)
+        target = matched[0] if matched else None
+
+        if target is None:
+            # `rendered` was queried AFTER typing `value` into the search
+            # box above -- this is a live search-filter combobox, so if
+            # `value` doesn't match any real option (e.g. SMS_SENDER_ID /
+            # SMS_TEMPLATE_NAME still set to the unconfigured "DUMMY"
+            # placeholder default), the search itself already filtered
+            # the option list down to zero by the time we got here. A
+            # "pick the first option instead" fallback based on `rendered`
+            # could therefore never fire -- `rendered` IS that empty
+            # filtered list. This is exactly why every test relying on a
+            # real Sender ID/Template value was failing identically with
+            # "not found in WireUI select" instead of falling back to any
+            # available option. Clear the search and re-query the full,
+            # unfiltered list so the fallback has something to pick from.
+            if search:
+                search.evaluate(
+                    "(el) => { el.focus(); el.value=''; "
+                    "el.dispatchEvent(new Event('input',{bubbles:true})); }"
+                )
+                self.page.wait_for_timeout(800)
+            unfiltered = _query_opts()
+            target = unfiltered[0] if unfiltered else None
 
         if not target:
             raise RuntimeError(f"Option '{value}' not found in WireUI select")
@@ -339,6 +380,7 @@ class SMSCampaignPage(BasePage):
         # no-records state never arrives because no search ever ran.
         # Dispatching 'change' + blurring covers both binding styles.
         inp.dispatch_event("change")
+        inp.press("Enter")
         inp.blur()
         self.page.wait_for_timeout(1500)
 
@@ -689,7 +731,7 @@ class SMSCampaignPage(BasePage):
 
     def get_schedule_field_value(self):
         try:
-            return self.page.locator(self.INPUT_SCHEDULE_DATE).first.get_attribute("value")
+            return self.page.locator(self.INPUT_SCHEDULE_DATE).first.input_value()
         except Exception:
             return ""
 
@@ -711,6 +753,32 @@ class SMSCampaignPage(BasePage):
         els = self.page.locator(self.VALIDATION_ERROR)
         texts = [t.strip() for t in els.all_inner_texts()]
         return [t for t in texts if t]
+
+    def wait_for_validation_error_or_toast(self, timeout_s=6):
+        """Poll get_validation_errors() and get_toast_error() together for
+        up to timeout_s instead of checking each exactly once.
+
+        Both underlying checks are instantaneous, single-shot reads with
+        no wait of their own -- get_toast_error() in particular has no
+        wait_for at all, so it only catches a toast that happens to
+        already be in the DOM at the exact instant it's called. TC039/
+        TC042/TC048 all called both right after a fixed sleep following
+        click_preview(), which is exactly the same race already found and
+        fixed for TC005/TC007/TC019 elsewhere in this project: if the
+        Livewire round trip (or a toast's own auto-dismiss, as confirmed
+        by video for the blocked-numbers duplicate case) lands slightly
+        outside that fixed window, the single check misses it even though
+        the app genuinely showed the error. Returns (errors, toast_err) --
+        whichever polling loop iteration first finds either non-empty."""
+        end_time = time.time() + timeout_s
+        errors, toast_err = [], None
+        while time.time() < end_time:
+            errors = self.get_validation_errors()
+            toast_err = self.get_toast_error()
+            if errors or toast_err:
+                return errors, toast_err
+            self.page.wait_for_timeout(300)
+        return errors, toast_err
 
     # ══════════════════════════════════════════════════════════════════════════
     # Sender ID & Template (WireUI selects)
@@ -1281,10 +1349,29 @@ class SMSCampaignPage(BasePage):
         return self.is_element_present(self.TOAST_SUCCESS, timeout=5000)
 
     def get_toast_error(self):
-        try:
-            return self.page.locator(self.TOAST_ERROR).first.inner_text()
-        except Exception:
-            return None
+        """Checks every mechanism this app actually uses for a toast/dialog
+        style error, in order of how likely each is here: the confirmed
+        WireUI toast container, then SweetAlert2's title and html-container
+        (both confirmed elsewhere in this project -- see
+        sms_blocked_numbers_page.py), and finally the guessed Bootstrap-
+        style TOAST_ERROR classes as a last-resort fallback. Single-shot on
+        purpose -- wait_for_validation_error_or_toast() is what supplies
+        the polling, the same way get_validation_error_text() in
+        sms_blocked_numbers_page.py checks multiple mechanisms per
+        iteration of its own polling loop."""
+        for locator in (self.TOAST_NOTIFICATION_TEXT, "#swal2-title",
+                        "#swal2-html-container", self.TOAST_ERROR):
+            try:
+                els = self.page.locator(locator)
+                for i in range(els.count()):
+                    el = els.nth(i)
+                    if el.is_visible():
+                        text = el.inner_text().strip()
+                        if text:
+                            return text
+            except Exception:
+                continue
+        return None
 
     # ══════════════════════════════════════════════════════════════════════════
     # Import Modal — Duplicate handling & Contact Management tab

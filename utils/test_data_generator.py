@@ -8,6 +8,7 @@ Call generate_all() once at session start — files are written to tests/test_da
 """
 import os
 import csv
+import time
 
 try:
     import openpyxl
@@ -68,7 +69,14 @@ def _write_csv(filename, rows, headers=None):
         if headers:
             writer.writerow(headers)
         writer.writerows(rows)
-    os.replace(tmp_path, final_path)
+    for attempt in range(5):
+        try:
+            os.replace(tmp_path, final_path)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.1)
 
 
 def _write_xlsx(filename, rows, headers=None):
@@ -85,7 +93,14 @@ def _write_xlsx(filename, rows, headers=None):
     for row in rows:
         ws.append(list(row))
     wb.save(tmp_path)
-    os.replace(tmp_path, final_path)
+    for attempt in range(5):
+        try:
+            os.replace(tmp_path, final_path)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.1)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -277,44 +292,46 @@ def generate_all():
     # alternates DUMMY (transactional) / AM-SMS (promotional), content_type
     # is N (plain/GSM) or U (Unicode, e.g. the Hindi row below).
     _ENTITY_ID = "1701158046444780002'"
+    import random, string
+    ts = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     tmpl = {
         "valid": [
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": "1707161580895840027'",
-             "template_name": "Template1", "template_product": "transactional", "content_type": "N",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"170716158089584{ts}",
+             "template_name": f"Template1_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Dear Candidate, your password has been reset. Your new password is {{1}} - GTS",
              "template_sample": "Dear Candidate, your password has been reset. Your new password is 9876 - GTS"},
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": "1707161580898730014'",
-             "template_name": "Template2", "template_product": "promotional", "content_type": "U",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"170716158089873{ts}",
+             "template_name": f"Template2_{ts}", "template_product": "promotional", "content_type": "U",
              "template_content": "प्रिय उम्मीदवार, आपका पासवर्ड रीसेट कर दिया गया है। आपका नया पासवर्ड {{1}} है - GTS",
              "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": "8274981748172940",
-             "template_name": "Template3", "template_product": "transactional", "content_type": "N",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts}3",
+             "template_name": f"Template3_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Hello {name}, your OTP is {otp}", "template_sample": ""},
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": "12849821798217800",
-             "template_name": "Template4", "template_product": "promotional", "content_type": "N",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts}4",
+             "template_name": f"Template4_{ts}", "template_product": "promotional", "content_type": "N",
              "template_content": "Get 50% off today! Visit our store.", "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": "812349821491874",
-             "template_name": "Template5", "template_product": "transactional", "content_type": "N",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts}5",
+             "template_name": f"Template5_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Your OTP is {otp}. Valid for 10 minutes.", "template_sample": ""},
         ],
         "no_vars": [
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": "8274981748172940",
-             "template_name": "Template6", "template_product": "promotional", "content_type": "N",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts}6",
+             "template_name": f"Template6_{ts}", "template_product": "promotional", "content_type": "N",
              "template_content": "Hello {name}, your OTP is {otp}", "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": "12849821798217800",
-             "template_name": "Template7", "template_product": "transactional", "content_type": "N",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts}7",
+             "template_name": f"Template7_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Get 50% off today! Visit our store.", "template_sample": ""},
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": "812349821491874",
-             "template_name": "Template8", "template_product": "promotional", "content_type": "N",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts}8",
+             "template_name": f"Template8_{ts}", "template_product": "promotional", "content_type": "N",
              "template_content": "Your OTP is {otp}. Valid for 10 minutes.", "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": "8274981748172940",
-             "template_name": "Template9", "template_product": "transactional", "content_type": "N",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts}9",
+             "template_name": f"Template9_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Hello {name}, your OTP is {otp}", "template_sample": ""},
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": "12849821798217800",
-             "template_name": "Template10", "template_product": "promotional", "content_type": "N",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts}10",
+             "template_name": f"Template10_{ts}", "template_product": "promotional", "content_type": "N",
              "template_content": "Get 50% off today! Visit our store.", "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": "812349821491874",
-             "template_name": "Template11", "template_product": "transactional", "content_type": "N",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts}11",
+             "template_name": f"Template11_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Your OTP is {otp}. Valid for 10 minutes.", "template_sample": ""},
         ],
     }

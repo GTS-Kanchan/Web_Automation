@@ -7,12 +7,11 @@ shadowing pytest-playwright's reserved `page` fixture.
 Run:
     pytest tests/test_email_template_flow.py -v
 """
-import time
-
 import pytest
 
 from pages.email.email_template_page import EmailTemplatePage
 from pages.email.email_template_create_page import EmailTemplateCreatePage
+from utils.parallel import unique_suffix
 
 pytestmark = [pytest.mark.email, pytest.mark.template]
 
@@ -20,7 +19,10 @@ KNOWN_TEMPLATE_SEARCH_TERM = "Template with link"   # CONFIRMED present in suppl
 
 
 def _unique_name(prefix):
-    return f"{prefix}_{int(time.time() * 1000)}"
+    # Worker-safe (utils.parallel.unique_suffix: ms resolution + worker id
+    # + per-call counter + random suffix) instead of a bare ms timestamp,
+    # so two parallel workers can never produce the same template name.
+    return f"{prefix}_{unique_suffix()}"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -376,7 +378,7 @@ def test_create_TC006_save_template(template_page, create_page):
 def test_create_TC007_cancel_create_template(create_page):
     """Clicking Cancel discards the form and returns to the Templates list."""
     create_page.navigate()
-    create_page.fill_name("SHOULD_NOT_BE_SAVED_" + str(int(time.time())))
+    create_page.fill_name("SHOULD_NOT_BE_SAVED_" + unique_suffix())
     create_page.click_cancel()
     create_page.page.wait_for_timeout(500)
     assert create_page.is_list_page(), "Cancel should navigate back to the Templates list"
