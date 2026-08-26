@@ -36,7 +36,15 @@ import os
 import time
 import pytest
 
+from constants.sms_blocked_numbers_headers import EXPECTED_SMS_BLOCKED_NUMBERS_HEADERS
 from pages.sms.sms_blocked_numbers_page import SmsBlockedNumbersPage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 from utils.test_data_generator import DATA_DIR
 
 
@@ -180,6 +188,55 @@ def test_tc008_bulk_actions_dropdown(blocked_numbers_page):
     blocked_numbers_page.open_bulk_actions_dropdown()
     assert blocked_numbers_page.is_element_present(blocked_numbers_page.BULK_ACTION_EXPORT, timeout=5000)
     assert blocked_numbers_page.is_element_present(blocked_numbers_page.BULK_ACTION_DELETE, timeout=5000)
+
+
+# ── TC008B — Export CSV header validation ────────────────────────────────
+
+@pytest.mark.regression
+def test_tc008b_export_csv_headers(blocked_numbers_page):
+    """TC008B: Bulk Actions -> Export downloads a file whose header row
+    exactly matches the defined SMS Blocked Numbers export specification
+    (constants/sms_blocked_numbers_headers.py). Reuses the same generic
+    utils/file_validator.py used by every other SMS export's header
+    validation; only the expected-header list differs.
+    """
+    ensure_on_page(blocked_numbers_page)
+
+    print("[DOWNLOAD] SMS Blocked Numbers export requested")
+    result = blocked_numbers_page.export_csv(timeout_ms=30000)
+    assert result is not None, "Export should produce a downloaded file"
+    assert result["file_size"] > 0, "Downloaded export file should not be empty"
+    file_path = result["file_path"]
+    print("[DOWNLOAD] SMS Blocked Numbers export file downloaded")
+    print(f"[DOWNLOAD] File: {os.path.basename(file_path)}")
+
+    print("[VALIDATION] Reading file headers")
+    print(f"[VALIDATION] Expected headers: {len(EXPECTED_SMS_BLOCKED_NUMBERS_HEADERS)}")
+    print(f"[VALIDATION] Expected header names: {EXPECTED_SMS_BLOCKED_NUMBERS_HEADERS}")
+    try:
+        actual_headers = validate_file_headers(file_path, EXPECTED_SMS_BLOCKED_NUMBERS_HEADERS)
+    except FileNotDownloadedError as exc:
+        pytest.fail(f"[DOWNLOAD] {exc}")
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        print("[VALIDATION] SMS Blocked Numbers header validation: FAIL")
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"[VALIDATION] Actual headers: {len(exc.actual)}")
+        print(f"[VALIDATION] Actual header names: {exc.actual}")
+        print("[VALIDATION] SMS Blocked Numbers header validation: FAIL")
+        print(f"[VALIDATION] Missing headers: {exc.missing}")
+        print(f"[VALIDATION] Unexpected headers: {exc.unexpected}")
+        if exc.mismatches:
+            for position, expected_name, actual_name in exc.mismatches:
+                print(
+                    f"[VALIDATION] Position {position}: "
+                    f"expected '{expected_name}', actual '{actual_name}'"
+                )
+        pytest.fail(str(exc))
+
+    print(f"[VALIDATION] Actual headers: {len(actual_headers)}")
+    print(f"[VALIDATION] Actual header names: {actual_headers}")
+    print("[VALIDATION] SMS Blocked Numbers header validation: PASS")
 
 
 # ── TC009 — Columns dropdown ─────────────────────────────────────────────

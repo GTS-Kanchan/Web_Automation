@@ -20,10 +20,20 @@ used in every other suite in this project.
 Run:
     pytest tests/test_sms_campaign_report_flow.py -v
 """
+import os
 import time
+
 import pytest
 
+from constants.sms_campaign_report_headers import EXPECTED_SMS_CAMPAIGN_REPORT_HEADERS
 from pages.sms.sms_campaign_report_page import SmsCampaignReportPage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.report]
@@ -248,12 +258,51 @@ def test_campaign_report_TC14_columns_dropdown(campaign_report_page):
 
 @pytest.mark.regression
 def test_campaign_report_TC15_export_csv(campaign_report_page):
-    """TC_15: Export CSV button triggers a download (dispatches $wire.export())."""
+    """TC_15: Export CSV button triggers a download (dispatches $wire.export()),
+    and the downloaded file's header row exactly matches the defined SMS
+    Campaign Report export specification
+    (constants/sms_campaign_report_headers.py). Reuses the same generic
+    utils/file_validator.py used by every other SMS export's header
+    validation; only the expected-header list differs.
+    """
     ensure_on_report_page(campaign_report_page)
-    campaign_report_page.click_export_csv()
-    # No confirmed way to intercept the browser's native file download in
-    # this suite; asserting the click didn't error and the page is stable.
     assert campaign_report_page.is_report_page()
+
+    print("[DOWNLOAD] SMS Campaign Report export requested")
+    result = campaign_report_page.click_export_csv(timeout_ms=30000)
+    assert result is not None, "Export CSV should produce a downloaded file"
+    assert result["file_size"] > 0, "Downloaded export file should not be empty"
+    file_path = result["file_path"]
+    print("[DOWNLOAD] SMS Campaign Report export file downloaded")
+    print(f"[DOWNLOAD] File: {os.path.basename(file_path)}")
+
+    print("[VALIDATION] Reading file headers")
+    print(f"[VALIDATION] Expected headers: {len(EXPECTED_SMS_CAMPAIGN_REPORT_HEADERS)}")
+    print(f"[VALIDATION] Expected header names: {EXPECTED_SMS_CAMPAIGN_REPORT_HEADERS}")
+    try:
+        actual_headers = validate_file_headers(file_path, EXPECTED_SMS_CAMPAIGN_REPORT_HEADERS)
+    except FileNotDownloadedError as exc:
+        pytest.fail(f"[DOWNLOAD] {exc}")
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        print("[VALIDATION] SMS Campaign Report header validation: FAIL")
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"[VALIDATION] Actual headers: {len(exc.actual)}")
+        print(f"[VALIDATION] Actual header names: {exc.actual}")
+        print("[VALIDATION] SMS Campaign Report header validation: FAIL")
+        print(f"[VALIDATION] Missing headers: {exc.missing}")
+        print(f"[VALIDATION] Unexpected headers: {exc.unexpected}")
+        if exc.mismatches:
+            for position, expected_name, actual_name in exc.mismatches:
+                print(
+                    f"[VALIDATION] Position {position}: "
+                    f"expected '{expected_name}', actual '{actual_name}'"
+                )
+        pytest.fail(str(exc))
+
+    print(f"[VALIDATION] Actual headers: {len(actual_headers)}")
+    print(f"[VALIDATION] Actual header names: {actual_headers}")
+    print("[VALIDATION] SMS Campaign Report header validation: PASS")
 
 
 # ── TC_16-17 — Table Load / Columns Present ──────────────────────────────

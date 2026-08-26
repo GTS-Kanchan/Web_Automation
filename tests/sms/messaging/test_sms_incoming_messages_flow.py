@@ -38,9 +38,19 @@ from this suite per request.
 Run:
     pytest tests/test_sms_incoming_messages_flow.py -v
 """
+import os
+
 import pytest
 
+from constants.sms_incoming_messages_headers import EXPECTED_SMS_INCOMING_MESSAGES_HEADERS
 from pages.sms.sms_incoming_messages_page import SmsIncomingMessagesPage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.messaging]
@@ -275,11 +285,49 @@ def test_tc017_refresh_button(incoming_messages_page):
 
 @pytest.mark.regression
 def test_tc018_export_csv_button(incoming_messages_page):
-    """TC018: Clicking Export CSV downloads a CSV file successfully."""
+    """TC018: Clicking Export CSV downloads a CSV file successfully, and the
+    downloaded file's header row exactly matches the defined SMS Incoming
+    Messages export specification (constants/sms_incoming_messages_headers.py).
+    Header validation is appended to this existing export test rather than
+    duplicated into a new one, mirroring how the SMS Sender ID export's
+    header check was added onto its existing test_export_csv."""
     ensure_on_page(incoming_messages_page)
+
+    print("[DOWNLOAD] SMS Incoming Messages export requested")
     result = incoming_messages_page.export_csv(timeout=30000)
     assert result is not None, "Export CSV should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"
+    file_path = result["file_path"]
+    print("[DOWNLOAD] SMS Incoming Messages export file downloaded")
+    print(f"[DOWNLOAD] File: {os.path.basename(file_path)}")
+
+    print("[VALIDATION] Reading file headers")
+    print(f"[VALIDATION] Expected headers: {len(EXPECTED_SMS_INCOMING_MESSAGES_HEADERS)}")
+    print(f"[VALIDATION] Expected header names: {EXPECTED_SMS_INCOMING_MESSAGES_HEADERS}")
+    try:
+        actual_headers = validate_file_headers(file_path, EXPECTED_SMS_INCOMING_MESSAGES_HEADERS)
+    except FileNotDownloadedError as exc:
+        pytest.fail(f"[DOWNLOAD] {exc}")
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        print("[VALIDATION] SMS Incoming Messages header validation: FAIL")
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"[VALIDATION] Actual headers: {len(exc.actual)}")
+        print(f"[VALIDATION] Actual header names: {exc.actual}")
+        print("[VALIDATION] SMS Incoming Messages header validation: FAIL")
+        print(f"[VALIDATION] Missing headers: {exc.missing}")
+        print(f"[VALIDATION] Unexpected headers: {exc.unexpected}")
+        if exc.mismatches:
+            for position, expected_name, actual_name in exc.mismatches:
+                print(
+                    f"[VALIDATION] Position {position}: "
+                    f"expected '{expected_name}', actual '{actual_name}'"
+                )
+        pytest.fail(str(exc))
+
+    print(f"[VALIDATION] Actual headers: {len(actual_headers)}")
+    print(f"[VALIDATION] Actual header names: {actual_headers}")
+    print("[VALIDATION] SMS Incoming Messages header validation: PASS")
 
 
 @pytest.mark.regression

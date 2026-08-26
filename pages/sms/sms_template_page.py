@@ -1,6 +1,8 @@
 import os
+import time
 
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class SMSTemplatePage(BasePage):
@@ -42,9 +44,26 @@ class SMSTemplatePage(BasePage):
 
     # ── Bulk Actions / Export ──────────────────────────────────────────────────
     BTN_BULK_ACTIONS = "xpath=//button[contains(text(),'Bulk Action') or contains(text(),'Actions')]"
+    # Real DOM (confirmed from a live run):
+    #   <button wire:click="export" ...><span>Export to CSV</span></button>
+    #
+    # Two locator bugs stacked here across two fix attempts:
+    #   1. The label text lives in a nested <span>, not as a direct text
+    #      node of the <button> — xpath's text() only matches DIRECT
+    #      text-node children, so `contains(text(),'Export')` never matched.
+    #   2. `@wire:click='export'` is INVALID xpath here: the colon makes the
+    #      parser treat "wire" as a namespace prefix, which is undeclared in
+    #      this HTML document — the whole expression then fails to evaluate
+    #      (not just that clause), which silently killed the `contains(.,
+    #      'Export')` fallback union branches too. This exact gotcha is
+    #      already documented/worked around elsewhere in this codebase (see
+    #      pages/rcs/*_analytics_page.py's "@*[name()='wire:click']" pattern)
+    #      — use that form, never a bare @wire:click.
+    # contains(.,...) (descendant text, not just direct children) is kept as
+    # a fallback in case a future markup change drops the wire:click attribute.
     MENU_EXPORT = (
-        "xpath=//a[contains(text(),'Export')] | //li[contains(text(),'Export')] "
-        "| //button[contains(text(),'Export')]"
+        "xpath=//button[@*[name()='wire:click']='export'] "
+        "| //a[contains(.,'Export')] | //li[contains(.,'Export')] | //button[contains(.,'Export')]"
     )
 
     # ── Columns & Per Page ────────────────────────────────────────────────────
@@ -363,9 +382,10 @@ class SMSTemplatePage(BasePage):
 
     # ── Export ─────────────────────────────────────────────────────────────────
 
-    def export_to_xlsx(self):
+    def export_to_xlsx(self, timeout_ms=30000):
         """
-        Opens the Bulk Actions dropdown, then clicks Export.
+        Opens the Bulk Actions dropdown, then clicks Export, capturing the
+        resulting download.
 
         A real pytest run showed this timing out on MENU_EXPORT even
         though the BTN_BULK_ACTIONS click itself didn't raise.
@@ -374,10 +394,20 @@ class SMSTemplatePage(BasePage):
         per-row Actions menu instead of the real page-level Bulk Actions
         trigger, if one happens to appear earlier in the DOM — clicking
         the wrong one would open a menu that never contains 'Export'.
-        Rather than trust the first match blindly, this now tries each
+        Rather than trust the first match blindly, this tries each
         BTN_BULK_ACTIONS candidate in turn until one actually reveals an
         Export option, and raises a diagnostic error (what was tried, and
         how many candidates existed) if none of them do.
+
+        The Export click itself is wrapped in page.expect_download() —
+        same pattern as ContactsPage.export_to_xlsx() — so the file is
+        actually captured and saved to DOWNLOAD_DIR instead of being
+        clicked and discarded (the original version here only clicked and
+        slept, returning nothing usable to the caller).
+
+        Returns a dict: {"elapsed_s": float, "file_path": str,
+        "file_size": int} — file_path is the saved download (whatever
+        extension the app actually produces: .csv/.xlsx/.zip/etc.).
         """
         candidates = self.page.locator(self.BTN_BULK_ACTIONS)
         count = candidates.count()
@@ -395,9 +425,7 @@ class SMSTemplatePage(BasePage):
             except Exception:
                 tried.append("?")
             try:
-                self.h.wait_for_element_clickable(self.MENU_EXPORT, timeout=4000).click()
-                self.page.wait_for_timeout(3000)
-                return
+                export_el = self.h.wait_for_element_clickable(self.MENU_EXPORT, timeout=4000)
             except Exception:
                 # Wrong dropdown (or none opened) — close it and try the
                 # next BTN_BULK_ACTIONS candidate.
@@ -406,6 +434,15 @@ class SMSTemplatePage(BasePage):
                 except Exception:
                     pass
                 continue
+
+            start = time.time()
+            with self.page.expect_download(timeout=timeout_ms) as dl_info:
+                export_el.click()
+            download = dl_info.value
+            elapsed = round(time.time() - start, 2)
+            dest = os.path.join(DOWNLOAD_DIR, download.suggested_filename)
+            download.save_as(dest)
+            return {"elapsed_s": elapsed, "file_path": dest, "file_size": os.path.getsize(dest)}
 
         raise RuntimeError(
             f"export_to_xlsx: could not find a working 'Bulk Actions' "

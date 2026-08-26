@@ -23,6 +23,14 @@ import pytest
 
 from pages.sms.sms_sender_id_page import SMSSenderIDPage
 from utils.test_data_generator import generate_all, DATA_DIR as GEN_DATA_DIR
+from constants.sms_sender_id_headers import EXPECTED_SMS_SENDER_ID_HEADERS
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.sender_id]
@@ -835,7 +843,8 @@ class TestExportSenderIds:
 
     @pytest.mark.regression
     def test_export_csv(self, sender_id_page):
-        """Export CSV downloads the file and completes within the SLA."""
+        """Export CSV downloads the file, completes within the SLA, and its
+        headers exactly match the defined Sender ID export specification."""
         _to_list(sender_id_page)
         result = sender_id_page.export_csv()
         elapsed, file_size, file_path = result["elapsed_s"], result["file_size"], result["file_path"]
@@ -844,6 +853,51 @@ class TestExportSenderIds:
         assert elapsed <= EXPORT_MAX_SECONDS, \
             f"Export took {elapsed}s — exceeded SLA of {EXPORT_MAX_SECONDS}s"
         assert sender_id_page.get_toast_error() is None, "Export should complete without error toast"
+
+        # ── Header validation ────────────────────────────────────────────
+        # Reuses the same generic utils/file_validator.py used by the SMS
+        # Download Center and Template export tests — headers only, no row
+        # data/values/counts. export_csv() has a background-job fallback
+        # (file_path == "background_job_triggered.csv", not a real file on
+        # disk) for exports that queue instead of downloading directly —
+        # there's nothing to read headers from in that case, so it's a skip,
+        # not a failure.
+        if file_path == "background_job_triggered.csv":
+            pytest.skip(
+                "Export triggered a background job instead of a direct "
+                "download — no file available to validate headers against"
+            )
+
+        print("[DOWNLOAD] SMS Sender ID export file downloaded")
+        print(f"[DOWNLOAD] File: {os.path.basename(file_path)}")
+
+        print("[VALIDATION] Reading file headers")
+        print(f"[VALIDATION] Expected headers: {len(EXPECTED_SMS_SENDER_ID_HEADERS)}")
+        print(f"[VALIDATION] Expected header names: {EXPECTED_SMS_SENDER_ID_HEADERS}")
+        try:
+            actual_headers = validate_file_headers(file_path, EXPECTED_SMS_SENDER_ID_HEADERS)
+        except FileNotDownloadedError as exc:
+            pytest.fail(f"[DOWNLOAD] {exc}")
+        except (UnsupportedFileTypeError, EmptyFileError) as exc:
+            print("[VALIDATION] SMS Sender ID header validation: FAIL")
+            pytest.fail(str(exc))
+        except HeaderValidationError as exc:
+            print(f"[VALIDATION] Actual headers: {len(exc.actual)}")
+            print(f"[VALIDATION] Actual header names: {exc.actual}")
+            print("[VALIDATION] SMS Sender ID header validation: FAIL")
+            print(f"[VALIDATION] Missing headers: {exc.missing}")
+            print(f"[VALIDATION] Unexpected headers: {exc.unexpected}")
+            if exc.mismatches:
+                for position, expected_name, actual_name in exc.mismatches:
+                    print(
+                        f"[VALIDATION] Position {position}: "
+                        f"expected '{expected_name}', actual '{actual_name}'"
+                    )
+            pytest.fail(str(exc))
+
+        print(f"[VALIDATION] Actual headers: {len(actual_headers)}")
+        print(f"[VALIDATION] Actual header names: {actual_headers}")
+        print("[VALIDATION] SMS Sender ID header validation: PASS")
 
     # test_export_with_hidden_columns removed per explicit instruction —
     # a live pytest run showed export_csv() consistently raising

@@ -7,4 +7,7 @@ pytest-xdist==3.5.0
 python-dotenv==1.0.1
 Faker==24.11.0
 openpyxl==3.1.2
+# xlrd==2.0.1  # optional: only needed by utils/file_validator.py to read legacy
+#              # .xls downloads; .csv (stdlib csv) and .xlsx (openpyxl above)
+#              # need nothing extra. Uncomment if a real .xls export shows up.
 flask>=3.0.0

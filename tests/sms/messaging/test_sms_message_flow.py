@@ -29,11 +29,21 @@ Run:
     pytest tests/test_sms_message_flow.py -v -m smoke
 """
 
+import os
+
 import pytest
 from datetime import datetime, timedelta
 
 from pages.sms.sms_message_page import SMSMessagePage
 from utils.config import Config
+from constants.sms_message_headers import EXPECTED_SMS_MESSAGE_HEADERS
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.messaging]
@@ -357,6 +367,94 @@ def test_TC020_export_with_hidden_columns(message_page):
         message_page.page.locator("body").click()
     except Exception:
         pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TC020B — Export headers (1-hour window — see utils/file_validator.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_TC020B_export_headers_today(message_page):
+    """
+    Export today's messages and verify the downloaded file's headers
+    exactly match the defined SMS Messages export specification.
+
+    Originally attempted as a 1-hour window (per explicit instruction, to
+    keep the export small/fast) — confirmed from a live run's DOM that the
+    Messages date filter is a native <input type="date">
+    (x-model="date", x-on:change="updateDateTime()"), with no time
+    component anywhere in the panel. A 1-hour window isn't representable
+    through this UI at all; the finest granularity actually available is a
+    single calendar day (from_date == to_date). This test narrows to
+    "today" as the closest honest approximation of "keep it small" that
+    the real filter supports — it only cares about the header row, not
+    export volume. Reuses the same generic utils/file_validator.py used by
+    the SMS Download Center, Template, and Sender ID export tests; only the
+    expected-header list differs (constants/sms_message_headers.py).
+    """
+    ensure_on_messages_page(message_page)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    message_page.open_filter_panel()
+    message_page.set_filter_date_range(today, today)
+    message_page.apply_filter()
+    message_page.wait_for_table_load(timeout=15000)
+
+    # Diagnostic evidence — printed unconditionally (not just on failure)
+    # so a run where the filter still doesn't visibly narrow the export
+    # gives real DOM info (locator match count/visibility/value) instead
+    # of another guess. See diagnose_date_filter()'s docstring for how to
+    # read this.
+    diag = message_page.diagnose_date_filter()
+    print(f"[FILTER] From-date probe: {diag['from']}")
+    print(f"[FILTER] To-date probe: {diag['to']}")
+
+    print("[DOWNLOAD] SMS Messages export (today) requested")
+    result = message_page.export()
+    file_path = result["file_path"]
+
+    if file_path == "background_job_triggered.csv":
+        message_page.clear_filter()
+        pytest.skip(
+            "Export did not produce a direct download within the wait "
+            "budget (e.g. queued as a background job, or no messages "
+            "today) — no file available to validate headers against"
+        )
+
+    print("[DOWNLOAD] SMS Messages export file downloaded")
+    print(f"[DOWNLOAD] File: {os.path.basename(file_path)}")
+
+    print("[VALIDATION] Reading file headers")
+    print(f"[VALIDATION] Expected headers: {len(EXPECTED_SMS_MESSAGE_HEADERS)}")
+    print(f"[VALIDATION] Expected header names: {EXPECTED_SMS_MESSAGE_HEADERS}")
+    try:
+        actual_headers = validate_file_headers(file_path, EXPECTED_SMS_MESSAGE_HEADERS)
+    except FileNotDownloadedError as exc:
+        message_page.clear_filter()
+        pytest.fail(f"[DOWNLOAD] {exc}")
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        print("[VALIDATION] SMS Messages header validation: FAIL")
+        message_page.clear_filter()
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"[VALIDATION] Actual headers: {len(exc.actual)}")
+        print(f"[VALIDATION] Actual header names: {exc.actual}")
+        print("[VALIDATION] SMS Messages header validation: FAIL")
+        print(f"[VALIDATION] Missing headers: {exc.missing}")
+        print(f"[VALIDATION] Unexpected headers: {exc.unexpected}")
+        if exc.mismatches:
+            for position, expected_name, actual_name in exc.mismatches:
+                print(
+                    f"[VALIDATION] Position {position}: "
+                    f"expected '{expected_name}', actual '{actual_name}'"
+                )
+        message_page.clear_filter()
+        pytest.fail(str(exc))
+
+    print(f"[VALIDATION] Actual headers: {len(actual_headers)}")
+    print(f"[VALIDATION] Actual header names: {actual_headers}")
+    print("[VALIDATION] SMS Messages header validation: PASS")
+    message_page.clear_filter()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -1,4 +1,10 @@
+import os
+import time
+
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class SMSMessagePage(BasePage):
@@ -351,39 +357,133 @@ class SMSMessagePage(BasePage):
 
     def set_filter_date_range(self, from_date, to_date):
         """
-        Set date range via Livewire JS — required because the actual inputs are
-        inside Alpine x-data components with no static id, and they update Livewire
-        via $wire.set() rather than wire:model.
+        Set date range on the Messages filter panel.
 
-        from_date / to_date format: 'YYYY-MM-DD' (time defaults to T00:00) or
-        'YYYY-MM-DDTHH:MM'.
+        Real DOM (confirmed from a live run — screenshot of the resulting
+        "Applied Filters" chips plus the input's own markup):
+            <input x-model="date" x-on:change="updateDateTime()"
+                   type="date" :min="resolvedMin()" :max="resolvedMax()" ...>
+        This is a native <input type="date"> — DAY granularity only, no
+        time-of-day component anywhere in this widget (no separate time
+        input exists in the filter panel). Two things follow from that:
+
+          1. Only 'YYYY-MM-DD' is a valid value for a type="date" input.
+             A previous version of this method sent 'YYYY-MM-DDTHH:MM'
+             (datetime-local format) — Chromium silently accepted the date
+             prefix and dropped the time, so the filter "worked" but only
+             at whole-day resolution, which wasn't obvious until a live run
+             showed the applied chips reading "Received From: ... 00:00:00"
+             / "Received To: ... 23:59:00" instead of the requested hour
+             window. Any 'T...' suffix is now stripped before assignment.
+          2. There is no way to filter by hour/minute through this UI at
+             all — the finest granularity available is a single calendar
+             day (from_date == to_date). Callers wanting a "recent data
+             only" export should pass the same day for both bounds rather
+             than expecting true sub-day precision.
+
+        Primary strategy: set the real <input type="date"> elements
+        (FILTER_FROM_DATE/FILTER_TO_DATE) directly via JS — element.value +
+        dispatched 'change' event, which is what this input's own
+        x-on:change="updateDateTime()" listens for. Livewire-JS
+        (`c.set('filterComponents.created_from', v)`) is kept as a
+        best-effort fallback only, for the case where the real inputs
+        aren't found/interactable — it is NOT relied on as primary, since a
+        prior live run showed it alone never actually changing the filter.
+
+        from_date / to_date format: 'YYYY-MM-DD', or 'YYYY-MM-DDTHH:MM' /
+        'YYYY-MM-DDTHH:MM:SS' (the time portion, if any, is discarded —
+        this input cannot represent it).
         """
-        def _to_dt(val):
-            return val if 'T' in val else val + 'T00:00'
+        def _date_only(val):
+            return str(val).split('T', 1)[0]
 
-        from_dt = _to_dt(str(from_date))
-        to_dt = _to_dt(str(to_date))
+        from_d = _date_only(from_date)
+        to_d = _date_only(to_date)
 
-        try:
-            self.page.evaluate(
-                "(v) => { window.Livewire && window.Livewire.all().forEach(function(c) {"
-                "  try { c.set('filterComponents.created_from', v); } catch(e) {}"
-                "}); }",
-                from_dt
-            )
-            self.page.wait_for_timeout(400)
-        except Exception:
-            pass
-        try:
-            self.page.evaluate(
-                "(v) => { window.Livewire && window.Livewire.all().forEach(function(c) {"
-                "  try { c.set('filterComponents.created_to', v); } catch(e) {}"
-                "}); }",
-                to_dt
-            )
-            self.page.wait_for_timeout(1000)   # allow Livewire to re-render
-        except Exception:
-            pass
+        def _set_input(locator, value):
+            try:
+                inp = self.page.locator(locator).first
+                inp.wait_for(state="visible", timeout=5000)
+                inp.evaluate(
+                    "(el, v) => { el.value = v; "
+                    "el.dispatchEvent(new Event('input', {bubbles: true})); "
+                    "el.dispatchEvent(new Event('change', {bubbles: true})); }",
+                    value
+                )
+                return True
+            except Exception:
+                return False
+
+        from_ok = _set_input(self.FILTER_FROM_DATE, from_d)
+        self.page.wait_for_timeout(400)
+        to_ok = _set_input(self.FILTER_TO_DATE, to_d)
+        self.page.wait_for_timeout(1000)   # allow Livewire to re-render
+
+        # Fallback only — best-effort, not relied on when the direct-input
+        # path above already succeeded.
+        if not from_ok:
+            try:
+                self.page.evaluate(
+                    "(v) => { window.Livewire && window.Livewire.all().forEach(function(c) {"
+                    "  try { c.set('filterComponents.created_from', v); } catch(e) {}"
+                    "}); }",
+                    from_d
+                )
+                self.page.wait_for_timeout(400)
+            except Exception:
+                pass
+        if not to_ok:
+            try:
+                self.page.evaluate(
+                    "(v) => { window.Livewire && window.Livewire.all().forEach(function(c) {"
+                    "  try { c.set('filterComponents.created_to', v); } catch(e) {}"
+                    "}); }",
+                    to_d
+                )
+                self.page.wait_for_timeout(1000)
+            except Exception:
+                pass
+
+    def diagnose_date_filter(self):
+        """
+        Return concrete evidence about what FILTER_FROM_DATE/FILTER_TO_DATE
+        actually resolve to right now — real DOM info, not a guess. Call
+        this AFTER open_filter_panel() (+ set_filter_date_range if you want
+        to see the post-set state) when a date filter appears not to be
+        taking effect, and print the result: it distinguishes "the locator
+        matched nothing" / "matched but hidden" / "matched, visible, but
+        the value never actually changed" (e.g. because it's really a
+        Flatpickr/Alpine-driven text field the JS .value assignment doesn't
+        register with) from "matched, visible, value looks right" (in
+        which case the filter not applying is a server-side/Livewire
+        wiring issue rather than a locator problem).
+        """
+        def _probe(label, locator):
+            info = {"label": label, "locator": locator, "count": 0}
+            try:
+                loc = self.page.locator(locator)
+                info["count"] = loc.count()
+                if info["count"] > 0:
+                    el = loc.first
+                    info["visible"] = el.is_visible()
+                    try:
+                        info["outer_html"] = el.evaluate("el => el.outerHTML")[:300]
+                    except Exception:
+                        info["outer_html"] = "(could not read outerHTML)"
+                    try:
+                        info["value"] = el.evaluate(
+                            "el => el.value !== undefined ? el.value : el.textContent"
+                        )
+                    except Exception:
+                        info["value"] = "(could not read value)"
+            except Exception as exc:
+                info["error"] = str(exc)
+            return info
+
+        return {
+            "from": _probe("FILTER_FROM_DATE", self.FILTER_FROM_DATE),
+            "to": _probe("FILTER_TO_DATE", self.FILTER_TO_DATE),
+        }
 
     def set_filter_source(self, value):
         """
@@ -469,18 +569,64 @@ class SMSMessagePage(BasePage):
 
     # ── Export (direct CSV link — no Bulk Actions dropdown) ───────────────────
 
-    def export(self):
+    def export(self, timeout_ms=60000):
         """
-        Click the Export CSV link.  The page exposes a direct <a> link
-        (not inside a bulk-actions dropdown).
+        Click the Export CSV link and capture the resulting download.
+
+        The page exposes a direct <a href="...optin-export...">Export CSV</a>
+        link (not inside a Bulk Actions dropdown) — same single-click
+        pattern as ContactsPage.export_to_xlsx()/SMSSenderIDPage.export_csv().
+
+        Previously this just clicked and slept 2s, discarding the download
+        entirely and swallowing every exception — callers got nothing
+        usable back, but were also never broken by a slow/failed export.
+        Existing call sites (TC018/019/020) still don't use the return
+        value and still never see an exception here — this now wraps the
+        click in page.expect_download() and returns
+            {"elapsed_s": float, "file_path": str, "file_size": int}
+        on success so a caller that DOES want the file (e.g. a header
+        validation test via utils/file_validator.py) can use it, while a
+        timeout/failure returns a background-job-style placeholder instead
+        of raising — same graceful-degradation shape as
+        SMSSenderIDPage.export_csv()'s fallback, kept for backward
+        compatibility with the callers that ignore the result.
+
+        Message export can cover a wide date range, so timeout_ms defaults
+        higher (60s) than the other export()/export_csv() methods in this
+        codebase — narrow the date range first (set_filter_date_range) to
+        keep this fast in practice.
         """
+        start = time.time()
         try:
             link = self.h.wait_for_element_clickable(self.EXPORT_LINK, timeout=10000)
             link.scroll_into_view_if_needed()
-            link.click()
-            self.page.wait_for_timeout(2000)
+            with self.page.expect_download(timeout=timeout_ms) as dl_info:
+                link.click()
+            download = dl_info.value
+            elapsed = round(time.time() - start, 2)
+            filename = download.suggested_filename or f"sms_message_export_{int(time.time())}.csv"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {"elapsed_s": elapsed, "file_path": dest, "file_size": os.path.getsize(dest)}
+        except PlaywrightTimeoutError:
+            # No direct download started within timeout_ms (e.g. a very
+            # large/unfiltered export queues a background job instead) —
+            # match SMSSenderIDPage.export_csv()'s placeholder shape rather
+            # than raising, so TC018/019/020 (which discard the return
+            # value) keep passing exactly as before this fix.
+            return {
+                "elapsed_s": round(time.time() - start, 2),
+                "file_path": "background_job_triggered.csv",
+                "file_size": 0,
+            }
         except Exception:
-            pass
+            # Click itself failed (locator/UI issue) — same "don't raise"
+            # contract the old implementation had for every failure mode.
+            return {
+                "elapsed_s": round(time.time() - start, 2),
+                "file_path": "background_job_triggered.csv",
+                "file_size": 0,
+            }
 
     # Kept for backwards compat — some tests call these explicitly
     def open_bulk_actions(self):

@@ -23,6 +23,7 @@ Test Design Notes:
   - Delete confirmation uses SweetAlert2 (button.swal2-confirm / button.swal2-cancel).
   - TC_13 (cancel delete) runs before TC_12 (confirm delete) so the row still exists for TC_12.
 """
+import os
 import time
 from datetime import date, timedelta
 
@@ -30,6 +31,14 @@ import pytest
 
 from pages.sms.sms_download_center_page import SMSDownloadCenterPage
 from pages.sms.sms_report_create_page import SMSReportCreatePage
+from constants.sms_download_headers import EXPECTED_SMS_DOWNLOAD_HEADERS
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.report]
@@ -444,6 +453,47 @@ class TestTC10Download:
             "date range that may just mean raising the wait further, not a "
             "test bug."
         )
+
+        # ── Header validation ────────────────────────────────────────────
+        # Downloaded file mechanism above (Playwright's `download` event via
+        # SMSDownloadCenterPage._on_download / wait_for_download) is unchanged
+        # — this only adds a header check on the file it already produced.
+        # Phase 1 scope: header names/order only. Row data, values, data
+        # types, record counts, and business logic are NOT validated here.
+        print("[DOWNLOAD] SMS Download Center file downloaded")
+        print(f"[DOWNLOAD] File: {os.path.basename(downloaded)}")
+
+        print("[VALIDATION] Reading file headers")
+        print(f"[VALIDATION] Expected headers: {len(EXPECTED_SMS_DOWNLOAD_HEADERS)}")
+        print(f"[VALIDATION] Expected header names: {EXPECTED_SMS_DOWNLOAD_HEADERS}")
+        try:
+            actual_headers = validate_file_headers(downloaded, EXPECTED_SMS_DOWNLOAD_HEADERS)
+        except FileNotDownloadedError as exc:
+            # Differentiate a download failure from a header-validation
+            # failure — by this point `downloaded` is a path wait_for_download()
+            # already confirmed exists, so this only fires if the file
+            # vanished/was moved between then and now.
+            pytest.fail(f"[DOWNLOAD] {exc}")
+        except (UnsupportedFileTypeError, EmptyFileError) as exc:
+            print("[VALIDATION] SMS Download Center header validation: FAIL")
+            pytest.fail(str(exc))
+        except HeaderValidationError as exc:
+            print(f"[VALIDATION] Actual headers: {len(exc.actual)}")
+            print(f"[VALIDATION] Actual header names: {exc.actual}")
+            print("[VALIDATION] SMS Download Center header validation: FAIL")
+            print(f"[VALIDATION] Missing headers: {exc.missing}")
+            print(f"[VALIDATION] Unexpected headers: {exc.unexpected}")
+            if exc.mismatches:
+                for position, expected_name, actual_name in exc.mismatches:
+                    print(
+                        f"[VALIDATION] Position {position}: "
+                        f"expected '{expected_name}', actual '{actual_name}'"
+                    )
+            pytest.fail(str(exc))
+
+        print(f"[VALIDATION] Actual headers: {len(actual_headers)}")
+        print(f"[VALIDATION] Actual header names: {actual_headers}")
+        print("[VALIDATION] SMS Download Center header validation: PASS")
 
     def test_tc10_cleanup(self, download_center_page):
         reset_filters(download_center_page)

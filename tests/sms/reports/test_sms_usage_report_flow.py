@@ -33,9 +33,19 @@ the test's docstring for the exact confirming rows).
 Run:
     pytest tests/test_sms_usage_report_flow.py -v
 """
+import os
+
 import pytest
 
+from constants.sms_usage_report_headers import EXPECTED_SMS_USAGE_REPORT_HEADERS
 from pages.sms.sms_usage_report_page import SmsUsageReportPage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.report]
@@ -235,10 +245,51 @@ def test_usage_report_TC13_group_by_dropdown(usage_report_page):
 
 @pytest.mark.regression
 def test_usage_report_TC14_export_csv(usage_report_page):
-    """TC_14: Export CSV button triggers a download (dispatches $wire.export())."""
+    """TC_14: Export CSV button triggers a download (dispatches $wire.export()),
+    and the downloaded file's header row exactly matches the defined SMS
+    Usage Report export specification
+    (constants/sms_usage_report_headers.py). Reuses the same generic
+    utils/file_validator.py used by every other SMS export's header
+    validation; only the expected-header list differs.
+    """
     ensure_on_report_page(usage_report_page)
-    usage_report_page.click_export_csv()
     assert usage_report_page.is_report_page()
+
+    print("[DOWNLOAD] SMS Usage Report export requested")
+    result = usage_report_page.click_export_csv(timeout_ms=30000)
+    assert result is not None, "Export CSV should produce a downloaded file"
+    assert result["file_size"] > 0, "Downloaded export file should not be empty"
+    file_path = result["file_path"]
+    print("[DOWNLOAD] SMS Usage Report export file downloaded")
+    print(f"[DOWNLOAD] File: {os.path.basename(file_path)}")
+
+    print("[VALIDATION] Reading file headers")
+    print(f"[VALIDATION] Expected headers: {len(EXPECTED_SMS_USAGE_REPORT_HEADERS)}")
+    print(f"[VALIDATION] Expected header names: {EXPECTED_SMS_USAGE_REPORT_HEADERS}")
+    try:
+        actual_headers = validate_file_headers(file_path, EXPECTED_SMS_USAGE_REPORT_HEADERS)
+    except FileNotDownloadedError as exc:
+        pytest.fail(f"[DOWNLOAD] {exc}")
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        print("[VALIDATION] SMS Usage Report header validation: FAIL")
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"[VALIDATION] Actual headers: {len(exc.actual)}")
+        print(f"[VALIDATION] Actual header names: {exc.actual}")
+        print("[VALIDATION] SMS Usage Report header validation: FAIL")
+        print(f"[VALIDATION] Missing headers: {exc.missing}")
+        print(f"[VALIDATION] Unexpected headers: {exc.unexpected}")
+        if exc.mismatches:
+            for position, expected_name, actual_name in exc.mismatches:
+                print(
+                    f"[VALIDATION] Position {position}: "
+                    f"expected '{expected_name}', actual '{actual_name}'"
+                )
+        pytest.fail(str(exc))
+
+    print(f"[VALIDATION] Actual headers: {len(actual_headers)}")
+    print(f"[VALIDATION] Actual header names: {actual_headers}")
+    print("[VALIDATION] SMS Usage Report header validation: PASS")
 
 
 # ── TC_15 — Columns Dropdown ──────────────────────────────────────────────

@@ -413,7 +413,31 @@ cpaas_playwright_tests/
 │                                     #   packages, not yet filled in
 │
 ├── constants/
-│   └── tags.py                      # Marker-name constants, mirrors pytest.ini
+│   ├── tags.py                      # Marker-name constants, mirrors pytest.ini
+│   ├── sms_download_headers.py      # EXPECTED_SMS_DOWNLOAD_HEADERS — single source of
+│   │                                 #   truth for the SMS Download Center's 20 export headers
+│   ├── sms_template_headers.py      # EXPECTED_SMS_TEMPLATE_HEADERS — single source of
+│   │                                 #   truth for the SMS Template list's 8 export headers
+│   ├── sms_sender_id_headers.py     # EXPECTED_SMS_SENDER_ID_HEADERS — single source of
+│   │                                 #   truth for the SMS Sender ID list's 9 export headers
+│   ├── sms_message_headers.py       # EXPECTED_SMS_MESSAGE_HEADERS — single source of
+│   │                                 #   truth for the SMS Messages list's 18 export headers
+│   ├── sms_incoming_messages_headers.py  # EXPECTED_SMS_INCOMING_MESSAGES_HEADERS — single
+│   │                                 #   source of truth for the SMS Incoming Messages
+│   │                                 #   export's 7 headers
+│   ├── sms_blocked_numbers_headers.py    # EXPECTED_SMS_BLOCKED_NUMBERS_HEADERS — single
+│   │                                 #   source of truth for the SMS Blocked Numbers
+│   │                                 #   export's 5 headers
+│   ├── sms_usage_report_headers.py       # EXPECTED_SMS_USAGE_REPORT_HEADERS — single
+│   │                                 #   source of truth for the SMS Usage Report
+│   │                                 #   export's 18 headers
+│   ├── sms_campaign_report_headers.py    # EXPECTED_SMS_CAMPAIGN_REPORT_HEADERS — 20 headers
+│   ├── sms_status_report_headers.py      # EXPECTED_SMS_STATUS_REPORT_HEADERS — 7 headers
+│   ├── sms_error_code_report_headers.py  # EXPECTED_SMS_ERROR_CODE_REPORT_HEADERS — 7 headers
+│   ├── sms_sender_report_headers.py      # EXPECTED_SMS_SENDER_REPORT_HEADERS — 19 headers
+│   ├── sms_template_report_headers.py    # EXPECTED_SMS_TEMPLATE_REPORT_HEADERS — 20 headers
+│   ├── sms_country_report_headers.py     # EXPECTED_SMS_COUNTRY_REPORT_HEADERS — 20 headers
+│   └── sms_latency_report_headers.py     # EXPECTED_SMS_LATENCY_REPORT_HEADERS — 12 headers
 │
 ├── pages/                           # 62 page objects (POM), channel-based layout
 │   ├── common/                      # 8 files — base_page.py (shared BasePage superclass),
@@ -443,6 +467,7 @@ cpaas_playwright_tests/
 │   ├── test_data/                   # Generated test-data files (xlsx/csv), written with
 │   │                                 #   an atomic write-to-temp-then-replace pattern so
 │   │                                 #   parallel workers never collide on the same file
+│   ├── unit/                        # Browser-free unit tests, e.g. test_file_validator.py
 │   └── test_temp_dump.py / test_temp_dump_modal.py
 │                                     #   2 pre-existing scratch/debug files, unrelated to
 │                                     #   the channel migration
@@ -453,12 +478,221 @@ cpaas_playwright_tests/
 │   ├── error_monitor.py             # Platform error detection (500s, Whoops, Livewire errors, etc.)
 │   ├── parallel.py                  # unique_name() — worker-safe, collision-resistant test-data names
 │   ├── logger.py                    # Structured/correlation-id-aware logging
+│   ├── file_validator.py            # validate_file_headers() — downloaded-file header
+│   │                                 #   validation (CSV/xlsx/xls), no Playwright/pytest dependency
 │   └── test_data_generator.py       # Generates the files under tests/test_data/
 │
 ├── scripts/
 │   └── run_tests.py                 # PLAYWRIGHT_WORKERS/ENV -> real pytest -n/--dist flags (see below)
 │
 └── reports/                         # HTML report + screenshots after each run
+```
+
+---
+
+## Downloaded File Header Validation
+
+The SMS Download Center test (`tests/sms/reports/test_sms_download_center_flow.py`,
+`TestTC10Download::test_tc10_download_initiates`) validates that a
+downloaded report's file headers exactly match a predefined specification —
+in addition to (and using the same download mechanism as) the existing
+"did a file download at all" check.
+
+```
+Download
+   ↓
+Read CSV/Excel
+   ↓
+Extract headers
+   ↓
+Exact comparison
+   ↓
+PASS / FAIL
+```
+
+Scope (phase 1): **headers only**. Row data, values, data types, record
+counts, and business logic are NOT validated by this check. Only SMS is
+covered — RCS/WhatsApp/Email are not implemented yet.
+
+**Single source of truth for expected headers:**
+[`constants/sms_download_headers.py`](constants/sms_download_headers.py) —
+`EXPECTED_SMS_DOWNLOAD_HEADERS`, the 20 SMS Download Center column names in
+the exact order the export must contain them.
+
+**Validator:** [`utils/file_validator.py`](utils/file_validator.py) —
+`validate_file_headers(file_path, expected_headers)`. Reads only the
+header row (via the stdlib `csv` module for `.csv`, `openpyxl` for
+`.xlsx`, `xlrd` for legacy `.xls`) and compares it against
+`expected_headers` name-for-name and position-for-position — capitalization
+and spacing are part of the comparison and are never normalized. The
+function has no Playwright/pytest dependency, so it can be unit-tested
+without a browser: see `tests/unit/test_file_validator.py`
+(`pytest tests/unit/test_file_validator.py -v`).
+
+The live SMS Download Center export is a **`.zip`** wrapping the actual
+`.csv`/`.xlsx`/`.xls` report (confirmed from a real failing run —
+`report.zip` containing an `.xlsx`, not a bare `.xlsx`). `validate_file_headers`
+handles this transparently: a `.zip` is unzipped in memory/temp, the one
+report entry inside is located and read, and everything downstream
+(comparison, error messages) behaves exactly as if that file had been
+downloaded directly. A `.zip` with no `.csv`/`.xlsx`/`.xls` entry inside is
+still reported as `UnsupportedFileTypeError`, distinct from a header
+mismatch.
+
+**Also validated: SMS Template list export.** The same generic validator
+covers a second real export — `tests/sms/templates/test_sms_template.py`,
+`TestExportTemplateList::test_export_template_list_headers` — using
+[`constants/sms_template_headers.py`](constants/sms_template_headers.py)'s
+`EXPECTED_SMS_TEMPLATE_HEADERS` (8 columns: DLT Template Id, Template Name,
+Sender Id, Content, Status, Product, Short URL, Created At). This also
+fixed `SMSTemplatePage.export_to_xlsx()`, which previously clicked the
+Export option and discarded the download — it now captures it via
+`page.expect_download()` (mirroring `ContactsPage.export_to_xlsx()`) and
+returns the saved file path. Its `MENU_EXPORT` locator also needed a real
+fix: `@wire:click='export'` is invalid XPath (the colon is parsed as an
+undeclared namespace prefix, which silently fails the *entire* expression,
+including the `contains(.,'Export')` fallback in the same union) — the
+correct form, already used elsewhere in this codebase
+(`pages/rcs/*_analytics_page.py`), is `@*[name()='wire:click']='export'`.
+
+**Also validated: SMS Sender ID export.** A third real export —
+`tests/sms/sender_id/test_sms_sender_id.py`,
+`TestExportSenderIds::test_export_csv` (this test already existed for the
+download-SLA check; header validation was added to it rather than
+duplicating a new test) — using
+[`constants/sms_sender_id_headers.py`](constants/sms_sender_id_headers.py)'s
+`EXPECTED_SMS_SENDER_ID_HEADERS` (9 columns: Sender Id, Department, User,
+Status, Type, Entity Id, Country code, Created At, Updated At).
+`SMSSenderIDPage.export_csv()` has a background-job fallback path (the
+export queues instead of downloading directly) — when that path is taken
+there's no file to validate, so the test skips rather than fails.
+
+**Also validated: SMS Messages export.** A fourth real export —
+`tests/sms/messaging/test_sms_message_flow.py`,
+`test_TC020B_export_headers_today` — using
+[`constants/sms_message_headers.py`](constants/sms_message_headers.py)'s
+`EXPECTED_SMS_MESSAGE_HEADERS` (18 columns: Mobile Number, Country Code,
+Sender ID, DLT Template ID, Entity ID, Status, Correlation ID, Message Id,
+SMS Count, Source, Sub-Source, Type, Product, Received At, Submitted At,
+DLR Received At, Message Content, Status Description). The message log can
+be large, so this test narrows the date-range filter before exporting — it
+only cares about the header row, not export volume.
+
+This was originally attempted as a 1-hour window, but the real Messages
+date filter turned out to be a native `<input type="date">`
+(`x-model="date"`, `x-on:change="updateDateTime()"`) with no time-of-day
+component anywhere in the DOM — confirmed both from the live widget's
+markup and from the app's own "Applied Filters" chips, which always show
+`00:00:00`–`23:59:00` day boundaries no matter what value is assigned.
+Assigning a full datetime string gets silently truncated by the browser to
+just the date portion. The finest granularity actually available through
+this UI is a single calendar day (`from_date == to_date`), so the test
+narrows to "today" as the closest honest equivalent of "keep the export
+small" that the real filter supports. `SMSMessagePage.set_filter_date_range()`
+sets the real `<input>` elements directly (`.value` + dispatched
+`input`/`change` events, mirroring `SMSReportCreatePage._set_date_input()`)
+rather than only reflecting into Livewire component state, and strips any
+time suffix before assignment. A `diagnose_date_filter()` helper prints the
+from/to input's match count, visibility, value, and outerHTML snippet
+unconditionally, for evidence if the applied filter ever needs re-checking
+against a UI change.
+
+This also fixed `SMSMessagePage.export()`, which previously clicked the
+Export link and discarded the download entirely (2s sleep, no capture) —
+it now wraps the click in `page.expect_download()` and returns
+`{"elapsed_s", "file_path", "file_size"}` on success. To avoid breaking the
+three existing callers (TC018/019/020, which discard the return value and
+never expected an exception), a timeout or click failure now returns the
+same `"background_job_triggered.csv"` placeholder shape
+`SMSSenderIDPage.export_csv()` already uses, instead of raising.
+
+**Also validated: SMS Incoming Messages export.** A fifth real export —
+`tests/sms/messaging/test_sms_incoming_messages_flow.py`,
+`test_tc018_export_csv_button` (this test already existed to confirm the
+Export CSV button produces a file; header validation was added to it
+rather than duplicating a new test, the same approach used for the Sender
+ID export) — using
+[`constants/sms_incoming_messages_headers.py`](constants/sms_incoming_messages_headers.py)'s
+`EXPECTED_SMS_INCOMING_MESSAGES_HEADERS` (7 columns: Campaign Name, Sender
+ID, Country Code, User Number, Message ID, Status, Received At). Note the
+exported file's columns are a superset of the 6 columns shown in the
+on-screen table (Action, Campaign Name, Sender ID, Country Code, User
+Number, Received At) — the export additionally includes Message ID and
+Status. `SmsIncomingMessagesPage.export_csv()` already correctly captured
+the download via `page.expect_download()`, so no page-object fix was
+needed here — only the header constant and the validation call.
+
+**Also validated: SMS Blocked Numbers export.** A sixth real export —
+`tests/sms/opt_out/test_sms_blocked_numbers_flow.py`,
+`test_tc008b_export_csv_headers` (new test, added alongside the existing
+`test_tc008_bulk_actions_dropdown` which only checked that the Export
+option is present in the Bulk Actions dropdown, not that it produces a
+file) — using
+[`constants/sms_blocked_numbers_headers.py`](constants/sms_blocked_numbers_headers.py)'s
+`EXPECTED_SMS_BLOCKED_NUMBERS_HEADERS` (5 columns: ID, Phone Number,
+Department, User, Created At). `SmsBlockedNumbersPage.export_csv()` is
+new — it opens Bulk Actions and clicks Export, capturing the download via
+`page.expect_download()` without selecting any row checkboxes first,
+mirroring the confirmed-working Bulk Actions → Export pattern already
+proven on the Template/Sender ID pages (the export acts on the current
+filtered listing, not on an explicit row selection). Returns `None` on
+failure rather than raising, the same never-raises contract used by
+`SmsIncomingMessagesPage.export_csv()`.
+
+**Also validated: SMS Usage Report export.** A seventh real export —
+`tests/sms/reports/test_sms_usage_report_flow.py`,
+`test_usage_report_TC14_export_csv` (this test already existed to confirm
+the Export CSV button triggers a download; header validation was added to
+it rather than duplicating a new test) — using
+[`constants/sms_usage_report_headers.py`](constants/sms_usage_report_headers.py)'s
+`EXPECTED_SMS_USAGE_REPORT_HEADERS` (18 columns: Duration, Total/Submitted/
+Delivered/Failed/Rejected/DLR Awaited Count, the same six as Units, Total
+Charges, Delivery Charges, Surcharge, Delivery Surcharge, Delivery %).
+This also fixed `SmsUsageReportPage.click_export_csv()`, which previously
+clicked the Export CSV button and slept 1.5s without capturing anything —
+it now wraps the click in `page.expect_download()` and returns
+`{"elapsed_s", "file_path", "file_size"}` on success, or `None` on
+failure, preserving the existing caller's behavior since it discarded the
+return value and never expected an exception.
+
+**Also validated: the six other SMS analytics report exports** — Campaign,
+Status, Error Code, Sender, Template, and Latency Report all share the
+same rappasoft/livewire-tables `EXPORT_CSV_BUTTON` / `click_export_csv()`
+convention as Usage Report (same broken "click and sleep, no capture"
+implementation, same fix applied identically to each), so all six were
+fixed and validated together as one batch:
+
+| Report | Test (existing, extended) | Constants file | Columns |
+| --- | --- | --- | --- |
+| Campaign | `tests/sms/reports/test_sms_campaign_report_flow.py::test_campaign_report_TC15_export_csv` | [`sms_campaign_report_headers.py`](constants/sms_campaign_report_headers.py) | 20 |
+| Status | `tests/sms/reports/test_sms_status_report_flow.py::test_tc15_export_csv` | [`sms_status_report_headers.py`](constants/sms_status_report_headers.py) | 7 |
+| Error Code | `tests/sms/reports/test_sms_error_code_report_flow.py::test_tc13_export_csv_functionality` | [`sms_error_code_report_headers.py`](constants/sms_error_code_report_headers.py) | 7 |
+| Sender | `tests/sms/reports/test_sms_sender_report_flow.py::test_sender_report_TC13_export_csv` | [`sms_sender_report_headers.py`](constants/sms_sender_report_headers.py) | 19 |
+| Template | `tests/sms/templates/test_sms_template_report_flow.py::test_template_report_TC13_export_csv` | [`sms_template_report_headers.py`](constants/sms_template_report_headers.py) | 20 |
+| Latency | `tests/sms/reports/test_sms_latency_report_flow.py::test_tc12_export_latency_report_csv` | [`sms_latency_report_headers.py`](constants/sms_latency_report_headers.py) | 12 |
+
+Notes: Error Code Report's `ERROR CODE`/`ERROR DESCRIPTION` headers are
+genuinely all-caps in the real export (preserved verbatim, unlike every
+other header in this project). Template Report's constants file is
+distinct from `sms_template_headers.py` (the Template *list's* export,
+already validated separately) — same feature name, different screens.
+
+**Also validated: SMS Country Report export** —
+`tests/sms/reports/test_sms_country_report_flow.py::test_country_report_TC15_export_csv`,
+using
+[`constants/sms_country_report_headers.py`](constants/sms_country_report_headers.py)'s
+`EXPECTED_SMS_COUNTRY_REPORT_HEADERS` (20 columns: Duration, Country Code,
+Product, plus the same Count/Units/Charges breakdown as Sender/Campaign
+Report). Same `click_export_csv()` fix applied. Note: the first header
+list given for this report was identical to Template Report's (Template
+Name/DLT Template ID) — confirmed as a copy-paste mistake and corrected to
+the real Country Code-based breakdown before implementing.
+
+The validator is deliberately generic — the same call works for any future
+channel/feature by swapping the expected-header list:
+```python
+validate_file_headers(rcs_file, EXPECTED_RCS_HEADERS)      # not implemented yet
+validate_file_headers(email_file, EXPECTED_EMAIL_HEADERS)  # not implemented yet
 ```
 
 ---

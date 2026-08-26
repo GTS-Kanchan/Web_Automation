@@ -25,6 +25,14 @@ import pytest
 from pages.sms.sms_template_page import SMSTemplatePage
 from utils.config import Config
 from utils.test_data_generator import DATA_DIR, generate_all
+from constants.sms_template_headers import EXPECTED_SMS_TEMPLATE_HEADERS
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.template]
@@ -701,6 +709,68 @@ class TestEditTemplate:
         template_page.click_form_cancel()
         template_page.page.wait_for_timeout(1000)
         assert template_page.is_template_list_page(), "Cancel should return to Template list"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PART 8B — Export Template List (headers only — see utils/file_validator.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestExportTemplateList:
+    """
+    Validates that exporting the Template list produces a file whose
+    headers exactly match the defined SMS Template export specification.
+
+    Reuses the same download mechanism as SMSTemplatePage.export_to_xlsx()
+    (page.expect_download(), mirroring ContactsPage.export_to_xlsx()) and
+    the same generic utils/file_validator.py used by the SMS Download
+    Center test — only the expected-header list differs
+    (constants/sms_template_headers.py). Scope is headers only: row data,
+    template content, counts, etc. are NOT validated here.
+    """
+
+    @pytest.mark.regression
+    def test_export_template_list_headers(self, template_page):
+        _to_list(template_page)
+
+        print("[DOWNLOAD] SMS Template list export requested")
+        try:
+            result = template_page.export_to_xlsx()
+        except RuntimeError as exc:
+            pytest.skip(f"Export control not available — {exc}")
+        except Exception as exc:
+            pytest.fail(f"[DOWNLOAD] Template list export did not complete: {exc}")
+
+        downloaded = result["file_path"]
+        print("[DOWNLOAD] SMS Template list file downloaded")
+        print(f"[DOWNLOAD] File: {os.path.basename(downloaded)}")
+
+        print("[VALIDATION] Reading file headers")
+        print(f"[VALIDATION] Expected headers: {len(EXPECTED_SMS_TEMPLATE_HEADERS)}")
+        print(f"[VALIDATION] Expected header names: {EXPECTED_SMS_TEMPLATE_HEADERS}")
+        try:
+            actual_headers = validate_file_headers(downloaded, EXPECTED_SMS_TEMPLATE_HEADERS)
+        except FileNotDownloadedError as exc:
+            pytest.fail(f"[DOWNLOAD] {exc}")
+        except (UnsupportedFileTypeError, EmptyFileError) as exc:
+            print("[VALIDATION] SMS Template header validation: FAIL")
+            pytest.fail(str(exc))
+        except HeaderValidationError as exc:
+            print(f"[VALIDATION] Actual headers: {len(exc.actual)}")
+            print(f"[VALIDATION] Actual header names: {exc.actual}")
+            print("[VALIDATION] SMS Template header validation: FAIL")
+            print(f"[VALIDATION] Missing headers: {exc.missing}")
+            print(f"[VALIDATION] Unexpected headers: {exc.unexpected}")
+            if exc.mismatches:
+                for position, expected_name, actual_name in exc.mismatches:
+                    print(
+                        f"[VALIDATION] Position {position}: "
+                        f"expected '{expected_name}', actual '{actual_name}'"
+                    )
+            pytest.fail(str(exc))
+
+        print(f"[VALIDATION] Actual headers: {len(actual_headers)}")
+        print(f"[VALIDATION] Actual header names: {actual_headers}")
+        print("[VALIDATION] SMS Template header validation: PASS")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
