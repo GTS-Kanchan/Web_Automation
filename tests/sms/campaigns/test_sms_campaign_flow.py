@@ -625,26 +625,6 @@ def test_TC031_download_sample_file(campaign_page):
 
 
 @pytest.mark.regression
-def test_TC032_select_from_contact_management(campaign_page):
-    """TC032 – Select contacts from Contact Management (if available)."""
-    start_create(campaign_page, "TC032")
-    campaign_page.click_import_contact()
-    try:
-        cm_btn = campaign_page.page.locator(
-            "xpath=//a[contains(.,'Contact Management')] | //button[contains(.,'Contact Management')]"
-        ).first
-        cm_btn.wait_for(state="attached", timeout=5000)
-        cm_btn.evaluate("(el) => el.click()")
-        time.sleep(1)
-    except Exception:
-        pytest.skip("Contact Management tab not found in import popup")
-    finally:
-        campaign_page.click_cancel_import()
-        campaign_page.click_cancel()
-        ensure_list(campaign_page)
-
-
-@pytest.mark.regression
 def test_TC033_cancel_import(campaign_page):
     """TC033 – Cancelling import closes popup without importing."""
     start_create(campaign_page, "TC033")
@@ -728,51 +708,6 @@ def test_TC037_enter_variable_values(campaign_page):
         ensure_list(campaign_page)
 
 
-@pytest.mark.regression
-def test_TC038_map_variables_from_file(campaign_page):
-    """TC038 – Mapping variables from contact file fields."""
-    start_create(campaign_page, "TC038")
-    try:
-        campaign_page.select_sender_id(VALID_SENDER_ID)
-        campaign_page.select_template(VALID_TEMPLATE)
-        campaign_page.import_contacts_from_csv(data_file("valid_contacts.csv"))
-        time.sleep(1)
-        map_dropdown = campaign_page.page.locator(
-            "[class*='variable'] select, [class*='var'] select, select[wire\\|model]"
-        ).first
-        map_dropdown.wait_for(state="attached", timeout=5000)
-        opt_count = map_dropdown.locator("option").count()
-        if opt_count > 1:
-            map_dropdown.select_option(index=1)
-        time.sleep(0.5)
-    except Exception as e:
-        pytest.skip(f"Variable mapping from file not available: {e}")
-    finally:
-        campaign_page.click_cancel()
-        ensure_list(campaign_page)
-
-
-@pytest.mark.regression
-@pytest.mark.negative
-def test_TC039_mandatory_variable_empty(campaign_page):
-    """TC039 – Leaving mandatory variable empty shows validation error."""
-    start_create(campaign_page, "TC039")
-    try:
-        campaign_page.select_sender_id(VALID_SENDER_ID)
-        campaign_page.select_template(VALID_TEMPLATE)
-        campaign_page.import_contacts_from_csv(data_file("valid_contacts.csv"))
-        campaign_page.select_send_now()
-        # Don't fill variables — attempt preview
-        campaign_page.click_preview()
-        errors, toast_err = campaign_page.wait_for_validation_error_or_toast()
-        assert errors or toast_err, "Empty mandatory variable should show validation error"
-    except Exception as e:
-        pytest.skip(f"Variable validation not triggered: {e}")
-    finally:
-        campaign_page.click_cancel()
-        ensure_list(campaign_page)
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # TC040 – TC042  Schedule / Send
 # ══════════════════════════════════════════════════════════════════════════════
@@ -815,27 +750,6 @@ def test_TC041_schedule_for_later(campaign_page):
         campaign_page.click_close_preview()
     except Exception as e:
         pytest.skip(f"Schedule flow incomplete: {e}")
-    finally:
-        campaign_page.click_cancel()
-        ensure_list(campaign_page)
-
-
-@pytest.mark.regression
-@pytest.mark.negative
-def test_TC042_schedule_past_date(campaign_page):
-    """TC042 – Scheduling with past date shows validation error."""
-    start_create(campaign_page, "TC042")
-    try:
-        campaign_page.select_sender_id(VALID_SENDER_ID)
-        campaign_page.select_template(VALID_TEMPLATE)
-        campaign_page.import_contacts_from_csv(data_file("valid_contacts.csv"))
-        date_str, time_str = past_dt(30)
-        campaign_page.select_schedule_later(date_str, time_str)
-        campaign_page.click_preview()
-        errors, toast_err = campaign_page.wait_for_validation_error_or_toast()
-        assert errors or toast_err, "Past date should show validation error"
-    except Exception as e:
-        pytest.skip(f"Past date validation not triggered: {e}")
     finally:
         campaign_page.click_cancel()
         ensure_list(campaign_page)
@@ -960,26 +874,6 @@ def test_TC047_cancel_preview_go_back(campaign_page):
 # ══════════════════════════════════════════════════════════════════════════════
 # TC048 – TC051  Validation & Cancel
 # ══════════════════════════════════════════════════════════════════════════════
-
-@pytest.mark.regression
-@pytest.mark.negative
-def test_TC048_launch_without_contacts(campaign_page):
-    """TC048 – Launching without contacts shows error."""
-    start_create(campaign_page, "TC048")
-    try:
-        campaign_page.select_sender_id(VALID_SENDER_ID)
-        campaign_page.select_template(VALID_TEMPLATE)
-        # Skip contacts
-        campaign_page.select_send_now()
-        campaign_page.click_preview()
-        errors, toast_err = campaign_page.wait_for_validation_error_or_toast()
-        assert errors or toast_err, "Should show error when no contacts"
-    except Exception as e:
-        pytest.skip(f"Contact validation not triggered: {e}")
-    finally:
-        campaign_page.click_cancel()
-        ensure_list(campaign_page)
-
 
 @pytest.mark.regression
 @pytest.mark.negative

@@ -60,7 +60,15 @@ class SMSCampaignPage(BasePage):
     SELECT_FILTER_DEPARTMENT = "#sms_campaigns-filter-department"
     SELECT_FILTER_USER       = "#sms_campaigns-filter-user"
     SELECT_FILTER_STATUS     = "#sms_campaigns-filter-status"
-    SELECT_FILTER_TYPE       = "#sms_campaigns-filter-type"
+    # NOTE: this filter's Livewire field is `filterComponents.source`, not
+    # `.type` -- confirmed via the real DOM: <select
+    # wire:model.live="filterComponents.source" id="sms_campaigns-filter-source">
+    # with <option value="flow_numbers">Flow</option> / <option
+    # value="campaign">Campaign</option>. The "type" id below never
+    # existed on this page, so filter_by_type() always failed to find the
+    # element and both TC008/TC009 fell into their `except: pytest.skip(...)`
+    # branch instead of actually filtering.
+    SELECT_FILTER_TYPE       = "#sms_campaigns-filter-source"
     INPUT_FILTER_TEMPLATE_NAME = "#sms_campaigns-filter-template_name"
     INPUT_FILTER_SENDER      = "#sms_campaigns-filter-sender_id"
     SELECT_FILTER_PRODUCT    = "#sms_campaigns-filter-product"
@@ -372,9 +380,14 @@ class SMSCampaignPage(BasePage):
         inp = self.page.locator(self.INPUT_SEARCH).first
         inp.wait_for(state="attached", timeout=8000)
         inp.fill(value)
-        self.page.wait_for_timeout(500)
-        inp.press("Enter")
-        self.page.wait_for_timeout(500)
+        # fill() only dispatches an 'input' event. If this field's Livewire
+        # binding is wire:model.lazy/.blur (fires on 'change'/blur) rather
+        # than wire:model.live/.debounce (fires on 'input'), fill() alone
+        # never triggers the search request and the table silently stays
+        # unfiltered — which is exactly what made TC005 flake: the
+        # no-records state never arrives because no search ever ran.
+        # Dispatching 'change' + blurring covers both binding styles.
+        inp.dispatch_event("change")
         inp.blur()
         self.page.wait_for_timeout(1500)
 
@@ -402,8 +415,6 @@ class SMSCampaignPage(BasePage):
                     var tbody = document.querySelector('table tbody');
                     if (!tbody) return true;
                     var rows = Array.from(tbody.querySelectorAll('tr')).filter(function(r) {
-                        var tds = r.querySelectorAll('td');
-                        if (tds.length === 1 && tds[0].hasAttribute('colspan')) return false;
                         return r.offsetHeight > 0 && r.textContent.trim().length > 0;
                     });
                     return rows.length === 0;
@@ -727,7 +738,7 @@ class SMSCampaignPage(BasePage):
 
     def get_schedule_field_value(self):
         try:
-            return self.page.locator(self.INPUT_SCHEDULE_DATE).first.input_value()
+            return self.page.locator(self.INPUT_SCHEDULE_DATE).first.get_attribute("value")
         except Exception:
             return ""
 

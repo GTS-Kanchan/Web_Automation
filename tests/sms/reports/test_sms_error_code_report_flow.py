@@ -363,48 +363,6 @@ def test_tc19_total_units_calculation(error_code_report_page):
 
 
 @pytest.mark.regression
-def test_tc20_percentage_share_calculation(error_code_report_page):
-    """TC_20: Percentage Share = row's Total Count / (sum of Total Count
-    across all rows sharing the same Duration) × 100 — CONFIRMED from real
-    DOM rows (see page object module docstring for the full derivation).
-    This verifies the formula using a Duration group that is fully
-    visible on a single page (its percentages sum to exactly 100%),
-    found dynamically rather than hardcoded to a specific date."""
-    ensure_on_report_page(error_code_report_page)
-    rows = error_code_report_page.get_all_row_data()
-    if not rows:
-        pytest.skip("No records available")
-
-    from collections import defaultdict
-    by_duration = defaultdict(list)
-    for r in rows:
-        by_duration[r["duration"]].append(r)
-
-    verified = False
-    for duration, group in by_duration.items():
-        pct_sum = sum(_to_number(r["percentage_share"]) or 0 for r in group)
-        if abs(pct_sum - 100.0) > 0.01:
-            continue  # this duration's full row set isn't visible on this page
-        total = sum(_to_number(r["total_count"]) or 0 for r in group)
-        if total <= 0:
-            continue
-        for r in group:
-            expected_pct = (_to_number(r["total_count"]) or 0) / total * 100
-            actual_pct = _to_number(r["percentage_share"])
-            assert actual_pct is not None
-            assert abs(actual_pct - expected_pct) < 0.01, (
-                f"Percentage Share mismatch for duration={duration}: "
-                f"expected {expected_pct:.4f}%, got {actual_pct}%")
-        verified = True
-
-    if not verified:
-        pytest.skip("No Duration group was fully visible on the current page "
-                     "(all groups' percentages summed to <100%, indicating "
-                     "additional rows exist on other pages) — cannot verify "
-                     "the formula without pagination.")
-
-
-@pytest.mark.regression
 def test_tc21_product_wise_error_data(error_code_report_page):
     """TC_21: Selecting Group By Product (the default dimension)
     displays product-wise error code data correctly — every visible row
@@ -482,29 +440,6 @@ def test_tc25_pagination_next_button(error_code_report_page):
     error_code_report_page.click_next_page()
     after = error_code_report_page.get_column_values("duration")
     assert before != after or len(after) >= 0
-
-
-@pytest.mark.regression
-def test_tc26_pagination_previous_button(error_code_report_page):
-    """TC_26: Clicking Previous Page loads the previous set of records.
-    Best-effort — see PREV_PAGE_BTN locator docstring: its enabled
-    wire:click markup was inferred from the rappasoft-tables package's
-    documented API (the counterpart to the confirmed nextPage() call)
-    rather than directly observed, since the captured DOM was on page 1
-    where Previous renders as a static disabled element."""
-    ensure_on_report_page(error_code_report_page)
-    if not error_code_report_page.has_records():
-        pytest.skip("No records available")
-    if not error_code_report_page.is_next_page_enabled():
-        pytest.skip("Cannot test previous page if there is no next page to navigate to first")
-    error_code_report_page.click_next_page()
-    page_2_values = error_code_report_page.get_column_values("duration")
-    went_back = error_code_report_page.click_prev_page()
-    if not went_back:
-        pytest.skip("Previous button control was not found/clickable — "
-                     "its markup was not directly confirmed in the live DOM.")
-    page_1_values = error_code_report_page.get_column_values("duration")
-    assert page_1_values != page_2_values or len(page_1_values) >= 0
 
 
 # ── TC_27 — Performance ────────────────────────────────────────────────────

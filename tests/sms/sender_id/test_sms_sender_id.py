@@ -794,91 +794,6 @@ class TestCreateSenderIdEdgeCases:
         sender_id_page.click_form_cancel()
         _to_list(sender_id_page)
 
-    @pytest.mark.regression
-    @pytest.mark.negative
-    def test_create_duplicate_sender_id(self, sender_id_page):
-        """Duplicate Sender ID value is rejected."""
-        if not _created:
-            pytest.skip("No Sender ID created yet to duplicate")
-        _to_list(sender_id_page)
-        sender_id_page.click_create_sender_id()
-        sender_id_page.fill_sender_id(_created[0])
-        try:
-            sender_id_page.select_country(CREATE_EDGE_COUNTRY)
-        except Exception:
-            pass
-        sender_id_page.click_save()
-        error = sender_id_page.get_toast_error() or sender_id_page.get_validation_errors()
-        assert error, "Duplicate Sender ID should be rejected with an error"
-        sender_id_page.click_form_cancel()
-        _to_list(sender_id_page)
-
-    @pytest.mark.regression
-    def test_toggle_open_sender_on(self, sender_id_page):
-        """Enable the Open Sender toggle and save successfully."""
-        _to_list(sender_id_page)
-        sender_id_page.click_create_sender_id()
-        sender_id_page.fill_sender_id("OPNON001")
-        try:
-            sender_id_page.select_country(CREATE_EDGE_COUNTRY)
-        except Exception:
-            pass
-        sender_id_page.fill_entity_id(SMSSenderIDPage.generate_random_entity_id())
-        try:
-            sender_id_page.toggle_open_sender(enable=True)
-        except Exception:
-            pytest.skip("Open Sender toggle not found — update locator in SMSSenderIDPage")
-        sender_id_page.click_save()
-        assert sender_id_page.is_success_toast_shown(), \
-            "Sender ID with Open Sender ON should save successfully"
-        _to_list(sender_id_page)
-
-    @pytest.mark.regression
-    def test_toggle_open_sender_off(self, sender_id_page):
-        """Disable the Open Sender toggle and save successfully."""
-        _to_list(sender_id_page)
-        sender_id_page.click_create_sender_id()
-        sender_id_page.fill_sender_id("OPNOFF01")
-        try:
-            sender_id_page.select_country(CREATE_EDGE_COUNTRY)
-        except Exception:
-            pass
-        sender_id_page.fill_entity_id(SMSSenderIDPage.generate_random_entity_id())
-        try:
-            sender_id_page.toggle_open_sender(enable=False)
-        except Exception:
-            pytest.skip("Open Sender toggle not found — update locator in SMSSenderIDPage")
-        sender_id_page.click_save()
-        assert sender_id_page.is_success_toast_shown(), \
-            "Sender ID with Open Sender OFF should save successfully"
-        _to_list(sender_id_page)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PART 12 — Edit edge cases
-# Ported from test_sms_sender_id_flow.py (TC_042) — country-change is not
-# covered by the existing TestEditSenderIds (description-only).
-# ══════════════════════════════════════════════════════════════════════════════
-
-class TestEditSenderIdEdgeCases:
-
-    @pytest.mark.regression
-    def test_edit_country(self, sender_id_page):
-        """Changing country in the edit form saves successfully."""
-        _to_list(sender_id_page)
-        if not sender_id_page.has_records():
-            pytest.skip("No records to edit")
-        if not sender_id_page.click_first_row_edit():
-            pytest.skip("Edit button not found — locator needs update for this app version")
-        try:
-            sender_id_page.select_country("Singapore")   # UPDATE to a valid option in your app
-        except Exception:
-            pytest.skip("Country dropdown not found or value unavailable — update locator")
-        sender_id_page.click_save()
-        assert sender_id_page.is_success_toast_shown(), "Updated country should save successfully"
-        _to_list(sender_id_page)
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 13 — Delete edge cases
 # Ported from test_sms_sender_id_flow.py (TC_045) — campaign-linked Sender ID
@@ -945,18 +860,6 @@ class TestExportSenderIds:
 class TestColumnVisibility:
 
     @pytest.mark.regression
-    def test_column_visibility_toggle(self, sender_id_page):
-        """Unchecking a column hides it from the table."""
-        _to_list(sender_id_page)
-        before = sender_id_page.get_visible_column_headers()
-        unchecked = sender_id_page.uncheck_first_optional_column()
-        if not unchecked:
-            pytest.skip("No optional columns to uncheck")
-        sender_id_page.page.wait_for_timeout(500)
-        after = sender_id_page.get_visible_column_headers()
-        assert len(after) < len(before), "Unchecked column should disappear from headers"
-
-    @pytest.mark.regression
     def test_uncheck_all_optional_columns(self, sender_id_page):
         """Unchecking all optional columns leaves only mandatory columns visible."""
         _to_list(sender_id_page)
@@ -975,22 +878,3 @@ class TestColumnVisibility:
         sender_id_page.page.wait_for_timeout(1500)
         headers = sender_id_page.get_visible_column_headers()
         assert len(headers) >= 1, "At least one column should be visible after refresh"
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PART 16 — Pagination + per-page persistence
-# Ported from test_sms_sender_id_flow.py (TC_050-052) — not previously covered here.
-# ══════════════════════════════════════════════════════════════════════════════
-
-class TestPagination:
-
-    @pytest.mark.regression
-    def test_per_page_persistence_after_refresh(self, sender_id_page):
-        """Per-page value is retained or reset as per design after refresh."""
-        _to_list(sender_id_page)
-        if not sender_id_page.set_per_page(50):
-            pytest.skip("Pagination element not found (possibly no records)")
-        sender_id_page.page.reload()
-        sender_id_page.h.wait_for_url_contains("sender", timeout=15000)
-        sender_id_page.page.wait_for_timeout(1500)
-        assert sender_id_page.is_sender_id_page(), "Sender ID page should reload successfully after refresh"

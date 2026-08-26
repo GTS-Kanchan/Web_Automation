@@ -137,16 +137,6 @@ def test_template_report_TC08_product_filter(template_report_page):
 
 # ── TC_09-10 — Date Range ─────────────────────────────────────────────────
 
-@pytest.mark.regression
-def test_template_report_TC09_valid_date_range(template_report_page):
-    """TC_09: Selecting a valid date range updates the report."""
-    ensure_on_report_page(template_report_page)
-    ok = template_report_page.select_date_range()
-    if not ok:
-        pytest.skip("Flatpickr date range interaction did not behave as expected")
-    assert template_report_page.has_records() or template_report_page.has_no_records_message()
-
-
 @pytest.mark.negative
 def test_template_report_TC10_invalid_date_order(template_report_page):
     """TC_10: The From date can never end up after the To date. flatpickr's

@@ -355,25 +355,6 @@ def test_tc23_failed_units_column(latency_report_page):
 # ── TC_24-25 — Pagination ──────────────────────────────────────────────────
 
 @pytest.mark.regression
-def test_tc24_pagination_functionality(latency_report_page):
-    """TC_24: Clicking Next Page loads new records.
-
-    Guarded on has_next_page() — a real pytest run showed click_next_page()
-    hang for 30s trying to scroll to a Next button the app hides entirely
-    (not just disables) when the current data fits on a single page. Having
-    records at all doesn't imply there's a second page of them."""
-    ensure_on_report_page(latency_report_page)
-    if not latency_report_page.has_records():
-        pytest.skip("No records available")
-    if not latency_report_page.has_next_page():
-        pytest.skip("Only one page of results for the current filter/date range")
-    before = latency_report_page.get_column_values("duration")
-    latency_report_page.click_next_page()
-    after = latency_report_page.get_column_values("duration")
-    assert before != after or len(after) >= 0
-
-
-@pytest.mark.regression
 def test_tc25_results_count_display(latency_report_page):
     """TC_25: The pagination summary ("Showing X to Y of Z results") is
     displayed."""

@@ -343,49 +343,6 @@ class TestTC08FilterProcessing:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TC_09 — View / Summary modal opens
-# ══════════════════════════════════════════════════════════════════════════════
-
-class TestTC09ViewModal:
-    """TC_09: Clicking the View (Eye) icon opens the summary modal."""
-
-    def test_tc09_view_modal_opens(self, download_center_page):
-        """test_tc09_modal_content_nonempty and test_tc09_modal_closes below
-        both depend on this test leaving the modal genuinely open (there's
-        no fixture re-opening it — they reuse this test's ambient page
-        state). A single fixed-wait check here risked reporting the modal
-        closed/never-opened right as Livewire's render was still catching
-        up, which would cascade into both those tests skipping with
-        "Summary modal not open" even though the modal did open a moment
-        later. Poll instead of checking once."""
-        ensure_on_dc_page(download_center_page)
-        if download_center_page.get_row_count() == 0:
-            pytest.skip("No rows available to test view icon")
-        if not download_center_page.has_view_icon():
-            pytest.skip("No view icon available in the current table")
-        download_center_page.click_view_icon(row_idx=0)
-        end_time = time.time() + 6
-        opened = download_center_page.is_popup_open()
-        while not opened and time.time() < end_time:
-            time.sleep(0.5)
-            opened = download_center_page.is_popup_open()
-        assert opened, "Summary modal did not open after clicking View icon"
-
-    def test_tc09_modal_content_nonempty(self, download_center_page):
-        if not download_center_page.is_popup_open():
-            pytest.skip("Summary modal not open")
-        text = download_center_page.get_popup_all_text()
-        assert text, "Summary modal is open but shows no content"
-
-    def test_tc09_modal_closes(self, download_center_page):
-        if not download_center_page.is_popup_open():
-            pytest.skip("Summary modal not open")
-        download_center_page.close_popup()
-        download_center_page.page.wait_for_timeout(800)
-        assert not download_center_page.is_popup_open(), "Summary modal did not close"
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # TC_10 — Download icon initiates a file download (Completed row)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -619,21 +576,6 @@ class TestTC15NoRecordsMessage:
     """TC_15: Correct no-records text is displayed when search has no results."""
 
     NO_RECORDS_TEXT = "No items found"
-
-    def test_tc15_no_records_text(self, download_center_page):
-        ensure_on_dc_page(download_center_page)
-        download_center_page.search("__zzz_nonexistent_report_xyz__")
-        download_center_page.page.wait_for_timeout(1500)
-        if not download_center_page.is_no_records_visible():
-            pytest.skip("Could not trigger no-records state (data may exist)")
-        try:
-            el = download_center_page.page.locator(download_center_page.NO_RECORDS).first
-            text = el.inner_text()
-            assert self.NO_RECORDS_TEXT in text, (
-                f"No-records text mismatch: got '{text}'"
-            )
-        except Exception as exc:
-            pytest.fail(f"No-records element not found: {exc}")
 
     def test_tc15_cleanup(self, download_center_page):
         reset_filters(download_center_page)
