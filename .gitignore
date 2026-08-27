@@ -4,3 +4,5 @@
 
 config/environments/*.env
 reports/
+
+scripts/
