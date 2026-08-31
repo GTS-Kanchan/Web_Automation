@@ -136,13 +136,19 @@ class SmsSenderReportPage(BasePage):
         idx = self.COLUMN_INDEX.get(column_name)
         if idx is None:
             return []
-        rows = self.page.locator(self.TABLE_ROWS)
-        values = []
-        for i in range(rows.count()):
-            tds = rows.nth(i).locator("td")
-            if tds.count() > idx:
-                values.append(tds.nth(idx).inner_text().strip())
-        return values
+        
+        for _ in range(3):
+            try:
+                rows = self.page.locator(self.TABLE_ROWS).all()
+                values = []
+                for row in rows:
+                    tds = row.locator("td").all()
+                    if len(tds) > idx:
+                        values.append(tds[idx].inner_text().strip())
+                return values
+            except Exception:
+                self.page.wait_for_timeout(500)
+        return []
 
     def sort_by_duration(self):
         self._js_click(self.DURATION_SORT_BTN, timeout=10000)

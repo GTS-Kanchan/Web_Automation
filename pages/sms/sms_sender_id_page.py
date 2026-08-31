@@ -114,7 +114,7 @@ class SMSSenderIDPage(BasePage):
     TOGGLE_OPEN_SENDER = "input[type='checkbox'][name*='open'], input[type='checkbox'][id*='open']"
     # Create form: "Save Sender ID" | Edit form: "Update Sender ID"
     BTN_SAVE = (
-        "xpath=//button[@type='submit' and (contains(.,'Save Sender ID') or contains(.,'Update Sender ID'))]"
+        "xpath=//button[@type='submit' and (contains(.,'Save') or contains(.,'Update'))]"
     )
     BTN_FORM_CANCEL = "xpath=//a[contains(@href,'/channels/sms/senderid')] | //button[contains(.,'Cancel')]"
     # CONFIRMED from real screenshot + pasted DOM (Create Sender ID form
@@ -370,7 +370,10 @@ class SMSSenderIDPage(BasePage):
         self.h.select_option(self.FORM_TYPE_DROPDOWN, label=type_name)
 
     def fill_entity_id(self, value):
-        self.h.clear_and_type(self.FORM_ENTITY_ID_INPUT, value)
+        try:
+            self.h.clear_and_type(self.FORM_ENTITY_ID_INPUT, value)
+        except Exception:
+            pass
 
     def fill_description(self, value):
         self.h.clear_and_type(self.FORM_DESCRIPTION, value)

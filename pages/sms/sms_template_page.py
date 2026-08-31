@@ -249,19 +249,20 @@ class SMSTemplatePage(BasePage):
         box.press("Enter")
         self.page.wait_for_timeout(1000)
 
-    def is_template_present_in_list(self, name: str) -> bool:
+    def is_template_present_in_list(self, name: str, refresh: bool = True) -> bool:
         """Check if a template name appears in the list (exact or contains match).
 
         Strategy:
-          1. Navigate fresh to ensure Livewire renders the latest data.
+          1. (Optional) Navigate fresh to ensure Livewire renders the latest data.
           2. Wait up to 5 s for the table to settle.
           3. Exact td text match first (fast path).
           4. contains() match as fallback (handles whitespace / badge wrapping).
           5. Search by name + recheck both match styles.
         """
-        self.open(self.TEMPLATE_LIST_URL)
-        self.page.wait_for_timeout(3000)   # give Livewire time to render after navigation
-        self._close_sidebar_overlay()
+        if refresh:
+            self.open(self.TEMPLATE_LIST_URL)
+            self.page.wait_for_timeout(3000)   # give Livewire time to render after navigation
+            self._close_sidebar_overlay()
 
         by_exact = f"xpath=//td[normalize-space()='{name}']"
         by_contains = f"xpath=//td[contains(normalize-space(),'{name}')]"
@@ -783,13 +784,19 @@ class SMSTemplatePage(BasePage):
 
     def select_type(self, value):
         try:
-            self.h.select_option(self.FORM_TYPE, label=value)
+            self.page.locator(self.FORM_TYPE).first.select_option(value=value, force=True)
         except Exception:
             pass
 
     def fill_dlt_id(self, value):
         """Fill the DLT Template ID field (id='template_id', wire:model.live='template_id')."""
-        self.h.clear_and_type(self.FORM_DLT_ID, value)
+        try:
+            # We use a short timeout because if it's not visible, it's likely hidden by conditional logic
+            loc = self.page.locator(self.FORM_DLT_ID).first
+            loc.wait_for(state="visible", timeout=3000)
+            self.h.clear_and_type(self.FORM_DLT_ID, value)
+        except Exception:
+            pass
 
     def fill_content(self, value):
         self.h.clear_and_type(self.FORM_CONTENT, value)

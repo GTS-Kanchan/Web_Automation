@@ -258,7 +258,7 @@ class SmsBlockedNumbersPage(BasePage):
         last_state = None
         while self.page.evaluate("() => Date.now()") < end_time:
             current = self.get_row_count()
-            no_msg = self.is_element_present(self.NO_RECORDS, timeout=200)
+            no_msg = self.is_element_present(self.NO_RECORDS_MSG, timeout=200)
             state = (current, no_msg)
             if state == last_state and current >= 0:
                 stable_count += 1

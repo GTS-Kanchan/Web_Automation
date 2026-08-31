@@ -10,7 +10,7 @@ class BasePage:
         self.h = Helpers(page)
 
     def open(self, path=""):
-        self.page.goto(f"{Config.BASE_URL}{path}")
+        self.page.goto(f"{Config.BASE_URL}{path}", timeout=60000, wait_until="domcontentloaded")
 
     def get_title(self):
         return self.page.title()

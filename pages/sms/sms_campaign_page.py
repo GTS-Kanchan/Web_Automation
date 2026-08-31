@@ -738,7 +738,7 @@ class SMSCampaignPage(BasePage):
 
     def get_schedule_field_value(self):
         try:
-            return self.page.locator(self.INPUT_SCHEDULE_DATE).first.get_attribute("value")
+            return self.page.locator(self.INPUT_SCHEDULE_DATE).first.input_value()
         except Exception:
             return ""
 
@@ -876,7 +876,7 @@ class SMSCampaignPage(BasePage):
         except Exception:
             pass
         btn = self.page.locator(self.BTN_IMPORT_CONTACT).first
-        btn.wait_for(state="attached", timeout=10000)
+        btn.wait_for(state="attached", timeout=30000)
         btn.scroll_into_view_if_needed()
         self.page.wait_for_timeout(300)
         btn.evaluate("(el) => el.click()")

@@ -592,27 +592,23 @@ class TestUploadTemplate:
             f"Screenshot: {_ss}"
         )
 
-        # Step 4 - success confirmed; navigate to the template list
-        print("\n[UploadTest] Waiting for backend queue to process the templates (max 120 s)...")
+        # Step 4 - wait for backend queue to process all templates (max 120 s)
+        print("\n[UploadTest] Waiting for backend queue to process all templates (max 120 s)...")
         wait_deadline = time.time() + 120
-        first_appeared = False
-        while time.time() < wait_deadline:
+        missing = expected_names.copy()
+        
+        while time.time() < wait_deadline and missing:
             _to_list(template_page)
-            if template_page.is_template_present_in_list(expected_names[0]):
-                first_appeared = True
+            new_missing = []
+            for name in missing:
+                if template_page.is_template_present_in_list(name, refresh=False):
+                    _created.append(name)
+                else:
+                    new_missing.append(name)
+            missing = new_missing
+            if not missing:
                 break
             time.sleep(2)
-
-        if not first_appeared:
-            pytest.skip("Templates did not appear in the list within 120 seconds after successful upload (queue delay too long).")
-
-        # Step 5 - verify each template name appears in the list
-        missing = []
-        for name in expected_names:
-            if template_page.is_template_present_in_list(name):
-                _created.append(name)
-            else:
-                missing.append(name)
 
         assert not missing, (
             f"Templates NOT found in list after import: {missing}\n"
