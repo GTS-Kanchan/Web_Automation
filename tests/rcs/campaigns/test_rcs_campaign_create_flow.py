@@ -2976,3 +2976,35 @@ def test_TC158_test_campaign_does_not_create_real_campaign(campaign_create_page)
         f"Campaign is expected to be a preview/test action only, not a "
         f"real launch"
     )
+
+
+@pytest.mark.regression
+def test_TC159_test_campaign_without_agent_no_real_campaign_created(campaign_create_page):
+    """TC159: Clicking 'Test Campaign' with NO agent/template/contacts
+    selected (spec section 9 items 4-6) must not crash the page and,
+    like TC158, must not create a real persisted campaign. Deliberately
+    does not assert a specific validation-message string -- no
+    Test-Campaign-specific validation markup was ever confirmed (see
+    TC141/TC142's module note) -- so this sticks to the two outcomes we
+    can verify without guessing: no crash, and no real campaign record."""
+    name = _unique_name("TestCampNoAgent")
+    campaign_create_page.navigate()
+    if not campaign_create_page.is_test_campaign_button_present(timeout=3000):
+        pytest.skip("'Test Campaign' button not present -- see TC141")
+    campaign_create_page.fill_campaign_name(name)
+    # Deliberately skip agent/template/contact selection.
+    clicked = campaign_create_page.click_test_campaign()
+    if not clicked:
+        pytest.skip("Could not click 'Test Campaign' button")
+    campaign_create_page.page.wait_for_timeout(1500)
+    title = campaign_create_page.get_page_title().lower()
+    assert "404" not in title and "500" not in title
+
+    list_page = _fresh_campaign_list_page(campaign_create_page)
+    list_page.load_campaign_list()
+    occurrences = list_page.count_campaign_name_occurrences(name, timeout=10000)
+    assert occurrences == 0, (
+        f"'Test Campaign' with no agent/template/contacts selected still "
+        f"created a real, persisted campaign record ('{name}' found "
+        f"{occurrences}x in the campaign list)"
+    )
