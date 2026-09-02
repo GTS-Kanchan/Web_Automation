@@ -5,6 +5,7 @@ import time
 
 from pages.common.base_page import BasePage
 from utils.config import DOWNLOAD_DIR
+from utils.file_validator import read_file_headers
 
 
 class RcsDownloadCenterPage(BasePage):
@@ -936,10 +937,23 @@ class RcsDownloadCenterPage(BasePage):
         return None
 
     def get_csv_headers(self, file_path):
+        """Return the downloaded report's header row, whatever format it
+        actually turns out to be.
+
+        Previously this only ever tried a plain CSV parse -- silently
+        returning [] (via the broad except) for anything else, including
+        SMS's confirmed real shape (a .zip wrapping .csv/.xlsx/.xls). RCS
+        Download Center's own real export shape hasn't been independently
+        confirmed the same way (no live-app access when this was last
+        checked -- see docs/ARCHITECTURE.md's API layer note and
+        README.md's RCS Channel section), so this now delegates to
+        utils/file_validator.py's read_file_headers(), the same
+        format-dispatching reader already proven for SMS -- it handles
+        .csv/.xlsx/.xls directly and unzips a .zip transparently, instead
+        of silently assuming one specific shape and swallowing everything
+        else as "no headers"."""
         try:
-            with open(file_path, newline="", encoding="utf-8-sig") as fh:
-                headers = next(csv.reader(fh), [])
-                return [h.strip() for h in headers]
+            return read_file_headers(file_path)
         except Exception:
             return []
 

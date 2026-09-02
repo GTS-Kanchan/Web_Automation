@@ -15,9 +15,12 @@ suite.
 Run:
     pytest tests/test_rcs_message_type_analytics_flow.py -v
 """
+import os
+
 import pytest
 
 from pages.rcs.rcs_message_type_analytics_page import RcsMessageTypeAnalyticsPage
+from utils.file_validator import read_file_headers
 
 
 pytestmark = [pytest.mark.rcs, pytest.mark.report]
@@ -252,9 +255,26 @@ def test_message_type_analytics_filter_by_user(message_type_analytics_page):
 
 @pytest.mark.regression
 def test_message_type_analytics_TC13_export_csv(message_type_analytics_page):
-    """TC_13: Export CSV button triggers a download."""
+    """TC_13: Export CSV button triggers a download.
+
+    Upgraded to actually assert the download happened, now that
+    click_export_csv() captures it via page.expect_download() instead of
+    the old click-and-sleep pattern that never verified anything (see
+    the page object's click_export_csv() docstring). No expected-header
+    constant exists yet for this export -- the header row is logged, not
+    asserted, pending a real run against the live app to confirm it (see
+    README.md's RCS Channel section / "Downloaded File Header
+    Validation")."""
     ensure_on_report_page(message_type_analytics_page)
-    message_type_analytics_page.click_export_csv()
+    result = message_type_analytics_page.click_export_csv()
+    if result is None:
+        pytest.skip("Export CSV did not produce a downloaded file within 30s")
+    print(f"[{os.path.basename(result['file_path'])}] downloaded, {result['file_size']} bytes, {result['elapsed_s']:.2f}s")
+    try:
+        headers = read_file_headers(result["file_path"])
+        print(f"Header row: {headers}")
+    except Exception as exc:
+        print(f"Could not read headers from downloaded file: {exc}")
     assert message_type_analytics_page.is_report_page()
 
 

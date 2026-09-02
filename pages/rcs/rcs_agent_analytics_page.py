@@ -1,4 +1,8 @@
+import os
+import time
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class RcsAgentAnalyticsPage(BasePage):
@@ -298,9 +302,37 @@ class RcsAgentAnalyticsPage(BasePage):
 
     # ── Export ────────────────────────────────────────────────────────────────
 
-    def click_export_csv(self):
-        self._js_click(self.EXPORT_CSV_BUTTON, timeout=10000)
-        self.page.wait_for_timeout(1500)
+    def click_export_csv(self, timeout_ms=30000):
+        """Clicks Export CSV, capturing the resulting download via
+        page.expect_download() -- previously just clicked and slept
+        (self._js_click + wait_for_timeout(1500)) without capturing
+        anything, the same broken pattern originally found (and fixed)
+        on several SMS report pages (see
+        pages/sms/sms_usage_report_page.py's click_export_csv()
+        docstring for the reference fix).
+
+        Returns {"elapsed_s", "file_path", "file_size"} on success, or
+        None on failure (timeout / no download triggered) -- kept as a
+        never-raises contract so every existing caller of this method,
+        which discards the return value, is unaffected.
+        """
+        try:
+            btn = self.h.wait_for_element_clickable(self.EXPORT_CSV_BUTTON, timeout=10000)
+            btn.scroll_into_view_if_needed()
+            start = time.time()
+            with self.page.expect_download(timeout=timeout_ms) as dl_info:
+                self._js_click(self.EXPORT_CSV_BUTTON, timeout=10000)
+            download = dl_info.value
+            filename = download.suggested_filename or "rcs_agent_report_export.csv"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {
+                "elapsed_s": time.time() - start,
+                "file_path": dest,
+                "file_size": os.path.getsize(dest),
+            }
+        except Exception:
+            return None
 
     # ── Pagination ────────────────────────────────────────────────────────────
 

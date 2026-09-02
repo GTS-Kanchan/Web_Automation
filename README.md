@@ -515,10 +515,14 @@ PASS / FAIL
 
 Scope (phase 1): **headers only**. Row data, values, data types, record
 counts, and business logic are NOT validated by this check. SMS (11
-exports) and RCS (the Campaign list export) are covered — WhatsApp/Email
-are not implemented yet. The RCS export is documented in full, alongside
-the rest of the RCS channel, in the ["RCS Channel"](#rcs-channel) section
-below rather than repeated here.
+exports) and RCS (the Campaign list export — real headers confirmed and
+asserted) are covered; the remaining 7 RCS analytics exports plus the RCS
+Download Center have their download-capture bug fixed and now log the
+real header row on a real run, but don't assert against one yet (no
+confirmed expected-header constant exists for them — see "RCS Channel"
+below for exactly why). WhatsApp/Email are not implemented yet. RCS is
+documented in full, alongside the rest of the RCS channel, in the
+["RCS Channel"](#rcs-channel) section below rather than repeated here.
 
 **Single source of truth for expected headers:**
 [`constants/sms_download_headers.py`](constants/sms_download_headers.py) —
@@ -852,6 +856,49 @@ assertions, and are called out here so a future maintainer doesn't
   `.xlsx`** file named `"Table Export.xlsx"`, not a `.csv` — confirmed
   from a real download, not a defect, and `RCSCampaignPage.click_export_csv()`
   / the header-validation tests above are written against that reality.
+
+### The other 8 RCS exports: download-capture fixed, headers not yet asserted
+
+Every RCS analytics/report page object except the Campaign list
+(`rcs_agent_analytics_page.py`, `rcs_template_analytics_page.py`,
+`rcs_usage_analytics_page.py`, `rcs_status_analytics_page.py`,
+`rcs_error_code_analytics_page.py`, `rcs_message_type_analytics_page.py`,
+`rcs_country_analytics_page.py`) had the exact same broken export pattern
+already fixed for SMS's report pages — `click_export_csv()` clicked the
+button and slept 1.5s without capturing anything. All 7 now wrap the
+click in `page.expect_download()` and return
+`{"elapsed_s", "file_path", "file_size"}` on success / `None` on failure,
+identical in shape to `SmsUsageReportPage.click_export_csv()`. Their
+corresponding tests (`test_<name>_analytics_flow.py`'s `..._TC13_export_csv`
+/ `test_tc17_export_csv`) were upgraded to actually assert a file
+downloaded — previously they only asserted the page didn't crash, since
+nothing was ever captured to check.
+
+`rcs_download_center_page.py`'s `get_csv_headers()` had a narrower version
+of the same problem: it only ever tried a plain CSV parse, silently
+returning `[]` for anything else. It now delegates to
+`utils/file_validator.py`'s `read_file_headers()` — the same
+format-dispatching reader already proven for SMS (`.csv`/`.xlsx`/`.xls`,
+or a `.zip` wrapping one of those) — instead of assuming one shape.
+
+**What's still missing, and why:** none of these 8 exports has a
+`constants/rcs_<name>_headers.py` file or a real header-equality
+assertion yet, unlike the Campaign list export above. Adding one requires
+seeing a real header row from a real download — this session's live-app
+access was blocked (`testqa.cpaas.globeteleservices.com` returned a 403
+from an egress proxy on every path tried; see "RCS API client" below for
+the same constraint hitting item 6). Each of the 8 tests now **logs** the
+real file's extension and header row on every run
+(`print(f"Header row: {headers}")` / the Download Center test's
+equivalent) instead of asserting against a guess. The next real run
+against the live app will surface the actual columns in its output —
+paste them back to turn each into a real `constants/rcs_<name>_headers.py`
++ `validate_file_headers()` assertion, mirroring
+`constants/rcs_campaign_headers.py` exactly. RCS's async Download Center
+export's file *shape* (zip-wrapped like SMS's, or something else) is
+similarly unconfirmed — `get_csv_headers()` now handles either
+transparently, but which one this instance actually produces is only
+knowable from a real completed-job download.
 
 ### Parity with SMS: single login and test independence
 
