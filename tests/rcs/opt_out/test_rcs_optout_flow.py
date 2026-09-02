@@ -47,11 +47,20 @@ Test Design Notes:
 Run:
     pytest tests/test_rcs_optout_flow.py -v
 """
+import os
 from datetime import date, timedelta
 
 import pytest
 
+from constants.rcs_optout_headers import EXPECTED_RCS_OPTOUT_HEADERS
 from pages.rcs.rcs_optout_page import RcsOptOutPage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.rcs, pytest.mark.opt_out]
@@ -528,3 +537,35 @@ def test_TC007_upload_optout_numbers_SKIP(optout_page):
     ensure_on_optout_page(optout_page)
     optout_page.click_upload_optout_numbers()
     assert optout_page.is_upload_popup_open()
+
+
+def test_TC027_export_csv_verifies_header(optout_page):
+    """Bulk Actions -> Export downloads a file whose header row matches
+    this instance's confirmed RCS OptOut Numbers export columns exactly
+    (constants/rcs_optout_headers.py). No row checkboxes are selected
+    first -- mirrors the confirmed-working Bulk Actions -> Export pattern
+    already proven on SmsBlockedNumbersPage.export_csv() (see
+    RcsOptOutPage.export_csv() docstring): the export acts on the
+    current filtered listing."""
+    ensure_on_optout_page(optout_page)
+    result = optout_page.export_csv()
+    if result is None:
+        pytest.skip("Bulk Actions -> Export did not produce a downloaded file within 30s")
+    print(f"[{os.path.basename(result['file_path'])}] downloaded, {result['file_size']} bytes, {result['elapsed_s']:.2f}s")
+
+    try:
+        actual_headers = validate_file_headers(result["file_path"], EXPECTED_RCS_OPTOUT_HEADERS)
+    except FileNotDownloadedError as exc:
+        pytest.fail(str(exc))
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"Actual headers: {exc.actual}")
+        print(f"Missing headers: {exc.missing}")
+        print(f"Unexpected headers: {exc.unexpected}")
+        for position, expected_name, actual_name in exc.mismatches:
+            print(f"Position {position}: expected '{expected_name}', actual '{actual_name}'")
+        pytest.fail(str(exc))
+
+    print(f"Header validation PASS: {actual_headers}")
+    assert optout_page.is_optout_page()

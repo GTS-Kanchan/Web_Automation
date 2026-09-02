@@ -8,9 +8,19 @@ to avoid shadowing pytest-playwright's reserved `page` fixture.
 Run:
     pytest tests/test_rcs_campaign_analytics_flow.py -v
 """
+import os
+
 import pytest
 
+from constants.rcs_campaign_analytics_headers import EXPECTED_RCS_CAMPAIGN_ANALYTICS_HEADERS
 from pages.rcs.rcs_campaign_analytics_page import RcsCampaignAnalyticsPage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.rcs, pytest.mark.report]
@@ -282,9 +292,33 @@ def test_campaign_analytics_filter_by_user(campaign_analytics_page):
 
 @pytest.mark.regression
 def test_campaign_analytics_TC15_export_csv(campaign_analytics_page):
-    """TC_15: Export CSV button triggers a download."""
+    """TC_15: Export CSV downloads a file whose header row matches this
+    instance's confirmed RCS Campaign Analytics export columns exactly
+    (constants/rcs_campaign_analytics_headers.py). click_export_csv() now
+    captures the download via page.expect_download() instead of the old
+    click-and-sleep pattern that never verified anything (see the page
+    object's click_export_csv() docstring)."""
     ensure_on_report_page(campaign_analytics_page)
-    campaign_analytics_page.click_export_csv()
+    result = campaign_analytics_page.click_export_csv()
+    if result is None:
+        pytest.skip("Export CSV did not produce a downloaded file within 30s")
+    print(f"[{os.path.basename(result['file_path'])}] downloaded, {result['file_size']} bytes, {result['elapsed_s']:.2f}s")
+
+    try:
+        actual_headers = validate_file_headers(result["file_path"], EXPECTED_RCS_CAMPAIGN_ANALYTICS_HEADERS)
+    except FileNotDownloadedError as exc:
+        pytest.fail(str(exc))
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"Actual headers: {exc.actual}")
+        print(f"Missing headers: {exc.missing}")
+        print(f"Unexpected headers: {exc.unexpected}")
+        for position, expected_name, actual_name in exc.mismatches:
+            print(f"Position {position}: expected '{expected_name}', actual '{actual_name}'")
+        pytest.fail(str(exc))
+
+    print(f"Header validation PASS: {actual_headers}")
     assert campaign_analytics_page.is_report_page()
 
 

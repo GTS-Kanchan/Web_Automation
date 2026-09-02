@@ -1,4 +1,8 @@
+import os
+import time
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class RcsAgentPage(BasePage):
@@ -272,6 +276,41 @@ class RcsAgentPage(BasePage):
         cb.scroll_into_view_if_needed()
         cb.click(force=True)
         self.page.wait_for_timeout(500)
+
+    def export_csv(self, timeout_ms=30000):
+        """Opens Bulk Actions and clicks Export, capturing the resulting
+        download via page.expect_download() (no row checkboxes selected
+        first -- mirrors the confirmed-working Bulk Actions -> Export
+        pattern already proven on SmsBlockedNumbersPage.export_csv(): the
+        export acts on the current filtered listing, not an explicit row
+        selection). The "Export to XLSX only" note already on
+        BULK_ACTION_EXPORT above suggests this download may not be a
+        plain .csv -- callers should read headers via
+        utils/file_validator.py's read_file_headers()/validate_file_headers(),
+        which dispatch on file extension, not assume one.
+
+        Returns {"elapsed_s", "file_path", "file_size"} on success, or
+        None on failure (timeout / no download triggered) -- same
+        never-raises contract used throughout this codebase's Bulk
+        Actions -> Export methods."""
+        try:
+            self.open_bulk_actions_dropdown()
+            btn = self.h.wait_for_element_clickable(self.BULK_ACTION_EXPORT, timeout=10000)
+            btn.scroll_into_view_if_needed()
+            start = time.time()
+            with self.page.expect_download(timeout=timeout_ms) as dl_info:
+                btn.click(force=True)
+            download = dl_info.value
+            filename = download.suggested_filename or "rcs_agents_export.csv"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {
+                "elapsed_s": time.time() - start,
+                "file_path": dest,
+                "file_size": os.path.getsize(dest),
+            }
+        except Exception:
+            return None
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
 

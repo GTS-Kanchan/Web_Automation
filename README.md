@@ -8,7 +8,7 @@ functional modules — **Login, Dashboard, Forgot Password, SMS, RCS,
 WhatsApp, Email, Contacts, Segmentation, Tags, and Communication Flow**.
 
 The converted suite currently totals **62 page objects** and **65 test
-files** (**1,944 tests**), all collecting cleanly under
+files** (**1,946 tests**), all collecting cleanly under
 `pytest --collect-only` with the original `smoke` / `regression` /
 `negative` markers intact. The "Project structure" and "Coverage"
 sections below reflect the current, channel-based file locations; see
@@ -33,8 +33,8 @@ and makes adding a future channel low-risk. **Every suite is migrated:**
 common/cross-channel suites at `tests/common/`+`pages/common/` (login,
 dashboard, forgot password, contacts, segmentation, tags) — each organized
 into feature subfolders (campaigns, templates, reports, etc.) with
-`pytestmark` channel/feature tags. The suite totals **1,944 tests**
-(common 74, SMS 643, RCS 687, WhatsApp 402, Email 136 — 1,942 across
+`pytestmark` channel/feature tags. The suite totals **1,946 tests**
+(common 74, SMS 643, RCS 689, WhatsApp 402, Email 136 — 1,944 across
 those five folders, plus 2 pre-existing `test_temp_dump*.py` scratch/debug
 files at the `tests/` root that predate this migration and are unrelated
 to it). All five counts above are from a real `pytest --collect-only`
@@ -264,7 +264,7 @@ same (see the table above for the one exception, `BROWSER`).
 ## Running tests
 
 ```bash
-# All tests (full suite — 1,944 tests)
+# All tests (full suite — 1,946 tests)
 pytest
 
 # A single channel, e.g. SMS
@@ -443,7 +443,17 @@ cpaas_playwright_tests/
 │   ├── rcs_message_headers.py       # EXPECTED_RCS_MESSAGE_HEADERS — 22 headers
 │   ├── rcs_incoming_messages_headers.py  # EXPECTED_RCS_INCOMING_MESSAGES_HEADERS — 9 headers
 │   ├── rcs_download_center_headers.py    # EXPECTED_RCS_DOWNLOAD_CENTER_HEADERS — 20 headers
-│   └── rcs_template_list_headers.py      # EXPECTED_RCS_TEMPLATE_LIST_HEADERS — 11 headers
+│   ├── rcs_template_list_headers.py      # EXPECTED_RCS_TEMPLATE_LIST_HEADERS — 11 headers
+│   ├── rcs_agent_list_headers.py         # EXPECTED_RCS_AGENT_LIST_HEADERS — 11 headers
+│   ├── rcs_optout_headers.py             # EXPECTED_RCS_OPTOUT_HEADERS — 4 headers
+│   ├── rcs_agent_analytics_headers.py    # EXPECTED_RCS_AGENT_ANALYTICS_HEADERS — 16 headers
+│   ├── rcs_template_analytics_headers.py # EXPECTED_RCS_TEMPLATE_ANALYTICS_HEADERS — 17 headers
+│   ├── rcs_usage_analytics_headers.py    # EXPECTED_RCS_USAGE_ANALYTICS_HEADERS — 14 headers
+│   ├── rcs_status_analytics_headers.py   # EXPECTED_RCS_STATUS_ANALYTICS_HEADERS — 11 headers
+│   ├── rcs_country_analytics_headers.py  # EXPECTED_RCS_COUNTRY_ANALYTICS_HEADERS — 17 headers
+│   ├── rcs_message_type_analytics_headers.py  # EXPECTED_RCS_MESSAGE_TYPE_ANALYTICS_HEADERS — 17 headers
+│   ├── rcs_campaign_analytics_headers.py # EXPECTED_RCS_CAMPAIGN_ANALYTICS_HEADERS — 18 headers
+│   └── rcs_error_code_analytics_headers.py  # EXPECTED_RCS_ERROR_CODE_ANALYTICS_HEADERS — 6 headers
 │
 ├── pages/                           # 62 page objects (POM), channel-based layout
 │   ├── common/                      # 8 files — base_page.py (shared BasePage superclass),
@@ -454,7 +464,7 @@ cpaas_playwright_tests/
 │   ├── whatsapp/                    # 12 files
 │   └── email/                       # 5 files
 │
-├── tests/                           # 65 test files, 1,944 tests total
+├── tests/                           # 65 test files, 1,946 tests total
 │   ├── common/                      # 6 files — test_login, test_dashboard,
 │   │                                 #   test_forgot_password, test_contacts_flow,
 │   │                                 #   test_segmentation_flow, test_tags_flow
@@ -518,14 +528,13 @@ PASS / FAIL
 
 Scope (phase 1): **headers only**. Row data, values, data types, record
 counts, and business logic are NOT validated by this check. SMS (11
-exports) and 4 RCS exports (Campaign list, Messages, Incoming Messages,
-Download Center — real headers confirmed and asserted for all four) are
-covered; the remaining 7 RCS analytics exports have their download-capture
-bug fixed and now log the real header row on a real run, but don't assert
-against one yet (no confirmed expected-header constant exists for them —
-see "RCS Channel" below for exactly why). WhatsApp/Email are not
-implemented yet. RCS is documented in full, alongside the rest of the
-RCS channel, in the
+exports) and every known RCS export (15 total — Campaign list, Messages,
+Incoming Messages, Download Center, Template list, Agent list, OptOut
+Numbers, the 7 per-dimension Analytics reports (Agent, Template, Usage,
+Status, Country, Message Type, Campaign), and the Error Code report —
+real headers confirmed and asserted for all of them) are covered.
+WhatsApp/Email are not implemented yet. RCS is documented in full,
+alongside the rest of the RCS channel, in the
 ["RCS Channel"](#rcs-channel) section below rather than repeated here.
 
 **Single source of truth for expected headers:**
@@ -777,7 +786,7 @@ nothing RCS-specific was needed there.
   fabricated number — set it to a real test number in your own `.env` to
   bring them into the run.
 
-### Tests (`tests/rcs/`, 20 files, 687 tests)
+### Tests (`tests/rcs/`, 20 files, 689 tests)
 
 | Folder | Files | What's covered |
 | --- | --- | --- |
@@ -867,22 +876,26 @@ Every RCS analytics/report page object except the Campaign list
 (`rcs_agent_analytics_page.py`, `rcs_template_analytics_page.py`,
 `rcs_usage_analytics_page.py`, `rcs_status_analytics_page.py`,
 `rcs_error_code_analytics_page.py`, `rcs_message_type_analytics_page.py`,
-`rcs_country_analytics_page.py`) had the exact same broken export pattern
-already fixed for SMS's report pages — `click_export_csv()` clicked the
-button and slept 1.5s without capturing anything. All 7 now wrap the
-click in `page.expect_download()` and return
-`{"elapsed_s", "file_path", "file_size"}` on success / `None` on failure,
-identical in shape to `SmsUsageReportPage.click_export_csv()`. Their
-corresponding tests (`test_<name>_analytics_flow.py`'s `..._TC13_export_csv`
-/ `test_tc17_export_csv`) were upgraded to actually assert a file
-downloaded — previously they only asserted the page didn't crash, since
-nothing was ever captured to check.
+`rcs_country_analytics_page.py`, `rcs_campaign_analytics_page.py`) had
+the exact same broken export pattern already fixed for SMS's report
+pages — `click_export_csv()` clicked the button and slept 1.5s without
+capturing anything. All 8 now wrap the click in `page.expect_download()`
+and return `{"elapsed_s", "file_path", "file_size"}` on success / `None`
+on failure, identical in shape to `SmsUsageReportPage.click_export_csv()`.
+`rcs_agent_page.py` and `rcs_optout_page.py` needed a new `export_csv()`
+method altogether (only a `BULK_ACTION_EXPORT` locator existed before),
+built by mirroring `SmsBlockedNumbersPage.export_csv()`'s confirmed
+Bulk-Actions-dropdown pattern.
 
 **Confirmed and asserted** (real header row supplied directly by the
 user, since this session's own live-app access was blocked — see "RCS
-API client" below for the same constraint): four more exports now have
-a `constants/rcs_<name>_headers.py` + a real `validate_file_headers()`
-assertion, mirroring `constants/rcs_campaign_headers.py` exactly:
+API client" below for the same constraint): every export listed below
+now has a `constants/rcs_<name>_headers.py` + a real
+`validate_file_headers()` assertion, mirroring
+`constants/rcs_campaign_headers.py` exactly. Combined with the Campaign
+list export documented above, this is now **every known RCS CSV/Excel
+export in the suite** — there is no remaining RCS export screen with
+only a logged-not-asserted header.
 
 | Export | Test | Constants file | Columns |
 | --- | --- | --- | --- |
@@ -890,6 +903,27 @@ assertion, mirroring `constants/rcs_campaign_headers.py` exactly:
 | RCS Incoming Messages | `tests/rcs/messaging/test_rcs_incoming_messages_flow.py::test_tc018_export_csv_button` | [`rcs_incoming_messages_headers.py`](constants/rcs_incoming_messages_headers.py) | 9 |
 | RCS Download Center (async job export) | `tests/rcs/reports/test_rcs_download_center_flow.py::test_tc10_download_initiates` | [`rcs_download_center_headers.py`](constants/rcs_download_center_headers.py) | 20 |
 | RCS Template **list** (`/rcs/template`) | `tests/rcs/templates/test_rcs_template_flow.py::test_TC002_export_csv_verifies_header` (new file) | [`rcs_template_list_headers.py`](constants/rcs_template_list_headers.py) | 11 |
+| RCS Agent **list** (`/rcs/senderid`) | `tests/rcs/agent/test_rcs_agent_flow.py::test_RCS026_export_csv_verifies_header` | [`rcs_agent_list_headers.py`](constants/rcs_agent_list_headers.py) | 11 |
+| RCS OptOut Numbers (blocked numbers) | `tests/rcs/opt_out/test_rcs_optout_flow.py::test_TC027_export_csv_verifies_header` | [`rcs_optout_headers.py`](constants/rcs_optout_headers.py) | 4 |
+| RCS Agent Analytics | `tests/rcs/reports/test_rcs_agent_analytics_flow.py::test_agent_analytics_TC13_export_csv` | [`rcs_agent_analytics_headers.py`](constants/rcs_agent_analytics_headers.py) | 16 |
+| RCS Template Analytics | `tests/rcs/reports/test_rcs_template_analytics_flow.py::test_template_analytics_TC13_export_csv` | [`rcs_template_analytics_headers.py`](constants/rcs_template_analytics_headers.py) | 17 |
+| RCS Usage Analytics | `tests/rcs/reports/test_rcs_usage_analytics_flow.py::test_usage_analytics_TC13_export_csv` | [`rcs_usage_analytics_headers.py`](constants/rcs_usage_analytics_headers.py) | 14 |
+| RCS Status Analytics | `tests/rcs/reports/test_rcs_status_analytics_flow.py::test_tc17_export_csv` | [`rcs_status_analytics_headers.py`](constants/rcs_status_analytics_headers.py) | 11 |
+| RCS Country Analytics | `tests/rcs/reports/test_rcs_country_analytics_flow.py::test_country_analytics_TC13_export_csv` | [`rcs_country_analytics_headers.py`](constants/rcs_country_analytics_headers.py) | 17 |
+| RCS Message Type Analytics | `tests/rcs/reports/test_rcs_message_type_analytics_flow.py::test_message_type_analytics_TC13_export_csv` | [`rcs_message_type_analytics_headers.py`](constants/rcs_message_type_analytics_headers.py) | 17 |
+| RCS Campaign Analytics | `tests/rcs/reports/test_rcs_campaign_analytics_flow.py::test_campaign_analytics_TC15_export_csv` | [`rcs_campaign_analytics_headers.py`](constants/rcs_campaign_analytics_headers.py) | 18 |
+| RCS Error Code report | `tests/rcs/reports/test_rcs_error_code_analytics_flow.py::test_error_code_analytics_TC13_export_csv` | [`rcs_error_code_analytics_headers.py`](constants/rcs_error_code_analytics_headers.py) | 6 |
+
+The seven per-dimension Analytics reports (Agent/Template/Usage/Status/
+Country/Message Type/Campaign) share the same 13-column metrics tail
+(`Total Count` through `Total Charges`), differing only in their leading
+breakdown-dimension column(s) — confirmed from each report's own live
+`<thead>`/export, not assumed identical and copy-pasted. Status Analytics
+is the one exception: it has no Sent/Delivered/Read/Failed/Rejected/
+DLR-Awaited breakdown, since Status is itself the breakdown dimension.
+Error Code is structurally different again — a short Duration/Product/
+ERROR CODE/ERROR DESCRIPTION/Total Count/Percentage Share set, not a
+metrics table at all.
 
 `RcsMessagePage.get_csv_headers()` had the same narrow-CSV-only problem
 `RcsDownloadCenterPage.get_csv_headers()` had (documented below): it only
@@ -908,14 +942,6 @@ Note: the RCS Campaign list header the user re-supplied alongside these
 matched `constants/rcs_campaign_headers.py` exactly, character for
 character — independent confirmation that constant is still correct, no
 changes needed there.
-
-**Still pending real data** (headers logged, not asserted): the 7
-analytics/report exports listed at the top of this section
-(`test_<name>_analytics_flow.py`'s `..._TC13_export_csv` /
-`test_tc17_export_csv`) still only **log** the real file's extension and
-header row on every run (`print(f"Header row: {headers}")`) rather than
-asserting against a guess — no real header row has been seen for any of
-them yet.
 
 **Resolved: the "RCS Template" header is the Template *list* screen**
 (`/rcs/template`), confirmed by the user — distinct from
@@ -988,13 +1014,13 @@ revisitable.
 |---|---|---|---|
 | Core (Login, Dashboard, Forgot Password) | 3 | 3 | — |
 | SMS | 18 | 20 | 643 |
-| RCS | 19 | 20 | 687 |
+| RCS | 19 | 20 | 689 |
 | WhatsApp | 12 | 12 | 402 |
 | Email | 5 | 5 | 136 |
 | Contacts, Segmentation, Tags, Communication Flow | 4 | 3 (no dedicated Communication Flow test) | — |
 | Shared (`base_page.py`) | 1 | — | — |
 | Pre-existing scratch/debug (`test_temp_dump*.py`) | — | 2 | 2 |
-| **Total** | **62** | **65** | **1,944** |
+| **Total** | **62** | **65** | **1,946** |
 
 (Test-collected counts above are from a real `pytest --collect-only -q`
 run against this working tree, not estimates — re-run it yourself with
