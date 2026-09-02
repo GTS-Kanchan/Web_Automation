@@ -1,10 +1,22 @@
+import os
+import time
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class RcsTemplateCreatePage(BasePage):
 
     CREATE_URL = "/rcs/template/create"
     LIST_URL = "/rcs/template"
+
+    # Best-effort -- mirrors the confirmed BTN_EXPORT convention already
+    # proven on RCSCampaignPage (rcs_campaign_page.py), the closest
+    # sibling "list export" screen, since this button was never
+    # independently confirmed on the Template list itself. See
+    # click_export_csv() below for how a locator miss degrades (skip,
+    # not a guessed-selector failure).
+    BTN_EXPORT = "xpath=//button[contains(.,'Export')] | //a[contains(.,'Export')]"
 
     # ── Page header ──────────────────────────────────────────────────────────
     PAGE_HEADING = (
@@ -65,6 +77,11 @@ class RcsTemplateCreatePage(BasePage):
 
     def navigate(self):
         self.open(self.CREATE_URL)
+        self.page.wait_for_timeout(2000)
+        return self
+
+    def navigate_to_list(self):
+        self.open(self.LIST_URL)
         self.page.wait_for_timeout(2000)
         return self
 
@@ -190,6 +207,41 @@ class RcsTemplateCreatePage(BasePage):
 
     def is_success_toast_shown(self, timeout=6000):
         return self.is_element_present(self.NOTIFICATION_TITLE, timeout=timeout)
+
+    # ── Template list export ─────────────────────────────────────────────────
+
+    def click_export_csv(self, timeout_ms=30000):
+        """Clicks Export on the Template LIST screen (navigate_to_list()
+        first), capturing the resulting download via
+        page.expect_download() -- same shape/pattern as
+        RCSCampaignPage.click_export_csv(), the confirmed closest sibling
+        "list export" screen. BTN_EXPORT itself is a best-effort locator,
+        NOT independently confirmed against this screen's live DOM (only
+        the header row was, via a real download supplied directly by the
+        user) -- so a locator miss here means "not found", not "assert
+        against a guessed selector": callers should treat None the same
+        way RCSCampaignPage's callers do (skip, don't fail).
+
+        Returns {"elapsed_s", "file_path", "file_size"} on success, or
+        None on failure (button not found/not clickable, or no download
+        event within timeout_ms)."""
+        try:
+            btn = self.h.wait_for_element_clickable(self.BTN_EXPORT, timeout=10000)
+            btn.scroll_into_view_if_needed()
+            start = time.time()
+            with self.page.expect_download(timeout=timeout_ms) as dl_info:
+                btn.click()
+            download = dl_info.value
+            filename = download.suggested_filename or "rcs_templates_export.csv"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {
+                "elapsed_s": time.time() - start,
+                "file_path": dest,
+                "file_size": os.path.getsize(dest),
+            }
+        except Exception:
+            return None
 
     # ── Convenience: full valid submission ───────────────────────────────────
 

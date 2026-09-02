@@ -7,8 +7,8 @@ page-object base classes, helpers, error monitor, HTML reporting) plus all
 functional modules — **Login, Dashboard, Forgot Password, SMS, RCS,
 WhatsApp, Email, Contacts, Segmentation, Tags, and Communication Flow**.
 
-The converted suite currently totals **62 page objects** and **64 test
-files** (**1,939 tests**), all collecting cleanly under
+The converted suite currently totals **62 page objects** and **65 test
+files** (**1,944 tests**), all collecting cleanly under
 `pytest --collect-only` with the original `smoke` / `regression` /
 `negative` markers intact. The "Project structure" and "Coverage"
 sections below reflect the current, channel-based file locations; see
@@ -33,8 +33,8 @@ and makes adding a future channel low-risk. **Every suite is migrated:**
 common/cross-channel suites at `tests/common/`+`pages/common/` (login,
 dashboard, forgot password, contacts, segmentation, tags) — each organized
 into feature subfolders (campaigns, templates, reports, etc.) with
-`pytestmark` channel/feature tags. The suite totals **1,939 tests**
-(common 74, SMS 643, RCS 682, WhatsApp 402, Email 136 — 1,937 across
+`pytestmark` channel/feature tags. The suite totals **1,944 tests**
+(common 74, SMS 643, RCS 687, WhatsApp 402, Email 136 — 1,942 across
 those five folders, plus 2 pre-existing `test_temp_dump*.py` scratch/debug
 files at the `tests/` root that predate this migration and are unrelated
 to it). All five counts above are from a real `pytest --collect-only`
@@ -264,7 +264,7 @@ same (see the table above for the one exception, `BROWSER`).
 ## Running tests
 
 ```bash
-# All tests (full suite — 1,939 tests)
+# All tests (full suite — 1,944 tests)
 pytest
 
 # A single channel, e.g. SMS
@@ -442,7 +442,8 @@ cpaas_playwright_tests/
 │   ├── rcs_campaign_headers.py      # EXPECTED_RCS_CAMPAIGN_HEADERS — 21 headers
 │   ├── rcs_message_headers.py       # EXPECTED_RCS_MESSAGE_HEADERS — 22 headers
 │   ├── rcs_incoming_messages_headers.py  # EXPECTED_RCS_INCOMING_MESSAGES_HEADERS — 9 headers
-│   └── rcs_download_center_headers.py    # EXPECTED_RCS_DOWNLOAD_CENTER_HEADERS — 20 headers
+│   ├── rcs_download_center_headers.py    # EXPECTED_RCS_DOWNLOAD_CENTER_HEADERS — 20 headers
+│   └── rcs_template_list_headers.py      # EXPECTED_RCS_TEMPLATE_LIST_HEADERS — 11 headers
 │
 ├── pages/                           # 62 page objects (POM), channel-based layout
 │   ├── common/                      # 8 files — base_page.py (shared BasePage superclass),
@@ -453,7 +454,7 @@ cpaas_playwright_tests/
 │   ├── whatsapp/                    # 12 files
 │   └── email/                       # 5 files
 │
-├── tests/                           # 64 test files, 1,939 tests total
+├── tests/                           # 65 test files, 1,944 tests total
 │   ├── common/                      # 6 files — test_login, test_dashboard,
 │   │                                 #   test_forgot_password, test_contacts_flow,
 │   │                                 #   test_segmentation_flow, test_tags_flow
@@ -465,7 +466,7 @@ cpaas_playwright_tests/
 │   │                                 #   test_campaign_creation.py and the
 │   │                                 #   parallel-execution reference example,
 │   │                                 #   test_sms_parallel_example_flow.py
-│   ├── rcs/                         # 19 files across agent/ campaigns/ messaging/
+│   ├── rcs/                         # 20 files across agent/ campaigns/ messaging/
 │   │                                 #   opt_out/ reports/ templates/
 │   ├── whatsapp/                    # 12 files across opt_out/ reports/
 │   ├── email/                       # 5 files across campaigns/ reports/ templates/
@@ -726,7 +727,7 @@ are written against.
 | `rcs_agent_page.py` | Agent list/create screen |
 | `rcs_campaign_create_page.py` | Campaign creation wizard — name, agent/template pickers, contact import (paste + CSV), schedule controls, Test Campaign, Launch Campaign, modal handling |
 | `rcs_campaign_page.py` | Campaign list — search, Status multiselect filter, pagination, CSV/xlsx export |
-| `rcs_template_create_page.py` | Template creation (Text/Rich Card/Carousel types) |
+| `rcs_template_create_page.py` | Template creation (Text/Rich Card/Carousel types) + the Template **list** screen (`navigate_to_list()`, `click_export_csv()`) |
 | `rcs_message_page.py` | Outgoing message log |
 | `rcs_incoming_messages_page.py` | Incoming message log |
 | `rcs_optout_page.py` | Opt-out/blocked-number list |
@@ -776,16 +777,16 @@ nothing RCS-specific was needed there.
   fabricated number — set it to a real test number in your own `.env` to
   bring them into the run.
 
-### Tests (`tests/rcs/`, 19 files, 682 tests)
+### Tests (`tests/rcs/`, 20 files, 687 tests)
 
 | Folder | Files | What's covered |
 | --- | --- | --- |
 | `agent/` | 1 | Agent list/create flow |
-| `campaigns/` | 2 | `test_rcs_campaign_create_flow.py` (creation wizard, 144 tests) + `test_rcs_campaign_flow.py` (list/export, 6 tests) — see below |
+| `campaigns/` | 2 | `test_rcs_campaign_create_flow.py` (creation wizard, 144 tests) + `test_rcs_campaign_flow.py` (list/export, 9 tests) — see below |
 | `messaging/` | 2 | Outgoing + incoming message logs |
 | `opt_out/` | 1 | Opt-out/blocked-number list |
 | `reports/` | 12 | Download Center + one file per analytics screen, incl. `test_rcs_parallel_example_flow.py` (the RCS equivalent of `test_sms_parallel_example_flow.py` — function-scoped `logged_in_page` + worker-safe unique data, the reference pattern for genuine per-test parallelism) |
-| `templates/` | 1 | Template creation (Text/Rich Card/Carousel) |
+| `templates/` | 2 | Template creation (Text/Rich Card/Carousel) + Template **list** export (`test_rcs_template_flow.py`, added once real header data existed — see below) |
 
 **`test_rcs_campaign_create_flow.py` is the deep end of the channel** —
 144 tests against the campaign creation wizard, covering (per the RCS
@@ -879,7 +880,7 @@ nothing was ever captured to check.
 
 **Confirmed and asserted** (real header row supplied directly by the
 user, since this session's own live-app access was blocked — see "RCS
-API client" below for the same constraint): three more exports now have
+API client" below for the same constraint): four more exports now have
 a `constants/rcs_<name>_headers.py` + a real `validate_file_headers()`
 assertion, mirroring `constants/rcs_campaign_headers.py` exactly:
 
@@ -888,6 +889,7 @@ assertion, mirroring `constants/rcs_campaign_headers.py` exactly:
 | RCS Messages (outgoing log) | `tests/rcs/messaging/test_rcs_message_flow.py::test_TC05_export_csv` | [`rcs_message_headers.py`](constants/rcs_message_headers.py) | 22 |
 | RCS Incoming Messages | `tests/rcs/messaging/test_rcs_incoming_messages_flow.py::test_tc018_export_csv_button` | [`rcs_incoming_messages_headers.py`](constants/rcs_incoming_messages_headers.py) | 9 |
 | RCS Download Center (async job export) | `tests/rcs/reports/test_rcs_download_center_flow.py::test_tc10_download_initiates` | [`rcs_download_center_headers.py`](constants/rcs_download_center_headers.py) | 20 |
+| RCS Template **list** (`/rcs/template`) | `tests/rcs/templates/test_rcs_template_flow.py::test_TC002_export_csv_verifies_header` (new file) | [`rcs_template_list_headers.py`](constants/rcs_template_list_headers.py) | 11 |
 
 `RcsMessagePage.get_csv_headers()` had the same narrow-CSV-only problem
 `RcsDownloadCenterPage.get_csv_headers()` had (documented below): it only
@@ -915,22 +917,27 @@ header row on every run (`print(f"Header row: {headers}")`) rather than
 asserting against a guess — no real header row has been seen for any of
 them yet.
 
-**Ambiguous, needs clarification:** a "RCS Template" header was also
-supplied (`ID, Name, Message Type, Agent, Status, Product, Is Public,
-Created At, Department, User, Updated At` — 11 columns) but its columns
-don't match `rcs_template_analytics_page.py`'s live `<thead>`-confirmed
-columns (`duration, product, agent, template_name, total_count,
-sent_count, delivered_count, read_count, failed_count, rejected_count,
+**Resolved: the "RCS Template" header is the Template *list* screen**
+(`/rcs/template`), confirmed by the user — distinct from
+`rcs_template_analytics_page.py`'s Template Analytics Report (whose
+`<thead>`-confirmed columns are usage/metric counts:
+`duration, product, agent, template_name, total_count, sent_count,
+delivered_count, read_count, failed_count, rejected_count,
 dlr_awaited_count, interactions, quick_reply_total, quick_reply_unique,
-cta_total_clicks, cta_unique_clicks, total_charges` — analytics/metric
-columns, not a template catalog). This looks like a *Template list*
-export (template definitions, not usage stats) — but no page object
-currently models that screen's Export button (only
-`rcs_template_create_page.py`, the create form, and
-`rcs_template_analytics_page.py`, the analytics report, exist). Building
-one requires the real screen URL and Export button locator, not just the
-header row, so it wasn't guessed at; confirm which screen this came from
-and this can be added the same way as the three exports above.
+cta_total_clicks, cta_unique_clicks, total_charges` — a completely
+different screen). No page object modeled that list screen's Export
+button before now — `rcs_template_create_page.py` (which already owned
+`LIST_URL`/`is_list_page()`) gained `navigate_to_list()` and
+`click_export_csv()`, and the new `test_rcs_template_flow.py` file
+covers it (a gap the codebase's own `test_TC_SKIP_save_persists_to_listing`
+docstring had explicitly flagged: "deferred until the listing-page test
+suite ... is built"). One caveat: the Export button's own locator
+(`BTN_EXPORT`) is a best-effort guess mirrored from `RCSCampaignPage`'s
+confirmed pattern, not independently confirmed against this screen's
+live DOM the way the header row was — `click_export_csv()` returns
+`None` on a locator miss and the test skips rather than fails, exactly
+the same discipline used for other unconfirmed-selector cases elsewhere
+in this suite.
 
 ### Parity with SMS: single login and test independence
 
@@ -981,13 +988,13 @@ revisitable.
 |---|---|---|---|
 | Core (Login, Dashboard, Forgot Password) | 3 | 3 | — |
 | SMS | 18 | 20 | 643 |
-| RCS | 19 | 19 | 682 |
+| RCS | 19 | 20 | 687 |
 | WhatsApp | 12 | 12 | 402 |
 | Email | 5 | 5 | 136 |
 | Contacts, Segmentation, Tags, Communication Flow | 4 | 3 (no dedicated Communication Flow test) | — |
 | Shared (`base_page.py`) | 1 | — | — |
 | Pre-existing scratch/debug (`test_temp_dump*.py`) | — | 2 | 2 |
-| **Total** | **62** | **64** | **1,939** |
+| **Total** | **62** | **65** | **1,944** |
 
 (Test-collected counts above are from a real `pytest --collect-only -q`
 run against this working tree, not estimates — re-run it yourself with
