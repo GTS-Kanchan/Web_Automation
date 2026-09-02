@@ -53,6 +53,7 @@ import datetime
 
 import pytest
 
+from channels.rcs_channel import RCSChannel
 from pages.rcs.rcs_campaign_create_page import RcsCampaignCreatePage
 from pages.rcs.rcs_campaign_page import RCSCampaignPage
 from pages.rcs.rcs_message_page import RcsMessagePage
@@ -67,12 +68,13 @@ pytestmark = [pytest.mark.rcs, pytest.mark.campaign]
 # Helper
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _unique_name(prefix="RCS_CAMP"):
-    """Return a worker-safe unique campaign name (< 30 chars) -- see
-    utils/parallel.py's short_unique_tag() for why this isn't a bare
-    timestamp: two parallel workers (or two pytest invocations against the
-    same shared account) must never produce the same name."""
-    return f"{prefix[:8]}_{short_unique_tag()}"
+# Stateless -- RCSChannel.unique_campaign_name() needs no Playwright page,
+# so one module-level instance is reused as a drop-in replacement for the
+# local _unique_name() helper this used to define (see channels/rcs_channel.py
+# for why it overrides the base class's version). Kept as a thin
+# `_unique_name` alias so the ~20 call sites below don't need touching one
+# by one beyond this line.
+_unique_name = RCSChannel().unique_campaign_name
 
 
 def _future_datetime(hours=1):

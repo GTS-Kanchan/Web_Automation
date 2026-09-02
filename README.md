@@ -737,19 +737,32 @@ nothing RCS-specific was needed there.
 - `fixtures/rcs_fixtures.py` is registered as a pytest plugin in
   `conftest.py`, the same mechanism SMS/WhatsApp/Email use — no RCS-only
   fixture wiring exists outside this file.
-- `channels/rcs_channel.py`'s `RCSChannel` is intentionally thin — it only
-  exposes `agent_name` (worker-safe), unlike `SMSChannel`'s
-  `sender_id`/`template_name`/`template_with_vars`/`paste_contacts`/
-  `campaign_prefix`. This was checked directly against the two Campaign
-  test files (`test_rcs_campaign_flow.py`, `test_rcs_campaign_create_flow.py`)
-  and confirmed **not** to be a functional gap: neither file actually uses
-  `RCSChannel` — both generate their own worker-safe unique names locally
-  (the same `unique_name()`/`short_unique_tag()` building blocks from
-  `utils/parallel.py` that `RCSChannel` itself is built on), so campaign
-  test data is already collision-safe across parallel workers without it.
+- `channels/rcs_channel.py`'s `RCSChannel` exposes `agent_name`
+  (worker-safe passthrough to `Config.RCS_AGENT_NAME`) and
+  `unique_campaign_name(prefix)`, a worker-safe unique RCS campaign name
+  under 30 chars. `unique_campaign_name()` **overrides** the generic
+  version `BaseChannel` gives every channel for free: RCS's Campaign Name
+  field has a tight, hand-tuned character budget that the base version's
+  longer `unique_name()`-based suffix would blow past, so this one uses
+  `short_unique_tag()` instead — same primitive `utils/parallel.py`
+  already names RCS campaign/template creation as an intended use site
+  for. `test_rcs_campaign_create_flow.py` (the only RCS file that
+  generates campaign names — `test_rcs_campaign_flow.py` only reads the
+  existing list) used to duplicate this logic in a local `_unique_name()`
+  helper; that helper now aliases directly to
+  `RCSChannel().unique_campaign_name` so the naming logic lives in one
+  place, with identical output.
 - `Config.RCS_AGENT_NAME` (`.env`, default `"agentsim"`) is the agent used
   wherever a test needs to select *some* valid agent without caring which
-  one.
+  one. Audited across every RCS test that touches it
+  (`tests/rcs/agent/test_rcs_agent_flow.py` and the agent-selection tests
+  in `test_rcs_campaign_create_flow.py`): confirmed **read-only** —
+  neither `rcs_agent_page.py` nor `rcs_campaign_create_page.py` exposes a
+  create/edit/delete/save method for an agent, selection is a dropdown
+  pick, and the agent list's Bulk Actions dropdown is only ever opened to
+  assert Export is present, never clicked against a selected row. Sharing
+  one agent across every parallel worker is safe as-is; per-worker agent
+  scoping isn't needed unless a future test starts mutating agent state.
 - `Config.RCS_OPTOUT_NUMBERS` (`.env`, comma-separated, **empty by
   default**) backs the opt-out negative-path tests. With it unset those
   tests self-skip with an explicit reason rather than failing or using a
@@ -865,6 +878,21 @@ with no changes needed:
 
 No RCS-specific "port the SMS improvements" work was required — it was
 already there.
+
+### RCS API client: investigated, not built
+
+A minimal `RCSApiClient` (extending `api/common/base_client.py`'s
+`BaseApiClient`) was considered, to create/delete RCS agents and
+templates for test setup instead of driving the UI. It wasn't built:
+`Config.API_URL` defaults to `""` and is unset in every
+`config/environments/*.env` in this repo, no endpoint/auth/request shape
+for an RCS agent or template is documented anywhere in this codebase, and
+the live platform wasn't reachable to discover or confirm one directly
+(see `docs/ARCHITECTURE.md#11-api-layer`). Writing a client against
+guessed endpoints would be exactly the "dead code implying capabilities
+the suite doesn't have" that `base_client.py`'s own docstring already
+warns against. If a real API (or its Postman/Swagger doc) exists, this is
+revisitable.
 
 ---
 

@@ -161,7 +161,18 @@ class Config:
     SEGMENT_FIELDS = [f.strip() for f in os.getenv("SEGMENT_FIELDS", "address,education").split(",") if f.strip()]
 
     # ── RCS Campaign test data ────────────────────────────────────────────────
-    # Visible name of the RCS Agent used when creating a campaign
+    # Visible name of the RCS Agent used when creating a campaign. Shared
+    # across every parallel worker (one account, one agent) -- confirmed
+    # safe to share: audited every RCS test file that touches this agent
+    # (tests/rcs/agent/test_rcs_agent_flow.py and the agent-selection
+    # tests in tests/rcs/campaigns/test_rcs_campaign_create_flow.py) and
+    # neither pages/rcs/rcs_agent_page.py nor
+    # pages/rcs/rcs_campaign_create_page.py exposes a create/edit/delete/
+    # save method for an agent -- selection is read-only (a dropdown
+    # pick), and the agent list page's Bulk Actions dropdown is only ever
+    # opened to assert Export is present, never used to act on a selected
+    # row. No per-worker scoping is needed unless a future test starts
+    # mutating agent state.
     RCS_AGENT_NAME = os.getenv("RCS_AGENT_NAME", "agentsim")
 
     # Phone number(s) already in an opted-out state on this instance

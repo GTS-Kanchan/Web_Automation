@@ -214,6 +214,16 @@ does **not** reimplement waiting/retry/auth/context handling — those stay
 exactly where they already lived (`Helpers` / `conftest.py`), composed in,
 not duplicated.
 
+`RCSChannel.unique_campaign_name()` deliberately **overrides** the base
+version rather than using it as-is: the RCS Campaign Name field has a
+tight, hand-tuned character budget that `unique_name()`'s longer
+epoch/worker/counter/random suffix would exceed, so it uses
+`short_unique_tag()` instead (a primitive `utils/parallel.py` already
+names RCS campaign/template creation as an intended use site for). This
+consolidates a `_unique_name()` helper that used to be duplicated locally
+inside `tests/rcs/campaigns/test_rcs_campaign_create_flow.py` — same
+output shape, same behavior, one place to maintain it.
+
 `channels/__init__.py` is a factory (`get_channel("sms", page=...)`) plus a
 `register_channel(name, cls)` escape hatch so a new channel package can
 register itself without editing this file.
@@ -579,6 +589,21 @@ Scaffold only (`api/common/base_client.py` + empty `api/{sms,whatsapp,rcs,email}
 against unconfirmed endpoints, and the concrete pattern to fill in real
 ones later, built on Playwright's own `APIRequestContext` (already a
 dependency).
+
+**RCS specifically was investigated** (as a candidate for a minimal
+`RCSApiClient` to speed up agent/template setup in
+`test_rcs_campaign_create_flow.py`) and found not implementable
+responsibly right now: `Config.API_URL` defaults to `""` and is unset in
+every `config/environments/*.env` in this repo, no endpoint, auth scheme,
+or request/response shape for creating/deleting an RCS agent or template
+is documented anywhere in this codebase, and the live platform
+(`testqa.cpaas.globeteleservices.com`) wasn't reachable from either the
+automation shell used for this work or its cloud counterpart (both got a
+403 from an egress proxy) to discover or confirm one directly. Building
+`api/rcs/rcs_client.py` against guessed endpoints would be exactly the
+"dead code implying capabilities the suite doesn't have" `base_client.py`'s
+own docstring warns against — so it wasn't done. If a real RCS API (or a
+Postman/Swagger doc for one) exists, share it and this can be revisited.
 
 ---
 
