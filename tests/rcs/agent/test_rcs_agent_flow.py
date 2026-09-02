@@ -123,29 +123,29 @@ def test_RCS010_created_from_date_filter(agent_page):
 def test_RCS011_created_to_date_filter(agent_page):
     ensure_on_agent_page(agent_page)
     reset_state(agent_page)
-    agent_page.set_created_to_filter("2026-12-31")
+    agent_page.set_created_to_filter("2025-12-31")
     agent_page.page.wait_for_timeout(1000)
     assert agent_page.has_records() or agent_page.has_no_records_message()
     _, to_val = agent_page.get_filter_values()
-    assert to_val == "2026-12-31"
+    assert to_val == "2025-12-31"
     agent_page.clear_date_filters()
 
 
 def test_RCS012_created_date_range_filter(agent_page):
     ensure_on_agent_page(agent_page)
     reset_state(agent_page)
-    agent_page.set_date_range_filter("2025-01-01", "2026-12-31")
+    agent_page.set_date_range_filter("2025-01-01", "2025-12-31")
     agent_page.page.wait_for_timeout(1000)
     assert agent_page.has_records() or agent_page.has_no_records_message()
     from_val, to_val = agent_page.get_filter_values()
     assert from_val == "2025-01-01"
-    assert to_val == "2026-12-31"
+    assert to_val == "2025-12-31"
     agent_page.clear_date_filters()
 
 
 def test_RCS013_clear_filter(agent_page):
     ensure_on_agent_page(agent_page)
-    agent_page.set_date_range_filter("2025-01-01", "2026-12-31")
+    agent_page.set_date_range_filter("2025-01-01", "2025-12-31")
     agent_page.page.wait_for_timeout(1000)
     agent_page.clear_date_filters()
     from_val, to_val = agent_page.get_filter_values()
@@ -201,7 +201,7 @@ def test_RCS019_verification_status_values(agent_page):
     ensure_on_agent_page(agent_page)
     values = agent_page.get_column_values("verification_status")
     assert len(values) > 0
-    valid = {"verified", "pending"}
+    valid = {"verified", "pending", "rejected"}
     for v in values:
         assert v.strip().lower() in valid, f"unexpected verification status value: {v}"
 

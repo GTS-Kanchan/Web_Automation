@@ -24,6 +24,12 @@ class BasePage:
     def is_element_present(self, locator, timeout=5000):
         return self.h.is_element_present(locator, timeout)
 
+    def is_element_visible(self, locator, timeout=5000):
+        return self.h.is_element_visible(locator, timeout)
+
+    def is_element_hidden(self, locator, timeout=5000):
+        return self.h.is_element_hidden(locator, timeout)
+
     def _count_data_rows(self, rows_locator, retries=2):
         """Count rows matched by `rows_locator` that contain at least one
         non-empty <td> — i.e. genuine data rows, not decorative/empty

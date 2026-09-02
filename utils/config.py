@@ -163,3 +163,11 @@ class Config:
     # ── RCS Campaign test data ────────────────────────────────────────────────
     # Visible name of the RCS Agent used when creating a campaign
     RCS_AGENT_NAME = os.getenv("RCS_AGENT_NAME", "agentsim")
+
+    # Phone number(s) already in an opted-out state on this instance
+    # (comma-separated, e.g. 919876543210,919876543211). Required for the
+    # opt-out validation tests (TC156/TC157) -- left empty by default since
+    # this project has no seeding utility and spec section 18 forbids
+    # hardcoding a real customer/personal number; populate with a real
+    # opted-out test number from this instance.
+    RCS_OPTOUT_NUMBERS = [n.strip() for n in os.getenv("RCS_OPTOUT_NUMBERS", "").split(",") if n.strip()]

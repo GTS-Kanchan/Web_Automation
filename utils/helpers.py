@@ -61,6 +61,22 @@ class Helpers:
         except PlaywrightTimeoutError:
             return False
 
+    def is_element_visible(self, locator, timeout=5000):
+        """Check if an element is both present and visible on screen."""
+        try:
+            self.page.locator(locator).first.wait_for(state="visible", timeout=timeout)
+            return True
+        except Exception:
+            return False
+
+    def is_element_hidden(self, locator, timeout=5000):
+        """Wait for an element to be hidden or detached."""
+        try:
+            self.page.locator(locator).first.wait_for(state="hidden", timeout=timeout)
+            return True
+        except Exception:
+            return False
+
     # ── Screenshots ────────────────────────────────────────────────────────────
 
     def take_screenshot(self, name=None):

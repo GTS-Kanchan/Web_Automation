@@ -384,10 +384,9 @@ class SMSCampaignPage(BasePage):
         # binding is wire:model.lazy/.blur (fires on 'change'/blur) rather
         # than wire:model.live/.debounce (fires on 'input'), fill() alone
         # never triggers the search request and the table silently stays
-        # unfiltered — which is exactly what made TC005 flake: the
-        # no-records state never arrives because no search ever ran.
-        # Dispatching 'change' + blurring covers both binding styles.
-        inp.dispatch_event("change")
+        # unfiltered.
+        inp.evaluate("(el) => { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }")
+        inp.press("Enter")
         inp.blur()
         self.page.wait_for_timeout(1500)
 

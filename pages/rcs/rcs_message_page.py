@@ -182,6 +182,32 @@ class RcsMessagePage(BasePage):
         except Exception:
             pass
 
+    def has_campaign_message_for_number(self, phone_number: str, timeout: int = 20000) -> bool:
+        """Navigate to the RCS Messages report, filter Source = Campaign
+        (SOURCE_CAMPAIGN), search *phone_number*, and return whether at
+        least one matching row is present within *timeout*. Added so the
+        RCS Campaign opt-out validation tests (TC156/TC157) can verify,
+        from a real report, whether a launched campaign actually sent to
+        (or excluded) a given number -- instead of only trusting the
+        create-page's own success/redirect signal, which says nothing
+        about which individual contacts were actually messaged."""
+        self.navigate()
+        try:
+            self.open_filter_panel()
+            self.set_filter_source(self.SOURCE_CAMPAIGN)
+        except Exception:
+            pass
+        self.search(phone_number)
+
+        deadline = self.page.evaluate("() => Date.now()") + timeout
+        while self.page.evaluate("() => Date.now()") < deadline:
+            if self.get_row_count() > 0:
+                return True
+            if self.is_no_records_visible():
+                return False
+            self.page.wait_for_timeout(800)
+        return self.get_row_count() > 0
+
     # -------------------------------------------------------------------------
     # Filters
     # -------------------------------------------------------------------------

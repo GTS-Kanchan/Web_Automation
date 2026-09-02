@@ -246,7 +246,7 @@ class RcsAgentPage(BasePage):
         self.open_filters_popover()
         from_el = self.h.wait_for_element_visible(self.FILTER_CREATED_FROM)
         to_el = self.h.wait_for_element_visible(self.FILTER_CREATED_TO)
-        return from_el.get_attribute("value"), to_el.get_attribute("value")
+        return from_el.input_value(), to_el.input_value()
 
     def clear_date_filters(self):
         """No dedicated 'Clear Filters' button exists in the supplied DOM
