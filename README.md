@@ -8,7 +8,7 @@ functional modules — **Login, Dashboard, Forgot Password, SMS, RCS,
 WhatsApp, Email, Contacts, Segmentation, Tags, and Communication Flow**.
 
 The converted suite currently totals **62 page objects** and **64 test
-files** (**1,844 tests**), all collecting cleanly under
+files** (**1,939 tests**), all collecting cleanly under
 `pytest --collect-only` with the original `smoke` / `regression` /
 `negative` markers intact. The "Project structure" and "Coverage"
 sections below reflect the current, channel-based file locations; see
@@ -33,11 +33,12 @@ and makes adding a future channel low-risk. **Every suite is migrated:**
 common/cross-channel suites at `tests/common/`+`pages/common/` (login,
 dashboard, forgot password, contacts, segmentation, tags) — each organized
 into feature subfolders (campaigns, templates, reports, etc.) with
-`pytestmark` channel/feature tags. The suite totals **1,844 tests**
-(common 74, SMS 645, RCS 585, WhatsApp 402, Email 136 — 1,842 across
+`pytestmark` channel/feature tags. The suite totals **1,939 tests**
+(common 74, SMS 643, RCS 682, WhatsApp 402, Email 136 — 1,937 across
 those five folders, plus 2 pre-existing `test_temp_dump*.py` scratch/debug
 files at the `tests/` root that predate this migration and are unrelated
-to it).
+to it). All five counts above are from a real `pytest --collect-only`
+run against this working tree, not estimates.
 
 Supporting the channel structure are a `channels/` package (a
 `BaseChannel`/`SMSChannel`/`RCSChannel`/`WhatsAppChannel`/`EmailChannel`
@@ -263,7 +264,7 @@ same (see the table above for the one exception, `BROWSER`).
 ## Running tests
 
 ```bash
-# All tests (full suite — 1,844 tests)
+# All tests (full suite — 1,939 tests)
 pytest
 
 # A single channel, e.g. SMS
@@ -437,7 +438,9 @@ cpaas_playwright_tests/
 │   ├── sms_sender_report_headers.py      # EXPECTED_SMS_SENDER_REPORT_HEADERS — 19 headers
 │   ├── sms_template_report_headers.py    # EXPECTED_SMS_TEMPLATE_REPORT_HEADERS — 20 headers
 │   ├── sms_country_report_headers.py     # EXPECTED_SMS_COUNTRY_REPORT_HEADERS — 20 headers
-│   └── sms_latency_report_headers.py     # EXPECTED_SMS_LATENCY_REPORT_HEADERS — 12 headers
+│   ├── sms_latency_report_headers.py     # EXPECTED_SMS_LATENCY_REPORT_HEADERS — 12 headers
+│   └── rcs_campaign_headers.py      # EXPECTED_RCS_CAMPAIGN_HEADERS — single source of
+│                                     #   truth for the RCS Campaign list's 21 export headers
 │
 ├── pages/                           # 62 page objects (POM), channel-based layout
 │   ├── common/                      # 8 files — base_page.py (shared BasePage superclass),
@@ -448,7 +451,7 @@ cpaas_playwright_tests/
 │   ├── whatsapp/                    # 12 files
 │   └── email/                       # 5 files
 │
-├── tests/                           # 64 test files, 1,844 tests total
+├── tests/                           # 64 test files, 1,939 tests total
 │   ├── common/                      # 6 files — test_login, test_dashboard,
 │   │                                 #   test_forgot_password, test_contacts_flow,
 │   │                                 #   test_segmentation_flow, test_tags_flow
@@ -511,8 +514,11 @@ PASS / FAIL
 ```
 
 Scope (phase 1): **headers only**. Row data, values, data types, record
-counts, and business logic are NOT validated by this check. Only SMS is
-covered — RCS/WhatsApp/Email are not implemented yet.
+counts, and business logic are NOT validated by this check. SMS (11
+exports) and RCS (the Campaign list export) are covered — WhatsApp/Email
+are not implemented yet. The RCS export is documented in full, alongside
+the rest of the RCS channel, in the ["RCS Channel"](#rcs-channel) section
+below rather than repeated here.
 
 **Single source of truth for expected headers:**
 [`constants/sms_download_headers.py`](constants/sms_download_headers.py) —
@@ -691,9 +697,174 @@ the real Country Code-based breakdown before implementing.
 The validator is deliberately generic — the same call works for any future
 channel/feature by swapping the expected-header list:
 ```python
-validate_file_headers(rcs_file, EXPECTED_RCS_HEADERS)      # not implemented yet
-validate_file_headers(email_file, EXPECTED_EMAIL_HEADERS)  # not implemented yet
+validate_file_headers(rcs_file, EXPECTED_RCS_CAMPAIGN_HEADERS)  # implemented — see "RCS Channel" below
+validate_file_headers(email_file, EXPECTED_EMAIL_HEADERS)       # not implemented yet
 ```
+
+---
+
+## RCS Channel
+
+How the RCS channel is built and what it actually covers, at the same
+level of detail as the SMS export write-ups above. RCS mirrors SMS's
+architecture throughout (channel-based folders, single-login/worker-safe
+fixtures, worker-safe unique test data) — this section calls out what's
+shared, what's RCS-specific, and the confirmed live-DOM behavior the tests
+are written against.
+
+### Page objects (`pages/rcs/`, 19 files)
+
+| Page object | Covers |
+| --- | --- |
+| `rcs_agent_page.py` | Agent list/create screen |
+| `rcs_campaign_create_page.py` | Campaign creation wizard — name, agent/template pickers, contact import (paste + CSV), schedule controls, Test Campaign, Launch Campaign, modal handling |
+| `rcs_campaign_page.py` | Campaign list — search, Status multiselect filter, pagination, CSV/xlsx export |
+| `rcs_template_create_page.py` | Template creation (Text/Rich Card/Carousel types) |
+| `rcs_message_page.py` | Outgoing message log |
+| `rcs_incoming_messages_page.py` | Incoming message log |
+| `rcs_optout_page.py` | Opt-out/blocked-number list |
+| `rcs_download_center_page.py` | Download Center (async export jobs) |
+| `rcs_overview_page.py` | Analytics overview/dashboard |
+| `rcs_campaign_analytics_page.py`, `rcs_agent_analytics_page.py`, `rcs_template_analytics_page.py`, `rcs_usage_analytics_page.py`, `rcs_status_analytics_page.py`, `rcs_error_code_analytics_page.py`, `rcs_error_codes_page.py`, `rcs_message_type_analytics_page.py`, `rcs_country_analytics_page.py` | One page object per analytics/report screen, same `EXPORT_CSV_BUTTON` + `click_export_csv()` convention as SMS's report pages |
+
+All 19 extend the shared `pages/common/base_page.py` `BasePage`, so they
+get the same locator/wait helpers, table-row lookups, and
+`page.expect_download()`-based export capture as every other channel —
+nothing RCS-specific was needed there.
+
+### Fixtures, config, and test data
+
+- `fixtures/rcs_fixtures.py` is registered as a pytest plugin in
+  `conftest.py`, the same mechanism SMS/WhatsApp/Email use — no RCS-only
+  fixture wiring exists outside this file.
+- `channels/rcs_channel.py`'s `RCSChannel` is intentionally thin — it only
+  exposes `agent_name` (worker-safe), unlike `SMSChannel`'s
+  `sender_id`/`template_name`/`template_with_vars`/`paste_contacts`/
+  `campaign_prefix`. This was checked directly against the two Campaign
+  test files (`test_rcs_campaign_flow.py`, `test_rcs_campaign_create_flow.py`)
+  and confirmed **not** to be a functional gap: neither file actually uses
+  `RCSChannel` — both generate their own worker-safe unique names locally
+  (the same `unique_name()`/`short_unique_tag()` building blocks from
+  `utils/parallel.py` that `RCSChannel` itself is built on), so campaign
+  test data is already collision-safe across parallel workers without it.
+- `Config.RCS_AGENT_NAME` (`.env`, default `"agentsim"`) is the agent used
+  wherever a test needs to select *some* valid agent without caring which
+  one.
+- `Config.RCS_OPTOUT_NUMBERS` (`.env`, comma-separated, **empty by
+  default**) backs the opt-out negative-path tests. With it unset those
+  tests self-skip with an explicit reason rather than failing or using a
+  fabricated number — set it to a real test number in your own `.env` to
+  bring them into the run.
+
+### Tests (`tests/rcs/`, 19 files, 682 tests)
+
+| Folder | Files | What's covered |
+| --- | --- | --- |
+| `agent/` | 1 | Agent list/create flow |
+| `campaigns/` | 2 | `test_rcs_campaign_create_flow.py` (creation wizard, 144 tests) + `test_rcs_campaign_flow.py` (list/export, 6 tests) — see below |
+| `messaging/` | 2 | Outgoing + incoming message logs |
+| `opt_out/` | 1 | Opt-out/blocked-number list |
+| `reports/` | 12 | Download Center + one file per analytics screen, incl. `test_rcs_parallel_example_flow.py` (the RCS equivalent of `test_sms_parallel_example_flow.py` — function-scoped `logged_in_page` + worker-safe unique data, the reference pattern for genuine per-test parallelism) |
+| `templates/` | 1 | Template creation (Text/Rich Card/Carousel) |
+
+**`test_rcs_campaign_create_flow.py` is the deep end of the channel** —
+144 tests against the campaign creation wizard, covering (per the RCS
+Campaign spec this suite was built from): the full happy path for both
+Send Now and Scheduled campaigns; contact import via copy/paste and CSV
+upload, including the Import Completed summary panel; duplicate-phone
+handling; agent/template selection; the opt-out flow; required-field and
+inline validations; Test Campaign (preview-only, must **not** create a
+real campaign record — see below); Launch Campaign positive, negative,
+and duplicate-submission cases; and the Import Contacts / other modals'
+open/close behavior.
+
+Two tests added this session close out the one previously-unverified
+claim in that spec — that "Test Campaign" is a preview action and never
+persists a real campaign:
+
+- `test_TC158_test_campaign_does_not_create_real_campaign` — fills a
+  complete campaign (name, agent, template, one pasted contact), clicks
+  Test Campaign, then re-opens a **fresh** campaign list page and asserts
+  the campaign's name appears **zero** times there.
+- `test_TC159_test_campaign_without_agent_no_real_campaign_created` —
+  same assertion, but deliberately skips agent/template/contact selection
+  first, to also confirm clicking Test Campaign on an incomplete form
+  neither crashes (no 404/500 page) nor silently creates a record.
+
+Both open a second, independent `RCSCampaignPage` instance to check the
+list rather than trusting only the creation page's own toast/redirect —
+the same "verify persistence, not just the UI signal" principle applied
+to `test_TC041_launch_campaign` (now also tagged `smoke`, and extended to
+confirm the launched campaign both appears in the list and has a
+non-empty Status value) and `test_TC140_scheduled_campaign_status_after_creation`
+(extended to assert the Status column reads exactly `"Scheduled"`, not
+just that the row exists).
+
+**`test_rcs_campaign_flow.py`** covers the campaign *list* screen: TC001
+through TC009, including CSV/xlsx export + header validation via
+`utils/file_validator.py` and
+[`constants/rcs_campaign_headers.py`](constants/rcs_campaign_headers.py)'s
+`EXPECTED_RCS_CAMPAIGN_HEADERS` (21 columns: ID, Campaign Name, Type,
+Department, User, Template, Agent, Status, Total Messages, Sent Count,
+Delivered Count, Read Count, Interactions, Failed Count, Created At,
+Scheduled At, Send Type, Started At, Completed At, Message Content,
+Updated At) — the same generic `validate_file_headers()` pattern used
+for every SMS export above, applied here for the first time outside SMS.
+
+### Confirmed live-DOM behavior (not guessed)
+
+These were checked against the real app's markup before being encoded as
+assertions, and are called out here so a future maintainer doesn't
+"fix" a test back to an incorrect assumption:
+
+- The **Import Contacts modal's close control** is `wire:click="$dispatch('closeModal')"`
+  on its header `×` button, not a generic dialog-close pattern —
+  `RCSCampaignCreatePage.click_modal_close_x()` targets this exact
+  attribute.
+- After a CSV upload, the modal shows an **"Import Completed" summary
+  panel** (total rows, imported count, duplicates, etc.) before contacts
+  are confirmed into the campaign — `is_import_summary_present()`,
+  `get_import_summary_stat()`, and `get_import_total_rows_count()` read
+  this panel; `click_confirm_import()` is the separate action that
+  commits it.
+- The campaign list's **Status filter is a custom Alpine multiselect**
+  (a "Select status (N)" trigger button opening a checkbox panel), not a
+  native `<select>`. Confirmed live values: Draft, Scheduled, Running,
+  Paused, Completed, Cancelled, Failed.
+- **Pagination** is numbered, driven by
+  `wire:click="gotoPage(N, 'rcs_campaignsPage')"` per page-number
+  element — the same Livewire pagination convention used elsewhere in
+  this app.
+- The campaign list's **"Export CSV" button actually downloads an
+  `.xlsx`** file named `"Table Export.xlsx"`, not a `.csv` — confirmed
+  from a real download, not a defect, and `RCSCampaignPage.click_export_csv()`
+  / the header-validation tests above are written against that reality.
+
+### Parity with SMS: single login and test independence
+
+Checked directly this session, by diffing the historical commit that
+introduced SMS's single-login/worker-safe architecture
+(`961ffe8`, "Single login with multiple workers") against the current
+state of the RCS Campaign create-flow file — RCS already has full parity,
+with no changes needed:
+
+- **Single login across workers**: RCS test files use the same
+  `logged_in_page` / `module_logged_in_page` fixtures from `conftest.py`
+  as every other channel. Both are built directly on
+  `utils/auth_state.py`'s cross-process file lock (see "Parallel
+  execution architecture" above), so this required zero RCS-specific
+  code — any file using these fixtures gets it automatically.
+- **Test independence**: `test_rcs_campaign_create_flow.py` contains
+  zero `time.sleep()` calls, uses the shared
+  `wait_for_validation_error_or_toast()` polling helper (not a fixed
+  sleep) in the three places it needs to wait on an async
+  validation/toast, and every one of its ten `except Exception` blocks is
+  narrowly scoped to optional setup/precondition steps (e.g. "skip if
+  this optional picker isn't present") rather than swallowing genuine
+  assertion failures as false skips.
+
+No RCS-specific "port the SMS improvements" work was required — it was
+already there.
 
 ---
 
@@ -702,14 +873,18 @@ validate_file_headers(email_file, EXPECTED_EMAIL_HEADERS)  # not implemented yet
 | Module | Page objects | Test files | Tests collected |
 |---|---|---|---|
 | Core (Login, Dashboard, Forgot Password) | 3 | 3 | — |
-| SMS | 18 | 20 | 645 |
-| RCS | 19 | 19 | 585 |
+| SMS | 18 | 20 | 643 |
+| RCS | 19 | 19 | 682 |
 | WhatsApp | 12 | 12 | 402 |
 | Email | 5 | 5 | 136 |
 | Contacts, Segmentation, Tags, Communication Flow | 4 | 3 (no dedicated Communication Flow test) | — |
 | Shared (`base_page.py`) | 1 | — | — |
 | Pre-existing scratch/debug (`test_temp_dump*.py`) | — | 2 | 2 |
-| **Total** | **62** | **64** | **1,844** |
+| **Total** | **62** | **64** | **1,939** |
+
+(Test-collected counts above are from a real `pytest --collect-only -q`
+run against this working tree, not estimates — re-run it yourself with
+`pytest tests/<channel> --collect-only -q` any time to reconfirm.)
 
 (Core + Contacts/Segmentation/Tags/Communication Flow together make up
 `tests/common/`'s 6 test files and 74 collected tests.)
