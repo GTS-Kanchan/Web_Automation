@@ -439,8 +439,10 @@ cpaas_playwright_tests/
 │   ├── sms_template_report_headers.py    # EXPECTED_SMS_TEMPLATE_REPORT_HEADERS — 20 headers
 │   ├── sms_country_report_headers.py     # EXPECTED_SMS_COUNTRY_REPORT_HEADERS — 20 headers
 │   ├── sms_latency_report_headers.py     # EXPECTED_SMS_LATENCY_REPORT_HEADERS — 12 headers
-│   └── rcs_campaign_headers.py      # EXPECTED_RCS_CAMPAIGN_HEADERS — single source of
-│                                     #   truth for the RCS Campaign list's 21 export headers
+│   ├── rcs_campaign_headers.py      # EXPECTED_RCS_CAMPAIGN_HEADERS — 21 headers
+│   ├── rcs_message_headers.py       # EXPECTED_RCS_MESSAGE_HEADERS — 22 headers
+│   ├── rcs_incoming_messages_headers.py  # EXPECTED_RCS_INCOMING_MESSAGES_HEADERS — 9 headers
+│   └── rcs_download_center_headers.py    # EXPECTED_RCS_DOWNLOAD_CENTER_HEADERS — 20 headers
 │
 ├── pages/                           # 62 page objects (POM), channel-based layout
 │   ├── common/                      # 8 files — base_page.py (shared BasePage superclass),
@@ -515,13 +517,14 @@ PASS / FAIL
 
 Scope (phase 1): **headers only**. Row data, values, data types, record
 counts, and business logic are NOT validated by this check. SMS (11
-exports) and RCS (the Campaign list export — real headers confirmed and
-asserted) are covered; the remaining 7 RCS analytics exports plus the RCS
-Download Center have their download-capture bug fixed and now log the
-real header row on a real run, but don't assert against one yet (no
-confirmed expected-header constant exists for them — see "RCS Channel"
-below for exactly why). WhatsApp/Email are not implemented yet. RCS is
-documented in full, alongside the rest of the RCS channel, in the
+exports) and 4 RCS exports (Campaign list, Messages, Incoming Messages,
+Download Center — real headers confirmed and asserted for all four) are
+covered; the remaining 7 RCS analytics exports have their download-capture
+bug fixed and now log the real header row on a real run, but don't assert
+against one yet (no confirmed expected-header constant exists for them —
+see "RCS Channel" below for exactly why). WhatsApp/Email are not
+implemented yet. RCS is documented in full, alongside the rest of the
+RCS channel, in the
 ["RCS Channel"](#rcs-channel) section below rather than repeated here.
 
 **Single source of truth for expected headers:**
@@ -857,7 +860,7 @@ assertions, and are called out here so a future maintainer doesn't
   from a real download, not a defect, and `RCSCampaignPage.click_export_csv()`
   / the header-validation tests above are written against that reality.
 
-### The other 8 RCS exports: download-capture fixed, headers not yet asserted
+### RCS exports beyond the Campaign list: where each one stands
 
 Every RCS analytics/report page object except the Campaign list
 (`rcs_agent_analytics_page.py`, `rcs_template_analytics_page.py`,
@@ -874,31 +877,60 @@ corresponding tests (`test_<name>_analytics_flow.py`'s `..._TC13_export_csv`
 downloaded — previously they only asserted the page didn't crash, since
 nothing was ever captured to check.
 
-`rcs_download_center_page.py`'s `get_csv_headers()` had a narrower version
-of the same problem: it only ever tried a plain CSV parse, silently
-returning `[]` for anything else. It now delegates to
-`utils/file_validator.py`'s `read_file_headers()` — the same
-format-dispatching reader already proven for SMS (`.csv`/`.xlsx`/`.xls`,
-or a `.zip` wrapping one of those) — instead of assuming one shape.
+**Confirmed and asserted** (real header row supplied directly by the
+user, since this session's own live-app access was blocked — see "RCS
+API client" below for the same constraint): three more exports now have
+a `constants/rcs_<name>_headers.py` + a real `validate_file_headers()`
+assertion, mirroring `constants/rcs_campaign_headers.py` exactly:
 
-**What's still missing, and why:** none of these 8 exports has a
-`constants/rcs_<name>_headers.py` file or a real header-equality
-assertion yet, unlike the Campaign list export above. Adding one requires
-seeing a real header row from a real download — this session's live-app
-access was blocked (`testqa.cpaas.globeteleservices.com` returned a 403
-from an egress proxy on every path tried; see "RCS API client" below for
-the same constraint hitting item 6). Each of the 8 tests now **logs** the
-real file's extension and header row on every run
-(`print(f"Header row: {headers}")` / the Download Center test's
-equivalent) instead of asserting against a guess. The next real run
-against the live app will surface the actual columns in its output —
-paste them back to turn each into a real `constants/rcs_<name>_headers.py`
-+ `validate_file_headers()` assertion, mirroring
-`constants/rcs_campaign_headers.py` exactly. RCS's async Download Center
-export's file *shape* (zip-wrapped like SMS's, or something else) is
-similarly unconfirmed — `get_csv_headers()` now handles either
-transparently, but which one this instance actually produces is only
-knowable from a real completed-job download.
+| Export | Test | Constants file | Columns |
+| --- | --- | --- | --- |
+| RCS Messages (outgoing log) | `tests/rcs/messaging/test_rcs_message_flow.py::test_TC05_export_csv` | [`rcs_message_headers.py`](constants/rcs_message_headers.py) | 22 |
+| RCS Incoming Messages | `tests/rcs/messaging/test_rcs_incoming_messages_flow.py::test_tc018_export_csv_button` | [`rcs_incoming_messages_headers.py`](constants/rcs_incoming_messages_headers.py) | 9 |
+| RCS Download Center (async job export) | `tests/rcs/reports/test_rcs_download_center_flow.py::test_tc10_download_initiates` | [`rcs_download_center_headers.py`](constants/rcs_download_center_headers.py) | 20 |
+
+`RcsMessagePage.get_csv_headers()` had the same narrow-CSV-only problem
+`RcsDownloadCenterPage.get_csv_headers()` had (documented below): it only
+ever tried a plain CSV parse, silently returning `[]` for anything else.
+Both now delegate to `utils/file_validator.py`'s `read_file_headers()` —
+the same format-dispatching reader already proven for SMS
+(`.csv`/`.xlsx`/`.xls`, or a `.zip` wrapping one of those) — instead of
+assuming one shape. RCS Download Center's export file *shape*
+(zip-wrapped like SMS's, or something else) still wasn't independently
+re-confirmed alongside its header list — `get_csv_headers()` handles
+either transparently, so the header assertion holds regardless, but
+which shape this instance actually produces on a given run is only
+knowable by checking the logged file extension.
+
+Note: the RCS Campaign list header the user re-supplied alongside these
+matched `constants/rcs_campaign_headers.py` exactly, character for
+character — independent confirmation that constant is still correct, no
+changes needed there.
+
+**Still pending real data** (headers logged, not asserted): the 7
+analytics/report exports listed at the top of this section
+(`test_<name>_analytics_flow.py`'s `..._TC13_export_csv` /
+`test_tc17_export_csv`) still only **log** the real file's extension and
+header row on every run (`print(f"Header row: {headers}")`) rather than
+asserting against a guess — no real header row has been seen for any of
+them yet.
+
+**Ambiguous, needs clarification:** a "RCS Template" header was also
+supplied (`ID, Name, Message Type, Agent, Status, Product, Is Public,
+Created At, Department, User, Updated At` — 11 columns) but its columns
+don't match `rcs_template_analytics_page.py`'s live `<thead>`-confirmed
+columns (`duration, product, agent, template_name, total_count,
+sent_count, delivered_count, read_count, failed_count, rejected_count,
+dlr_awaited_count, interactions, quick_reply_total, quick_reply_unique,
+cta_total_clicks, cta_unique_clicks, total_charges` — analytics/metric
+columns, not a template catalog). This looks like a *Template list*
+export (template definitions, not usage stats) — but no page object
+currently models that screen's Export button (only
+`rcs_template_create_page.py`, the create form, and
+`rcs_template_analytics_page.py`, the analytics report, exist). Building
+one requires the real screen URL and Export button locator, not just the
+header row, so it wasn't guessed at; confirm which screen this came from
+and this can be added the same way as the three exports above.
 
 ### Parity with SMS: single login and test independence
 

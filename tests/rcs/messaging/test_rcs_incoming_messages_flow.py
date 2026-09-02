@@ -44,7 +44,15 @@ Run:
 """
 import pytest
 
+from constants.rcs_incoming_messages_headers import EXPECTED_RCS_INCOMING_MESSAGES_HEADERS
 from pages.rcs.rcs_incoming_messages_page import RcsIncomingMessagesPage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.rcs, pytest.mark.messaging]
@@ -258,11 +266,29 @@ def test_tc017_refresh_button(incoming_messages_page):
 
 @pytest.mark.regression
 def test_tc018_export_csv_button(incoming_messages_page):
-    """TC018: Clicking Export CSV triggers a file download."""
+    """TC018: Clicking Export CSV triggers a file download whose header
+    row matches this instance's confirmed RCS Incoming Messages export
+    columns exactly (constants/rcs_incoming_messages_headers.py)."""
     ensure_on_page(incoming_messages_page)
     result = incoming_messages_page.export_csv(timeout=30000)
     assert result is not None, "Export CSV should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"
+
+    try:
+        actual_headers = validate_file_headers(result["file_path"], EXPECTED_RCS_INCOMING_MESSAGES_HEADERS)
+    except FileNotDownloadedError as exc:
+        pytest.fail(str(exc))
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"Actual headers: {exc.actual}")
+        print(f"Missing headers: {exc.missing}")
+        print(f"Unexpected headers: {exc.unexpected}")
+        for position, expected_name, actual_name in exc.mismatches:
+            print(f"Position {position}: expected '{expected_name}', actual '{actual_name}'")
+        pytest.fail(str(exc))
+
+    print(f"Header validation PASS: {actual_headers}")
 
 
 @pytest.mark.regression

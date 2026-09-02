@@ -38,7 +38,15 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from constants.rcs_message_headers import EXPECTED_RCS_MESSAGE_HEADERS
 from pages.rcs.rcs_message_page import RcsMessagePage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.rcs, pytest.mark.messaging]
@@ -163,8 +171,9 @@ def test_TC04_search_by_valid_mobile_number(message_page):
 
 @pytest.mark.regression
 def test_TC05_export_csv(message_page):
-    """TC05: Clicking Export CSV downloads a file with the displayed
-    records."""
+    """TC05: Clicking Export CSV downloads a file whose header row
+    matches this instance's confirmed RCS Messages export columns
+    exactly (constants/rcs_message_headers.py)."""
     reset_filters(message_page)
     message_page.clear_download_dir()
     before = message_page.snapshot_downloads()
@@ -172,8 +181,22 @@ def test_TC05_export_csv(message_page):
     downloaded = message_page.wait_for_download(timeout=30, before=before)
     if not downloaded:
         pytest.skip("Export did not produce a downloaded file within 30s")
-    headers = message_page.get_csv_headers(downloaded)
-    assert headers, f"Downloaded CSV had no header row: {downloaded}"
+
+    try:
+        actual_headers = validate_file_headers(downloaded, EXPECTED_RCS_MESSAGE_HEADERS)
+    except FileNotDownloadedError as exc:
+        pytest.fail(str(exc))
+    except (UnsupportedFileTypeError, EmptyFileError) as exc:
+        pytest.fail(str(exc))
+    except HeaderValidationError as exc:
+        print(f"Actual headers: {exc.actual}")
+        print(f"Missing headers: {exc.missing}")
+        print(f"Unexpected headers: {exc.unexpected}")
+        for position, expected_name, actual_name in exc.mismatches:
+            print(f"Position {position}: expected '{expected_name}', actual '{actual_name}'")
+        pytest.fail(str(exc))
+
+    print(f"Header validation PASS: {actual_headers}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

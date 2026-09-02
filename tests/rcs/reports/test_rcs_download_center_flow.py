@@ -73,8 +73,16 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
+from constants.rcs_download_center_headers import EXPECTED_RCS_DOWNLOAD_CENTER_HEADERS
 from pages.rcs.rcs_download_center_page import RcsDownloadCenterPage
 from pages.rcs.rcs_report_create_page import RcsReportCreatePage
+from utils.file_validator import (
+    EmptyFileError,
+    FileNotDownloadedError,
+    HeaderValidationError,
+    UnsupportedFileTypeError,
+    validate_file_headers,
+)
 
 
 pytestmark = [pytest.mark.rcs, pytest.mark.report]
@@ -469,30 +477,33 @@ class TestTC10Download:
             "download did not fire a Playwright download event."
         )
 
-        # Log (don't assert against) the real file shape and header row.
-        # Unlike SMS's Download Center -- confirmed to always be a .zip
-        # wrapping .csv/.xlsx/.xls -- RCS's async-export file shape has
-        # not been independently confirmed the same way (no live-app
-        # access when this was last checked; see docs/ARCHITECTURE.md's
-        # API layer note). get_csv_headers() now delegates to
-        # utils/file_validator.py's read_file_headers(), so it handles
-        # whichever shape this turns out to be instead of assuming a bare
-        # .csv. No expected-header constant exists yet for this export
-        # (that requires seeing a real header row first), so this only
-        # logs what was found for someone to encode into a
-        # constants/rcs_download_center_headers.py next.
+        # Header row IS now asserted (constants/rcs_download_center_headers.py,
+        # confirmed from a real completed-job download supplied directly by
+        # the user). What's still unconfirmed independently: the file's
+        # *shape* -- unlike SMS's Download Center (confirmed to always be a
+        # .zip wrapping .csv/.xlsx/.xls), whether RCS's async export is
+        # zip-wrapped or a bare file wasn't re-verified alongside this
+        # header list. read_file_headers() dispatches on extension either
+        # way, so this assertion holds regardless -- but the extension is
+        # still logged here for visibility.
         ext = os.path.splitext(downloaded)[1].lower()
-        headers = download_center_page.get_csv_headers(downloaded)
         print(f"[TC_10] Downloaded file: {os.path.basename(downloaded)} (extension: {ext or '(none)'})")
-        print(f"[TC_10] Header row read via read_file_headers(): {headers}")
-        if not headers:
-            print(
-                "[TC_10] NOTE: no headers could be read from this file with "
-                "the current format-dispatching reader (.csv/.xlsx/.xls, or "
-                ".zip containing one of those) -- if this fires on a real "
-                "run, the actual shape needs a fresh look rather than "
-                "assuming it matches SMS's."
-            )
+
+        try:
+            actual_headers = validate_file_headers(downloaded, EXPECTED_RCS_DOWNLOAD_CENTER_HEADERS)
+        except FileNotDownloadedError as exc:
+            pytest.fail(str(exc))
+        except (UnsupportedFileTypeError, EmptyFileError) as exc:
+            pytest.fail(str(exc))
+        except HeaderValidationError as exc:
+            print(f"[TC_10] Actual headers: {exc.actual}")
+            print(f"[TC_10] Missing headers: {exc.missing}")
+            print(f"[TC_10] Unexpected headers: {exc.unexpected}")
+            for position, expected_name, actual_name in exc.mismatches:
+                print(f"[TC_10] Position {position}: expected '{expected_name}', actual '{actual_name}'")
+            pytest.fail(str(exc))
+
+        print(f"[TC_10] Header validation PASS: {actual_headers}")
 
     def test_tc10_cleanup(self, download_center_page):
         reset_filters(download_center_page)

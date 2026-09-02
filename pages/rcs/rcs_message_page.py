@@ -4,6 +4,7 @@ import os
 
 from pages.common.base_page import BasePage
 from utils.config import DOWNLOAD_DIR
+from utils.file_validator import read_file_headers
 
 
 class RcsMessagePage(BasePage):
@@ -489,10 +490,14 @@ class RcsMessagePage(BasePage):
         return self._last_download_path
 
     def get_csv_headers(self, file_path):
+        """Return the downloaded export's header row, whatever format it
+        actually turns out to be -- delegates to
+        utils/file_validator.py's read_file_headers() (the same
+        format-dispatching reader proven for SMS: .csv/.xlsx/.xls, or a
+        .zip wrapping one of those) instead of a hand-rolled plain-CSV
+        parse that silently returned [] for anything else."""
         try:
-            with open(file_path, newline="", encoding="utf-8-sig") as fh:
-                headers = next(csv.reader(fh), [])
-                return [h.strip() for h in headers]
+            return read_file_headers(file_path)
         except Exception:
             return []
 
