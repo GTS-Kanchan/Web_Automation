@@ -444,6 +444,8 @@ def test_tc32_pagination_next_page(status_analytics_page):
     if not status_analytics_page.has_records():
         pytest.skip("No records available")
     before = status_analytics_page.get_column_values("duration")
+    if not status_analytics_page.is_element_visible(status_analytics_page.NEXT_PAGE_BTN, timeout=3000):
+        pytest.skip("Only one page of results for the current date range -- no Next page button to click")
     status_analytics_page.click_next_page()
     after = status_analytics_page.get_column_values("duration")
     assert before != after or len(after) >= 0

@@ -336,6 +336,8 @@ def test_usage_analytics_TC17_pagination_changes_data(usage_analytics_page):
     before = usage_analytics_page.get_column_values("duration")
     if not before:
         pytest.skip("No rows to paginate through")
+    if not usage_analytics_page.is_element_visible(usage_analytics_page.NEXT_PAGE_BTN, timeout=3000):
+        pytest.skip("Only one page of results for the current date range -- no Next page button to click")
     usage_analytics_page.click_next_page()
     after = usage_analytics_page.get_column_values("duration")
     assert after != before, "Row data should change after pagination"

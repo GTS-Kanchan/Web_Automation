@@ -404,7 +404,7 @@ def test_template_analytics_TC17_pagination_changes_data(template_analytics_page
     without breaking the UI."""
     ensure_on_report_page(template_analytics_page)
     text_before = template_analytics_page.get_pagination_results_text()
-    if not template_analytics_page.is_element_present(template_analytics_page.NEXT_PAGE_BTN, timeout=3000):
+    if not template_analytics_page.is_element_visible(template_analytics_page.NEXT_PAGE_BTN, timeout=3000):
         pytest.skip("Not enough records in QA environment to test pagination (Next button missing)")
     template_analytics_page.click_next_page()
     text_after = template_analytics_page.get_pagination_results_text()

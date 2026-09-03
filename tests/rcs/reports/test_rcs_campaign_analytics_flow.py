@@ -378,6 +378,8 @@ def test_campaign_analytics_TC19_pagination_changes_data(campaign_analytics_page
     before = campaign_analytics_page.get_pagination_results_text()
     if not before:
         pytest.skip("No rows to paginate through")
+    if not campaign_analytics_page.is_element_visible(campaign_analytics_page.NEXT_PAGE_BTN, timeout=3000):
+        pytest.skip("Only one page of results for the current date range -- no Next page button to click")
     campaign_analytics_page.click_next_page()
     after = campaign_analytics_page.get_pagination_results_text()
     assert after != before, "Pagination results text should change after pagination"
