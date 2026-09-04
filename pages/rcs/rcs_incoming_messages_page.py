@@ -111,14 +111,39 @@ class RcsIncomingMessagesPage(BasePage):
 
     # ── Search ───────────────────────────────────────────────────────────────
 
-    def _wait_for_search_to_settle(self, timeout=8000):
+    def _current_table_state(self):
+        current = self.get_row_count()
+        no_msg = self.is_element_present(self.NO_RECORDS_MSG, timeout=500)
+        return (current, no_msg)
+
+    def _wait_for_search_to_settle(self, timeout=8000, baseline=None):
+        """Poll (row_count, no-records-shown) until two consecutive reads
+        agree, treating that as "the table has stopped changing".
+
+        `baseline`, if given, is the table state read BEFORE the
+        search/clear input was dispatched. Confirmed live (test_tc005):
+        under parallel (-n) execution, the debounced wire:model.live
+        request can still not have reached the server by the time the
+        very first poll below runs, so that first read (and often the one
+        600ms after it) can both just be the UNCHANGED pre-search table --
+        two consecutive matching reads of the OLD state look "stable" to
+        this loop even though the real update hasn't started yet, and
+        search() returned control while the table was still about to
+        change out from under the caller (has_records() then raced the
+        real update and lost). When `baseline` is given, a state equal to
+        it is never accepted as evidence of settling until at least one
+        different state has been observed -- except the loop still
+        returns once `timeout` genuinely elapses, so a search that
+        legitimately doesn't change the row count/no-records state still
+        returns instead of always burning the full budget."""
         end_time = self.page.evaluate("() => Date.now()") + timeout
         last_state = None
+        seen_change = baseline is None
         while self.page.evaluate("() => Date.now()") < end_time:
-            current = self.get_row_count()
-            no_msg = self.is_element_present(self.NO_RECORDS_MSG, timeout=500)
-            state = (current, no_msg)
-            if state == last_state:
+            state = self._current_table_state()
+            if not seen_change and state != baseline:
+                seen_change = True
+            if state == last_state and seen_change:
                 return
             last_state = state
             self.page.wait_for_timeout(600)
@@ -128,6 +153,7 @@ class RcsIncomingMessagesPage(BasePage):
         a wire:model.live per-keystroke race — same fix proven necessary on
         the SMS Error Codes, Blocked Numbers, and SMS Incoming Messages
         pages."""
+        baseline = self._current_table_state()
         box = self.h.wait_for_element_visible(self.SEARCH_BOX)
         box.evaluate(
             "(el, v) => { el.value = v; "
@@ -136,10 +162,11 @@ class RcsIncomingMessagesPage(BasePage):
             value
         )
         self.page.wait_for_timeout(500)
-        self._wait_for_search_to_settle()
+        self._wait_for_search_to_settle(baseline=baseline)
         self.page.wait_for_timeout(300)
 
     def clear_search(self):
+        baseline = self._current_table_state()
         box = self.h.wait_for_element_visible(self.SEARCH_BOX)
         box.evaluate(
             "(el) => { el.value = ''; "
@@ -147,7 +174,7 @@ class RcsIncomingMessagesPage(BasePage):
             "el.dispatchEvent(new Event('change', {bubbles: true})); }"
         )
         self.page.wait_for_timeout(500)
-        self._wait_for_search_to_settle()
+        self._wait_for_search_to_settle(baseline=baseline)
         self.page.wait_for_timeout(300)
 
     # ── Table / rows ─────────────────────────────────────────────────────────

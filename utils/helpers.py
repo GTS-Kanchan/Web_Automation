@@ -131,6 +131,101 @@ class Helpers:
         loc.click(force=True)
         return loc
 
+    def js_click_first_visible(self, locator, timeout=None):
+        """Click the first VISIBLE match for `locator`, not just the first
+        DOM match `.first` would give.
+
+        Some pages in this app render more than one element matching the
+        exact same selector -- e.g. a desktop and a mobile-breakpoint copy
+        of the same component, only one of which is ever on-screen at a
+        given viewport (the same class of duplication already handled for
+        table rows by BasePage._first_visible_data_row(), which has its
+        own explicit is_visible() check per candidate row for exactly this
+        reason). `.first` has no concept of "visible" -- it always binds to
+        DOM order -- so on a page with such a duplicate it can silently
+        lock onto the permanently-hidden copy. That copy IS attached (so
+        `wait_for(state="attached")` and `scroll_into_view_if_needed`'s own
+        "throw if detached" check both pass), but it can never satisfy a
+        visibility-dependent wait -- which is consistent with a locator
+        that repeatedly times out reporting "element is not visible" even
+        though a live manual DOM check of the same screen shows a working,
+        unhidden, clickable control matching the same selector.
+
+        Polls all current matches for `locator` roughly every 250ms until
+        timeout, looking for one that reports is_visible(); clicks the
+        first one found (scrolled into view, force-clicked). Falls back to
+        a synthetic dispatchEvent('click') if the force click doesn't
+        register, and -- if nothing ever became visible within the
+        timeout -- falls back to the old attached-only behaviour so a
+        genuine bug (e.g. the control never rendering at all) still
+        surfaces as a real error instead of being swallowed here."""
+        end = time.time() + (timeout or self.timeout_ms) / 1000
+        target = None
+        while time.time() < end:
+            matches = self.page.locator(locator)
+            try:
+                count = matches.count()
+            except Exception:
+                count = 0
+            for i in range(count):
+                cand = matches.nth(i)
+                try:
+                    if cand.is_visible():
+                        target = cand
+                        break
+                except Exception:
+                    continue
+            if target is not None:
+                break
+            self.page.wait_for_timeout(250)
+
+        if target is None:
+            target = self.page.locator(locator).first
+            target.wait_for(state="attached", timeout=timeout or self.timeout_ms)
+
+        target.scroll_into_view_if_needed(timeout=timeout or self.timeout_ms)
+        try:
+            target.click(force=True, timeout=timeout or self.timeout_ms)
+        except Exception:
+            target.dispatch_event("click")
+        return target
+
+    def expect_no_dialog(self, action_fn, settle_ms=500):
+        """Run `action_fn()` while watching for a native alert/confirm/
+        prompt dialog, returning the dialog's message if one fired or
+        None if none appeared.
+
+        Used by XSS-safety tests (typing a payload like
+        `<script>alert(1)</script>` into a search box and proving it was
+        never executed): Selenium could react to an alert AFTER the fact
+        via `driver.switch_to.alert`, but Playwright has no equivalent --
+        an unhandled `dialog` event blocks all further page interaction
+        until it's accepted/dismissed, so the listener has to be wired up
+        BEFORE the action runs, not checked for afterward. Any dialog that
+        does fire is auto-dismissed here so it can never hang the test,
+        regardless of what the caller does with the returned message."""
+        captured = {"message": None, "fired": False}
+
+        def _on_dialog(dialog):
+            captured["fired"] = True
+            captured["message"] = dialog.message
+            try:
+                dialog.dismiss()
+            except Exception:
+                pass
+
+        self.page.on("dialog", _on_dialog)
+        try:
+            action_fn()
+            self.page.wait_for_timeout(settle_ms)
+        finally:
+            try:
+                self.page.remove_listener("dialog", _on_dialog)
+            except Exception:
+                pass
+
+        return captured["message"] if captured["fired"] else None
+
     def dispatch_click(self, locator):
         """Last-resort click via a synthetic DOM MouseEvent — mirrors the old
         suite's `dispatchEvent(new MouseEvent('click', ...))` fallback used

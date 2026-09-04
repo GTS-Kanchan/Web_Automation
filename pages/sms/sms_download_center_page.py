@@ -604,6 +604,7 @@ class SMSDownloadCenterPage(BasePage):
         if btn is not None:
             try:
                 btn.scroll_into_view_if_needed()
+                btn.evaluate("node => node.removeAttribute('target')")
                 btn.click(force=True)
                 clicked = True
             except Exception:
@@ -623,6 +624,7 @@ class SMSDownloadCenterPage(BasePage):
                     if anchors.count() > 0:
                         el = anchors.first
                         el.scroll_into_view_if_needed()
+                        el.evaluate("node => node.removeAttribute('target')")
                         el.click(force=True)
                         clicked = True
             except Exception:
@@ -633,6 +635,7 @@ class SMSDownloadCenterPage(BasePage):
             try:
                 el = self.h.wait_for_element_clickable(self.ROW_DOWNLOAD_ICON, timeout=8000)
                 el.scroll_into_view_if_needed()
+                el.evaluate("node => node.removeAttribute('target')")
                 el.click(force=True)
                 clicked = True
             except Exception:

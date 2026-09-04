@@ -128,6 +128,34 @@ class RcsOptOutPage(BasePage):
         url = self.get_current_url()
         return "/rcs/optout" in url and "login" not in url.lower()
 
+    def reload_and_wait(self, timeout_ms=15000):
+        """Reload the browser tab and wait for the app to genuinely land
+        back on this page before returning control.
+
+        Confirmed live (test_TC023): a single fixed 2s wait after
+        page.reload() was not always enough under parallel (-n) execution
+        -- is_optout_page() read False immediately after, even though
+        nothing about a plain browser refresh should ever navigate this
+        app away from its current route. Most likely the reload's own
+        network round trip (competing with N other workers against the
+        same shared staging backend) was still in flight past that fixed
+        window. Polls is_optout_page() for up to `timeout_ms` rather than
+        trusting a single fixed sleep; if the page still isn't back after
+        that (a genuine redirect, not just slow), falls back to a fresh
+        navigate() so the caller isn't left stranded on a broken URL --
+        whatever the caller asserts next still surfaces a real problem
+        honestly, this just rules out "reload was merely still in
+        flight" as a false negative first."""
+        self.page.reload()
+        end = time.time() + timeout_ms / 1000
+        while time.time() < end:
+            if self.is_optout_page():
+                return True
+            self.page.wait_for_timeout(500)
+        if not self.is_optout_page():
+            self.navigate()
+        return self.is_optout_page()
+
     def get_page_title_text(self):
         el = self.h.wait_for_element_visible(self.PAGE_TITLE)
         return el.inner_text().strip()
@@ -327,7 +355,7 @@ class RcsOptOutPage(BasePage):
         self.open_filters_popover()
         from_el = self.h.wait_for_element_visible(self.FILTER_OPTED_OUT_FROM)
         to_el = self.h.wait_for_element_visible(self.FILTER_OPTED_OUT_TO)
-        return from_el.get_attribute("value"), to_el.get_attribute("value")
+        return from_el.input_value(), to_el.input_value()
 
     # ── Bulk Actions ─────────────────────────────────────────────────────────
 

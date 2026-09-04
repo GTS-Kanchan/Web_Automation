@@ -128,8 +128,31 @@ class RcsTemplateCreatePage(BasePage):
         el = self.h.wait_for_element_visible(self.TYPE_SELECT)
         return el.locator("option:checked").inner_text().strip()
 
+    def _wait_for_agent_select_populated(self, min_options=2, timeout_ms=15000):
+        """Poll until AGENT_SELECT has more than just a placeholder
+        option, or timeout elapses. Ported from the confirmed fix on
+        RcsCampaignCreatePage._wait_for_select_populated() (see its
+        docstring): Agent options here are loaded via an async Livewire
+        request slightly after initial page render too, so calling
+        select_agent() before that request resolves used to silently
+        fall through both the match loop and the "first non-empty
+        option" fallback (0 options = 0 iterations either way) without
+        raising -- the form then submitted with no agent chosen at all,
+        which is what made TC013 (save either redirects or toasts)
+        flaky: a required-but-silently-unselected Agent field can block
+        the save outright."""
+        try:
+            return self.h.wait_until(
+                lambda: self.page.locator(self.AGENT_SELECT).locator("option").count() >= min_options,
+                timeout_ms=timeout_ms,
+                interval_ms=300,
+            )
+        except Exception:
+            return False
+
     def select_agent(self, text_contains):
         el = self.h.wait_for_element_visible(self.AGENT_SELECT)
+        self._wait_for_agent_select_populated()
         opts = el.locator("option")
         # Try to find a matching option first
         for i in range(opts.count()):
@@ -148,6 +171,14 @@ class RcsTemplateCreatePage(BasePage):
                 self.h.select_option(self.AGENT_SELECT, label=text)
                 self.page.wait_for_timeout(500)
                 return
+        # Nothing selectable at all (still 0/1 options after the populated
+        # wait above) -- raise instead of silently leaving Agent unset, so
+        # callers like TC013 fail with an honest "no agent available"
+        # reason instead of a confusing downstream save failure.
+        raise RuntimeError(
+            f"select_agent({text_contains!r}): no matching or fallback "
+            f"agent option was available in AGENT_SELECT"
+        )
 
     def fill_body(self, value):
         """Sets the message body textarea value via standard Playwright fill

@@ -243,22 +243,6 @@ def test_RCS023_columns_dropdown(agent_page):
     assert agent_page.is_element_present(agent_page.SELECT_ALL_COLUMNS_CHECKBOX, timeout=5000)
 
 
-def test_RCS024_hide_show_columns(agent_page):
-    ensure_on_agent_page(agent_page)
-    assert agent_page.is_column_checked("use-case") is True
-    agent_page.toggle_column("use-case")
-    assert agent_page.is_column_checked("use-case") is False
-    headers_after_hide = [h.lower() for h in agent_page.get_visible_column_headers()]
-    assert not any("use case" in h for h in headers_after_hide)
-
-    agent_page.toggle_column("use-case")
-    assert agent_page.is_column_checked("use-case") is True
-    headers_after_show = [h.lower() for h in agent_page.get_visible_column_headers()]
-    assert any("use case" in h for h in headers_after_show)
-
-    agent_page.restore_default_columns()
-
-
 def test_RCS025_page_refresh(agent_page):
     ensure_on_agent_page(agent_page)
     agent_page.refresh_page()

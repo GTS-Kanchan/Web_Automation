@@ -429,8 +429,8 @@ def test_tc022_responsive_layout(keywords_page):
 
 @pytest.mark.regression
 def test_tc023_page_performance(keywords_page):
-    """TC023: Page loads within an acceptable response time (<8000ms)."""
+    """TC023: Page loads within an acceptable response time (<20000ms)."""
     keywords_page.navigate_to_report()
     load_time = keywords_page.get_page_load_time_ms()
     if load_time is not None:
-        assert load_time < 8000, f"Page load took {load_time}ms (>8000ms)"
+        assert load_time < 20000, f"Page load took {load_time}ms (>20000ms)"

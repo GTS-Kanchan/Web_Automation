@@ -118,6 +118,9 @@ class Config:
     # Template that contains dynamic variables (used in TC_C023 / TC_C024)
     SMS_TEMPLATE_WITH_VARS = os.getenv("SMS_TEMPLATE_WITH_VARS", "newtempdemo")
 
+    # OTP-type template name, for the OTP campaign E2E test
+    SMS_OTP_TEMPLATE_NAME = os.getenv("SMS_OTP_TEMPLATE_NAME", "OTP_Test")
+
     # Phone numbers pasted into "Copy-Paste" import (newline-separated)
     SMS_PASTE_CONTACTS = os.getenv(
         "SMS_PASTE_CONTACTS",
@@ -182,3 +185,14 @@ class Config:
     # hardcoding a real customer/personal number; populate with a real
     # opted-out test number from this instance.
     RCS_OPTOUT_NUMBERS = [n.strip() for n in os.getenv("RCS_OPTOUT_NUMBERS", "").split(",") if n.strip()]
+
+    # Phone number(s) pasted into RCS Campaign's "Copy Paste Numbers"
+    # import tab. Same convention as SMS_PASTE_CONTACTS/EMAIL_PASTE_CONTACTS
+    # above -- NEWLINE-separated for more than one, using a literal "\n"
+    # escape in .env (real newlines don't survive a single-line .env
+    # value), unescaped back to real newlines at the point of use (see
+    # RCS_PASTE_CONTACTS in tests/rcs/campaigns/test_rcs_campaign_create_flow.py).
+    # Defaults to the single number this suite already used inline before
+    # it was externalized here; override in .env to point at number(s)
+    # valid for this instance.
+    RCS_PASTE_CONTACTS = os.getenv("RCS_PASTE_CONTACTS", "919202511257")

@@ -84,10 +84,10 @@ class EmailOverviewPage(BasePage):
     # ── Date filters ─────────────────────────────────────────────────────────
 
     def get_to_date_value(self):
-        return self.h.wait_for_element_visible(self.TO_DATE_INPUT).get_attribute("value")
+        return self.h.wait_for_element_visible(self.TO_DATE_INPUT).input_value()
 
     def get_from_date_value(self):
-        return self.h.wait_for_element_visible(self.FROM_DATE_INPUT).get_attribute("value")
+        return self.h.wait_for_element_visible(self.FROM_DATE_INPUT).input_value()
 
     def set_to_date(self, date_str):
         el = self.h.wait_for_element_visible(self.TO_DATE_INPUT)
@@ -115,7 +115,7 @@ class EmailOverviewPage(BasePage):
 
     # ── Summary cards ─────────────────────────────────────────────────────────
 
-    def get_card_value(self, title, timeout=10000):
+    def get_card_value(self, title, timeout=20000):
         xpath = self.CARD_VALUE_BY_TITLE_XPATH.format(title=title)
         el = self.h.wait_for_element_visible(xpath, timeout=timeout)
         return el.inner_text().strip()

@@ -235,12 +235,39 @@ class RcsAgentPage(BasePage):
         el = self.h.wait_for_element_visible(self.FILTER_CREATED_FROM)
         el.fill(from_date)
         self.page.wait_for_timeout(1200)
+        self._verify_and_reheal_filter(self.FILTER_CREATED_FROM, from_date)
 
     def set_created_to_filter(self, to_date):
         self.open_filters_popover()
         el = self.h.wait_for_element_visible(self.FILTER_CREATED_TO)
         el.fill(to_date)
         self.page.wait_for_timeout(1200)
+        self._verify_and_reheal_filter(self.FILTER_CREATED_TO, to_date)
+
+    def _verify_and_reheal_filter(self, locator, expected_value):
+        """Self-verify and self-heal a just-filled filter input.
+
+        Confirmed live (test_RCS010): under parallel (-n) execution this
+        field's own wire:model round-trip can still be in flight after the
+        fixed settle wait above elapses, and a Livewire DOM morph landing
+        at that exact moment can reset the input back to empty --
+        get_filter_values() read '' immediately after set_created_from_filter
+        returned, even though has_records()/has_no_records_message()
+        (checked right after, per the test) showed the filter really had
+        taken effect server-side. Re-fills once if the value didn't stick,
+        so a caller reading it right after this method returns gets the
+        real typed value instead of racing the morph. Best-effort: any
+        exception here is swallowed and the original value simply stands,
+        so a genuine failure still surfaces honestly at the caller's own
+        assertion."""
+        try:
+            current = self.page.locator(locator).first.input_value()
+            if current != expected_value:
+                el = self.h.wait_for_element_visible(locator)
+                el.fill(expected_value)
+                self.page.wait_for_timeout(800)
+        except Exception:
+            pass
 
     def set_date_range_filter(self, from_date, to_date):
         self.set_created_from_filter(from_date)

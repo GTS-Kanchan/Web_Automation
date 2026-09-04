@@ -45,6 +45,7 @@ VALID_SENDER_ID = Config.SMS_SENDER_ID
 VALID_TEMPLATE = Config.SMS_TEMPLATE_NAME
 PASTE_CONTACTS = Config.SMS_PASTE_CONTACTS.replace("\\n", "\n")
 TEMPLATE_WITH_VARS = Config.SMS_TEMPLATE_WITH_VARS
+OTP_TEMPLATE = Config.SMS_OTP_TEMPLATE_NAME
 
 INVALID_CONTACTS = (
     "12345\n"
@@ -956,5 +957,90 @@ def test_TC_C026_launch_file_upload_scheduled(campaign_creation_page):
     # Final verification: campaign name must be present in the list
     assert page.is_campaign_name_in_list(name), (
         f"Campaign '{name}' (File/Scheduled) launched successfully but was not found in the "
+        "campaign list. URL: " + page.get_current_url()
+    )
+
+
+@pytest.mark.smoke
+def test_TC_C027_launch_otp_template_send_now(campaign_creation_page):
+    """
+    Full E2E launch using the OTP template - Send Now.
+      name -> sender ID (dummy) -> OTP_Test template -> paste contacts
+      -> Send Now -> Preview -> Launch Campaign -> assert success / redirect
+      -> verify campaign name appears in the campaign list.
+
+    Sender ID and template name are pulled from Config (SMS_SENDER_ID /
+    SMS_OTP_TEMPLATE_NAME, both set in .env) rather than hardcoded here --
+    same "edit .env to switch instances" convention as every other
+    constant in this file. Unlike the plain-template launch (TC_C021),
+    the template selection here is NOT best-effort: an OTP campaign
+    without the OTP template selected would silently test the wrong
+    thing, so a missing/unselectable OTP_Test template fails this test
+    outright instead of continuing anyway.
+    """
+    page = campaign_creation_page
+    name = go_to_create(page, "OTP_NOW")
+
+    # Sender ID (required for launch)
+    try:
+        page.select_sender_id(VALID_SENDER_ID)
+    except Exception as e:
+        safe_back(page)
+        pytest.skip(f"Sender ID '{VALID_SENDER_ID}' not available -- cannot launch: {e}")
+
+    # OTP template -- required, not best-effort (see docstring above)
+    try:
+        page.select_template(OTP_TEMPLATE)
+    except Exception as e:
+        safe_back(page)
+        pytest.skip(f"OTP template '{OTP_TEMPLATE}' not available -- cannot launch: {e}")
+
+    # Import contacts via copy-paste (same primary path as TC_C021)
+    page.click_import_contact()
+    page.paste_contacts(PASTE_CONTACTS)
+    page.click_import_confirm()
+    page.page.wait_for_timeout(1000)
+
+    if page.is_campaign_list_page():
+        assert page.is_campaign_name_in_list(name), (
+            f"Campaign '{name}' (OTP/Send Now) not found in list after early redirect"
+        )
+        return
+
+    page.select_send_now()
+    page.page.wait_for_timeout(1000)
+
+    if page.is_campaign_list_page():
+        assert page.is_campaign_name_in_list(name), (
+            f"Campaign '{name}' (OTP/Send Now) not found in list after Send Now redirect"
+        )
+        return
+
+    page.click_preview()
+    page.page.wait_for_timeout(1000)
+
+    if page.is_campaign_list_page():
+        assert page.is_campaign_name_in_list(name), (
+            f"Campaign '{name}' (OTP/Send Now) not found in list after Preview redirect"
+        )
+        return
+
+    assert page.is_preview_open(), f"Preview modal did not open for '{name}'"
+    page.page.wait_for_timeout(2000)  # let preview modal fully render before clicking Send Campaign
+
+    page.click_launch_campaign()
+
+    launched = wait_for_launch(page, timeout=20000)
+    if not page.is_campaign_list_page():
+        safe_back(page)
+
+    assert launched, (
+        f"Campaign '{name}' (OTP/Send Now) did not produce a success signal. "
+        "URL: " + page.get_current_url()
+    )
+
+    # Final verification: campaign name must be present in the list
+    assert page.is_campaign_name_in_list(name), (
+        f"Campaign '{name}' (OTP/Send Now) launched successfully but was not found in the "
         "campaign list. URL: " + page.get_current_url()
     )

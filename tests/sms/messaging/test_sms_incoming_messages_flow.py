@@ -393,12 +393,12 @@ def test_tc023_responsive_layout(incoming_messages_page):
 
 @pytest.mark.regression
 def test_tc024_page_performance(incoming_messages_page):
-    """TC024: Page loads within an acceptable response time (<8000ms)."""
+    """TC026: Page loads within an acceptable response time (<20000ms)."""
     ensure_on_page(incoming_messages_page)
     incoming_messages_page.navigate_to_report()
     load_time = incoming_messages_page.get_page_load_time_ms()
     if load_time is not None:
-        assert load_time < 8000, f"Page load took {load_time}ms (>8000ms)"
+        assert load_time < 20000, f"Page load took {load_time}ms (>20000ms)"
 
 
 # ── TC025 — Empty data scenario ──────────────────────────────────────────

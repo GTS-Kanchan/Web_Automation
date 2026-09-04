@@ -118,6 +118,16 @@ class BasePage:
         Helpers.js_click."""
         return self.h.js_click(locator, timeout=timeout)
 
+    def _js_click_first_visible(self, locator, timeout=10000):
+        """Like `_js_click`, but binds to the first VISIBLE match for
+        `locator` rather than the first DOM match -- see
+        Helpers.js_click_first_visible for why that distinction matters
+        (duplicate desktop/mobile copies of the same control). Use this
+        over `_js_click` for any control that a live DOM check has proven
+        exists and is clickable but that `_js_click` still times out
+        waiting on."""
+        return self.h.js_click_first_visible(locator, timeout=timeout)
+
     def _first_visible_data_row(self, table_rows_css="table tbody tr"):
         """Return the first genuinely VISIBLE row Locator (scoped to a
         single row, e.g. `rows.nth(i)`) containing real (non-empty) cell

@@ -71,7 +71,20 @@ class RcsOverviewPage(BasePage):
     # ── Date range picker ────────────────────────────────────────────────────
 
     def get_date_range_value(self):
-        return self.h.wait_for_element_visible(self.DATE_RANGE_INPUT).get_attribute("value")
+        # input_value() (the live DOM property), not get_attribute("value")
+        # (the static HTML attribute): this field is a flatpickr range-mode
+        # input (see class docstring above), and flatpickr writes the
+        # selected range into the input purely via the JS `.value`
+        # property -- it never calls setAttribute('value', ...). Reading
+        # the attribute instead of the property is a well-known
+        # Playwright/flatpickr gotcha and returns None even once flatpickr
+        # has populated a real value, which is consistent with this
+        # exact symptom (TC002/TC004/TC005 all asserting a falsy `value`
+        # despite the picker visibly showing a default/selected range).
+        # Contrast with RcsAgentPage.get_filter_values(), whose two date
+        # inputs are plain native (non-flatpickr) fields and correctly
+        # already use input_value() for that reason.
+        return self.h.wait_for_element_visible(self.DATE_RANGE_INPUT).input_value()
 
     def open_date_range_picker(self):
         """Opens the flatpickr calendar. Retries the click a few times --
@@ -160,7 +173,7 @@ class RcsOverviewPage(BasePage):
 
     # ── Summary cards (stats-card pattern) ───────────────────────────────────
 
-    def get_stats_card_value(self, title, timeout=10000):
+    def get_stats_card_value(self, title, timeout=20000):
         locator = self.STATS_CARD_VALUE_BY_LABEL_XPATH.format(title=title)
         el = self.page.locator(locator).first
         el.wait_for(state="attached", timeout=timeout)
@@ -173,7 +186,7 @@ class RcsOverviewPage(BasePage):
 
     # ── Product cards (title/value sibling <p> pattern) ──────────────────────
 
-    def get_card_value(self, title, timeout=10000):
+    def get_card_value(self, title, timeout=20000):
         """For the confirmed Transactional/Promotional/OTP/Multi Use
         product cards -- title <p> immediately followed by a sibling
         value <p> within the same wrapper div."""

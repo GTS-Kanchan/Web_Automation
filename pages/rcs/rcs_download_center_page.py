@@ -430,7 +430,15 @@ class RcsDownloadCenterPage(BasePage):
 
     def open_columns_panel(self):
         try:
-            self._js_click(self.BTN_COLUMNS, timeout=10000)
+            # _js_click_first_visible (not _js_click): BTN_COLUMNS's xpath
+            # is not scoped to a single table/section, so if this app
+            # renders more than one match for it (e.g. a hidden
+            # mobile-breakpoint duplicate of the same toolbar -- the same
+            # class of duplication already handled elsewhere in this
+            # project via Helpers.js_click_first_visible), a plain
+            # `.first` click can land on a copy that never actually opens
+            # the panel whose checkboxes toggle_column() goes on to click.
+            self._js_click_first_visible(self.BTN_COLUMNS, timeout=10000)
             self.page.wait_for_timeout(500)
         except Exception:
             pass
@@ -444,15 +452,28 @@ class RcsDownloadCenterPage(BasePage):
 
     def toggle_column(self, value):
         """Toggle a column's visibility checkbox by its confirmed value
-        (actions/name/service/from/to/created-at/status)."""
+        (actions/name/service/from/to/created-at/status). Returns True if
+        the checkbox's checked state actually changed, False otherwise --
+        confirmed live (test_bonus_toggle_service_column) that a silently
+        swallowed click failure (this method previously had no return
+        value at all) surfaces as a confusing "before == after" assertion
+        at the call site instead of an honest "toggle did nothing" signal
+        here, where the real cause can actually be diagnosed."""
         try:
+            before = self.get_column_checkbox_state(value)
             xpath = self.COLUMN_CHECKBOX_BY_VALUE_XPATH.format(value=value)
-            cb = self.page.locator(xpath).first
-            cb.wait_for(state="attached", timeout=5000)
-            cb.click(force=True)
+            # _js_click_first_visible (not a raw .first click): same
+            # duplicate-toolbar risk as open_columns_panel() above --
+            # if the panel that actually opened is a different copy than
+            # the one `.first` resolves this checkbox to, a force-click on
+            # a checkbox with no real bounding box (e.g. inside a
+            # still-closed/hidden duplicate panel) can silently no-op.
+            self.h.js_click_first_visible(xpath, timeout=5000)
             self.page.wait_for_timeout(800)
+            after = self.get_column_checkbox_state(value)
+            return after != before
         except Exception:
-            pass
+            return False
 
     def get_column_checkbox_state(self, value):
         try:
@@ -587,6 +608,46 @@ class RcsDownloadCenterPage(BasePage):
                 pass
         self.page.wait_for_timeout(1500)
 
+    def download_report(self, row_idx=0, timeout_ms=60000):
+        """Click the download action for the given row and directly wait
+        for the resulting download via page.expect_download() -- the
+        same proven pattern already used by every Bulk Actions -> Export
+        method in this codebase (RcsAgentPage.export_csv(),
+        SmsCampaignReportPage.click_export_csv(), etc.), rather than
+        click_download_icon() + wait_for_download()'s click-then-poll
+        approach below. expect_download() blocks on Playwright's own
+        download event for THIS specific click (registered before the
+        click fires, per Playwright's documented context-manager
+        contract) instead of adding a fixed sleep and separately hoping
+        a new file/event shows up within an arbitrary timeout -- it is a
+        real wait for the download itself, not added wait time.
+
+        Returns {"elapsed_s", "file_path", "file_size"} on success, or
+        None on failure (locator miss / disabled control / no download
+        event within timeout_ms) -- same never-raises contract as the
+        Export methods this mirrors, and the same {file_path, ...} shape
+        TC_10 already expects from a successful download."""
+        try:
+            btn = self._action_btn_for_row(row_idx, "download")
+            if btn is None:
+                btn = self.h.wait_for_element_clickable(self.ROW_DOWNLOAD_ICON, timeout=8000)
+            btn.scroll_into_view_if_needed()
+            btn.evaluate("node => node.removeAttribute('target')")
+            start = time.time()
+            with self.page.expect_download(timeout=timeout_ms) as dl_info:
+                btn.click(force=True)
+            download = dl_info.value
+            filename = download.suggested_filename or f"rcs_report_{int(time.time() * 1000)}.csv"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {
+                "elapsed_s": time.time() - start,
+                "file_path": dest,
+                "file_size": os.path.getsize(dest),
+            }
+        except Exception:
+            return None
+
     def click_download_icon(self, row_idx=0):
         """
         Click the download action for the given row.
@@ -594,13 +655,30 @@ class RcsDownloadCenterPage(BasePage):
         should use snapshot_downloads() + wait_for_download() which poll
         properly (same pattern as SMS/WhatsApp). The actual download event
         is captured by the page-level listener registered in __init__.
-        """
+
+        Superseded for new callers by download_report() above (a direct
+        page.expect_download() wait, matching this codebase's proven
+        Export pattern) -- kept here unchanged since nothing else in this
+        file depends on removing it.
+
+        Returns whether a click was actually dispatched on a real,
+        located element -- previously this returned nothing, so a
+        locator miss / disabled control / intercepted click (any of
+        which leave `clicked` False) was indistinguishable from a
+        genuinely successful click. That made TC_10's eventual
+        wait_for_download() timeout ambiguous between "the click never
+        landed" and "it landed but no download arrived" -- exactly the
+        two causes its own failure message has to guess between. Callers
+        that need an honest signal (TC_10) should check this before
+        trusting a wait_for_download() timeout as a report/download-event
+        problem rather than a click problem."""
         clicked = False
 
         btn = self._action_btn_for_row(row_idx, "download")
         if btn is not None:
             try:
                 btn.scroll_into_view_if_needed()
+                btn.evaluate("node => node.removeAttribute('target')")
                 btn.click(force=True)
                 clicked = True
             except Exception:
@@ -610,12 +688,14 @@ class RcsDownloadCenterPage(BasePage):
             try:
                 el = self.h.wait_for_element_clickable(self.ROW_DOWNLOAD_ICON, timeout=8000)
                 el.scroll_into_view_if_needed()
+                el.evaluate("node => node.removeAttribute('target')")
                 el.click(force=True)
                 clicked = True
             except Exception:
                 pass
 
         self.page.wait_for_timeout(500)
+        return clicked
 
     def is_download_btn_disabled(self, row_idx=0):
         """Return True if the Download element is absent, disabled, or not clickable."""

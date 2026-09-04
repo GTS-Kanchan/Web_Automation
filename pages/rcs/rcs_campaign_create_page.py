@@ -207,6 +207,21 @@ class RcsCampaignCreatePage(BasePage):
         "contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'schedule')]"
     )
 
+    # CONFIRMED via live DOM: once a Send Type has already been chosen,
+    # the radios/labels above are replaced by a summary view with a
+    # "Change" button --
+    #   <button type="button" wire:click="$set('send_type', '')">Change</button>
+    # -- that resets send_type back to '' (re-revealing the selectable
+    # Send Now / Schedule Later options) before a *different* option can
+    # be picked. This is the real cause behind TC139 (Schedule Later ->
+    # Send Now) needing more than a plain label click: SEND_NOW_LABEL
+    # simply isn't there to click yet until Change is clicked first.
+    CHANGE_SEND_TYPE_BTN = (
+        "xpath=//button[@*[name()='wire:click']=\"$set('send_type', '')\"] | "
+        "//button[contains(translate(normalize-space(.), "
+        "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'change')]"
+    )
+
     # ── Form fields — Scheduled date/time (shown after Schedule Later) ──────
     SCHEDULE_DATETIME_INPUT = (
         "xpath=//input[@id='scheduled_at'] | "
@@ -396,6 +411,21 @@ class RcsCampaignCreatePage(BasePage):
         """Navigate to the RCS Campaign create page."""
         self.open(self.CREATE_URL)
         self.page.wait_for_timeout(2000)
+        # Best-effort: give the form's own fields (further down the
+        # Livewire component tree than the fixed 2s settle above accounts
+        # for) a real chance to mount before handing control back --
+        # confirmed live under parallel (-n) execution: a caller checking
+        # for the Send Type radios with an 8s timeout right after this
+        # method returned found nothing, even though the same radios are
+        # confirmed present once the form has actually finished loading.
+        # Swallowed on timeout so a genuinely broken/slow-loading page
+        # still surfaces truthfully through whatever the caller asserts
+        # next, instead of this method itself becoming a second place a
+        # real failure could hide.
+        try:
+            self.is_form_loaded(timeout=15000)
+        except Exception:
+            pass
         return self
 
     def is_create_page(self):
@@ -605,8 +635,23 @@ class RcsCampaignCreatePage(BasePage):
         """Select the agent at the given option index (0 = placeholder).
         Native <select> only -- the WireUI combobox has no stable notion
         of "index N", so callers needing that mechanism should use
-        select_agent_by_visible_text() instead."""
+        select_agent_by_visible_text() instead.
+
+        Waits for the select to actually be populated first (not just
+        present/visible) -- see _wait_for_select_populated()'s docstring:
+        this same race was already found and fixed once, but only inside
+        ensure_agent_and_template_selected(), which not every caller goes
+        through. Confirmed live (test_TC014, and by extension every test
+        further down test_rcs_campaign_create_flow.py that depends on an
+        agent being selected -- Contact Management, Import Contacts modal,
+        template variables, etc.): under parallel (-n) execution, calling
+        this before the agent list's async Livewire load finished raised
+        (no such option index yet), silently reported here as "no agent
+        available", and cascaded into skipping most of the rest of that
+        file for that worker even though agents genuinely were available
+        moments later."""
         try:
+            self._wait_for_select_populated(self.RCS_AGENT_SELECT)
             el = self.h.wait_for_element_visible(self.RCS_AGENT_SELECT)
             el.select_option(index=index)
             self.page.wait_for_timeout(1000)
@@ -667,7 +712,10 @@ class RcsCampaignCreatePage(BasePage):
             return []
 
     def select_template_by_index(self, index: int = 1):
+        """Same populated-wait fix as select_agent_by_index() above, and
+        for the same reason -- Template options load async too."""
         try:
+            self._wait_for_select_populated(self.TEMPLATE_SELECT)
             el = self.h.wait_for_element_visible(self.TEMPLATE_SELECT)
             el.select_option(index=index)
             self.page.wait_for_timeout(1000)
@@ -780,6 +828,25 @@ class RcsCampaignCreatePage(BasePage):
     def is_schedule_later_radio_present(self, timeout=5000):
         return self.is_element_present(self.RADIO_SCHEDULE_LATER, timeout=timeout)
 
+    def _click_change_send_type_if_present(self):
+        """Best-effort: if a Send Type was already chosen, the picker UI
+        is replaced by a summary view with a "Change" button (see
+        CHANGE_SEND_TYPE_BTN's docstring) that must be clicked to reset
+        send_type back to '' before a different label becomes clickable
+        at all. A no-op (returns False fast) the first time a Send Type
+        is ever chosen, since Change isn't rendered yet at that point."""
+        try:
+            btn = self.page.locator(self.CHANGE_SEND_TYPE_BTN).first
+            if btn.count() == 0 or not btn.is_visible():
+                return False
+            btn.scroll_into_view_if_needed()
+            btn.click()
+            self.page.wait_for_timeout(500)
+            self._wait_spinner_gone()
+            return True
+        except Exception:
+            return False
+
     def select_send_now(self):
         """Label-click first (see SEND_NOW_LABEL's docstring: the native
         radio can be visually hidden/overlaid, so a JS-forced click
@@ -788,43 +855,93 @@ class RcsCampaignCreatePage(BasePage):
         failing to actually register a Send-Type selection before
         submit). Falls back to the direct radio click, then verifies via
         is_send_now_selected() before returning so callers get an
-        honest True/False rather than "the click didn't raise"."""
-        try:
-            lbl = self.page.locator(self.SEND_NOW_LABEL).first
-            lbl.wait_for(state="attached", timeout=3000)
-            lbl.scroll_into_view_if_needed()
-            lbl.click()
-            self.page.wait_for_timeout(500)
-            if self.is_send_now_selected():
-                return True
-        except Exception:
-            pass
-        try:
-            self._js_click(self.RADIO_SEND_NOW)
-            self.page.wait_for_timeout(500)
-        except Exception:
-            pass
+        honest True/False rather than "the click didn't raise".
+
+        _wait_spinner_gone() after each click attempt -- its sibling
+        select_schedule_later() already has this (added after a
+        confirmed live fix there) but select_send_now() was missed at
+        the time: clicking the label/radio right after the Import
+        Contacts step (this method's only real caller, TC041/TC042/
+        TC043) can land while that import's own Livewire spinner is
+        still finishing up, and reading is_send_now_selected() before it
+        clears can catch the radio mid-update.
+
+        Bounded retry loop (2 attempts) added after TC043/
+        test_e2efileupload_schedule_same_day_next_3_hours were seen
+        failing here specifically off the File Upload path -- that
+        import triggers a real server-side parse/validate/save round
+        trip (unlike Copy/Paste's client-side textarea), so the Send
+        Type section can still be mid-mount on the first attempt even
+        with click_import_confirm()'s own spinner wait (now added
+        there too). Same bounded-retry + verified-post-condition shape
+        already used by click_import_contacts_btn()/
+        click_modal_close_x() in this file for the identical class of
+        "real network/Livewire round-trip variance, not a wrong
+        locator" symptom.
+
+        _click_change_send_type_if_present() first each attempt --
+        confirmed live (user-supplied DOM, see CHANGE_SEND_TYPE_BTN):
+        once a Send Type is already selected (e.g. TC139's Schedule
+        Later -> Send Now switch-back), SEND_NOW_LABEL isn't present to
+        click at all until the "Change" button resets send_type to ''.
+        Without this, select_send_now() had nothing to click and no
+        exception either (the label/radio locators just never matched),
+        so it fell straight through to the honest is_send_now_selected()
+        check at the end and correctly reported False -- not a timing
+        race, an actually-missing prerequisite step."""
+        for attempt in range(2):
+            self._click_change_send_type_if_present()
+            try:
+                lbl = self.page.locator(self.SEND_NOW_LABEL).first
+                lbl.wait_for(state="attached", timeout=5000)
+                lbl.scroll_into_view_if_needed()
+                lbl.click()
+                self.page.wait_for_timeout(500)
+                self._wait_spinner_gone()
+                if self.is_send_now_selected():
+                    return True
+            except Exception:
+                pass
+            try:
+                self._js_click(self.RADIO_SEND_NOW)
+                self.page.wait_for_timeout(500)
+                self._wait_spinner_gone()
+                if self.is_send_now_selected():
+                    return True
+            except Exception:
+                pass
+            if attempt == 0:
+                self.page.wait_for_timeout(1500)
         return self.is_send_now_selected()
 
     def select_schedule_later(self):
-        """Same label-first-then-verify strategy as select_send_now()."""
-        try:
-            lbl = self.page.locator(self.SCHEDULE_LATER_LABEL).first
-            lbl.wait_for(state="attached", timeout=3000)
-            lbl.scroll_into_view_if_needed()
-            lbl.click()
-            self.page.wait_for_timeout(500)
-            self._wait_spinner_gone()
-            if self.is_schedule_later_selected():
-                return True
-        except Exception:
-            pass
-        try:
-            self._js_click(self.RADIO_SCHEDULE_LATER)
-            self.page.wait_for_timeout(500)
-            self._wait_spinner_gone()
-        except Exception:
-            pass
+        """Same label-first-then-verify strategy as select_send_now(),
+        including its bounded 2-attempt retry and its
+        _click_change_send_type_if_present() prerequisite step (see
+        select_send_now()'s docstring for why both are needed)."""
+        for attempt in range(2):
+            self._click_change_send_type_if_present()
+            try:
+                lbl = self.page.locator(self.SCHEDULE_LATER_LABEL).first
+                lbl.wait_for(state="attached", timeout=5000)
+                lbl.scroll_into_view_if_needed()
+                lbl.click()
+                self.page.wait_for_timeout(500)
+                self._wait_spinner_gone()
+                if self.is_schedule_later_selected():
+                    return True
+            except Exception:
+                pass
+            try:
+                self._js_click(self.RADIO_SCHEDULE_LATER)
+                self.page.wait_for_timeout(500)
+                self._wait_spinner_gone()
+                if self.is_schedule_later_selected():
+                    return True
+            except Exception:
+                pass
+            if attempt == 0:
+                self.page.wait_for_timeout(1500)
         return self.is_schedule_later_selected()
 
     def is_send_now_selected(self):
@@ -1080,6 +1197,33 @@ class RcsCampaignCreatePage(BasePage):
         return False
 
     def click_import_confirm(self):
+        """_wait_spinner_gone() after the main click and after the
+        optional "Confirm and Continue" sub-dialog -- confirmed live as
+        missing here (this method had no spinner wait at all) while its
+        sibling click_import_contacts_btn() already has one. For a
+        File Upload import this click kicks off a real server-side
+        parse/validate/save round trip (unlike Copy/Paste's client-side
+        textarea, which is why TC041/TC042 -- Copy/Paste, whose
+        select_send_now() call is never asserted on -- never surfaced
+        this) -- without waiting for that spinner to clear, callers
+        (TC043/test_e2efileupload_schedule_same_day_next_3_hours) can
+        reach select_send_now()/select_schedule_later() while the import
+        is still in flight and the Send Type section isn't interactable
+        yet, so both the label click and the JS-forced radio click
+        legitimately have nothing to act on and fail.
+
+        CONFIRMED live (user report): clicking "Continue" (this method's
+        IMPORT_CONFIRM_BTN, which matches "Continue"/"Import"/"Save")
+        on the File Upload path triggers a SweetAlert2 confirmation --
+        <button class="swal2-confirm swal2-styled">Yes, Import Now</button>
+        -- that this method never handled before. That dialog blocks the
+        rest of the page (Send Type radios included) until dismissed, so
+        without clicking it here the import never actually completes and
+        every subsequent step (select_send_now/select_schedule_later)
+        was failing against a still-blocked page, not a slow one. Reuses
+        the same generic "match on the swal2-confirm class" locator
+        already proven for the post-Submit SweetAlert in confirm_launch()
+        -- matches regardless of this dialog's exact button text."""
         try:
             btn = self.page.locator(self.IMPORT_CONFIRM_BTN).first
             btn.wait_for(state="attached", timeout=15000)
@@ -1087,19 +1231,39 @@ class RcsCampaignCreatePage(BasePage):
             self._js_click(self.IMPORT_CONFIRM_BTN)
             self.page.wait_for_timeout(1500)
 
+            # SweetAlert2 "Yes, Import Now" confirmation -- see docstring.
+            swal_import_confirm = (
+                "xpath=//button[contains(@class,'swal2-confirm')] | "
+                "//button[contains(normalize-space(),'Yes, Import Now')]"
+            )
+            try:
+                btn_swal = self.page.locator(swal_import_confirm).first
+                btn_swal.wait_for(state="visible", timeout=6000)
+                self._js_click(swal_import_confirm)
+                self.page.wait_for_timeout(1000)
+            except Exception:
+                pass
+
+            self._wait_spinner_gone()
+
             confirm_and_continue = "xpath=//div[contains(@class,'fixed') or @x-show='show']//button[contains(normalize-space(),'Confirm')]"
             try:
                 btn2 = self.page.locator(confirm_and_continue).first
                 btn2.wait_for(state="visible", timeout=4000)
                 self._js_click(confirm_and_continue)
                 self.page.wait_for_timeout(1000)
+                self._wait_spinner_gone()
             except Exception:
                 pass
 
             try:
-                self.page.locator(self.IMPORT_CONFIRM_BTN).first.wait_for(state="hidden", timeout=5000)
+                self.page.locator(self.IMPORT_CONFIRM_BTN).first.wait_for(state="hidden", timeout=8000)
             except Exception:
                 pass
+            # Final settle: give the Send Type section (only rendered
+            # once the import step has fully advanced) a real chance to
+            # mount before handing control back to the caller.
+            self._wait_spinner_gone()
             return True
         except Exception as e:
             print(f"Could not click import confirm: {e}")

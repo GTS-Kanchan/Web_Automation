@@ -36,6 +36,7 @@ Test Design Notes:
 """
 from datetime import datetime, timedelta
 
+import re
 import pytest
 
 from constants.rcs_message_headers import EXPECTED_RCS_MESSAGE_HEADERS
@@ -216,10 +217,20 @@ def test_TC06_columns_customization(message_page):
     toggled = message_page.toggle_column("department")
     if not toggled:
         pytest.skip("Could not toggle the Department column checkbox")
-    headers_after = message_page.get_table_headers()
     now_checked = message_page.get_column_checkbox_state("department")
     assert now_checked != was_checked, "Department checkbox state did not change"
+    # Poll rather than a single immediate read: toggle_column()'s own
+    # fixed 800ms settle wait isn't always enough for the grid's header
+    # row to finish re-rendering under parallel (-n) execution -- the
+    # checkbox itself flips right away (confirmed by now_checked above),
+    # but the header list can briefly still reflect the OLD column set.
+    headers_after = []
     if now_checked:
+        for _ in range(10):
+            headers_after = message_page.get_table_headers()
+            if any("department" in h.lower() for h in headers_after):
+                break
+            message_page.page.wait_for_timeout(500)
         assert any("department" in h.lower() for h in headers_after), (
             f"Department column not reflected in grid headers: {headers_after}"
         )
@@ -262,8 +273,22 @@ def test_TC08_message_status_display(message_page):
     if not values:
         pytest.skip("Could not read any Status cell values")
     known = {"submitted", "sent", "delivered", "read", "failed", "queued",
-             "received", "rejected", "pending"}
+             "received", "rejected", "pending", "-"}
+    # A cell showing "no status yet" can render as any of several
+    # visually-identical dash characters depending on how the app/CSS
+    # produced it (ASCII hyphen-minus U+002D, en dash U+2013, em dash
+    # U+2014, non-breaking hyphen U+2011, minus sign U+2212, ...) --
+    # confirmed live: a value that *looked* like a plain "-" in the
+    # pytest failure output still failed `v.lower() in known` even
+    # though "-" is literally in that set, which only happens if it's
+    # one of these lookalikes rather than the ASCII character. Treat any
+    # cell that's ENTIRELY made of dash-like characters (plus optional
+    # surrounding whitespace) as the same "no status" placeholder,
+    # regardless of which specific glyph the app used.
+    dash_only = re.compile(r"^[\s\-‐‑‒–—―−]+$")
     for v in values:
+        if dash_only.match(v):
+            continue
         assert v.lower() in known, f"Unrecognized status value: {v!r}"
 
 

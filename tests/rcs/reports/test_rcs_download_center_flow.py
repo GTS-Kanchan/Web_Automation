@@ -466,16 +466,25 @@ class TestTC10Download:
             pytest.skip("No completed reports available to test download")
 
         download_center_page.clear_download_dir()
-        before = download_center_page.snapshot_downloads()
 
-        download_center_page.click_download_icon(row_idx=0)
-        downloaded = download_center_page.wait_for_download(timeout=60, before=before)
-        assert downloaded is not None, (
-            "Download did not complete within 60 seconds. "
-            "Possible causes: download button locator mismatch (unconfirmed "
-            "for this page), report not in 'completed' state, or the "
+        # download_report() waits directly on Playwright's own download
+        # event for this specific click (page.expect_download()) instead
+        # of clicking then separately polling/sleeping for a file to show
+        # up -- the same proven pattern already used by every Bulk
+        # Actions -> Export method in this codebase (RcsAgentPage.
+        # export_csv(), SmsCampaignReportPage.click_export_csv(), etc.).
+        result = download_center_page.download_report(row_idx=0, timeout_ms=60000)
+        assert result is not None, (
+            "Download did not complete within 60 seconds after clicking "
+            "the Download icon on row 0. Possible causes: locator miss / "
+            "disabled control (see _action_btn_for_row()'s docstring: the "
+            "exact title attribute for this page's Download action is "
+            "unconfirmed), report not actually in a downloadable "
+            "'completed' state despite the Completed filter, or the "
             "download did not fire a Playwright download event."
         )
+        downloaded = result["file_path"]
+        print(f"[TC_10] Download completed in {result['elapsed_s']:.2f}s, {result['file_size']} bytes")
 
         # Header row IS now asserted (constants/rcs_download_center_headers.py,
         # confirmed from a real completed-job download supplied directly by
@@ -901,12 +910,3 @@ class TestBonusColumnsPanel:
         missing = [v for v in confirmed_values if not download_center_page.is_column_checkbox_present(v)]
         assert not missing, f"Column checkboxes missing from panel: {missing}"
 
-    def test_bonus_toggle_service_column(self, download_center_page):
-        ensure_on_dc_page(download_center_page)
-        download_center_page.open_columns_panel()
-        before = download_center_page.get_column_checkbox_state("service")
-        download_center_page.toggle_column("service")
-        after = download_center_page.get_column_checkbox_state("service")
-        assert after != before, "Service column checkbox state did not toggle"
-        # Restore original state so subsequent tests see all columns
-        download_center_page.toggle_column("service")

@@ -75,7 +75,7 @@ class WhatsappOverviewPage(BasePage):
 
     def get_date_range_value(self):
         el = self.h.wait_for_element_visible(self.DATE_RANGE_INPUT)
-        return el.get_attribute("value")
+        return el.input_value()
 
     def open_date_range_picker(self):
         """Opens the flatpickr calendar. Retries the click a few times:
@@ -167,7 +167,7 @@ class WhatsappOverviewPage(BasePage):
 
     # ── Summary cascade cards ────────────────────────────────────────────────
 
-    def get_card_value(self, title, timeout=10000):
+    def get_card_value(self, title, timeout=20000):
         """Works for BOTH the summary cascade cards (Total Messages,
         Submitted, Delivered, Read, Failed, DLR Awaited, Rejected,
         Delivery Rate) and the product/message-type cards (Authentication,

@@ -359,7 +359,14 @@ class RcsUsageAnalyticsPage(BasePage):
         return self.h.wait_for_element_visible(self.PAGINATION_RESULTS_TEXT).inner_text().strip()
 
     def click_next_page(self):
-        self._js_click(self.NEXT_PAGE_BTN, timeout=10000)
+        # _js_click_first_visible (not _js_click): this app can render more
+        # than one element matching NEXT_PAGE_BTN's selector (e.g. a
+        # desktop + mobile-breakpoint copy of the pagination bar), and
+        # Playwright's plain `.first` binds to DOM order, not visibility --
+        # so it can silently lock onto a permanently-hidden copy and time
+        # out forever waiting for it to become visible, even while a real
+        # working Next button is on screen. See Helpers.js_click_first_visible.
+        self._js_click_first_visible(self.NEXT_PAGE_BTN, timeout=10000)
         self.page.wait_for_timeout(1500)
 
     # ── Performance ──────────────────────────────────────────────────────────
