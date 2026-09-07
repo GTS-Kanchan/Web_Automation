@@ -292,10 +292,12 @@ def test_campaign_analytics_TC13_search_invalid_campaign_name(campaign_analytics
 @pytest.mark.regression
 def test_campaign_analytics_TC14_filter_by_product(campaign_analytics_page):
     """TC_14: Filtering by Transactional/OTP/Promotional shows only
-    matching data."""
+    matching data. Uses toggle_product_filter_option() (checkbox-based,
+    see its docstring) instead of the old unconfirmed select_product_filter()
+    guess -- get_product_filter_value() doesn't apply to a checkbox
+    multiselect, so it's dropped rather than asserted on."""
     ensure_on_report_page(campaign_analytics_page)
-    campaign_analytics_page.select_product_filter("Transactional")
-    assert campaign_analytics_page.get_product_filter_value() == "Transactional"
+    campaign_analytics_page.toggle_product_filter_option("transactional")
     campaign_analytics_page.page.wait_for_timeout(1000)
     assert campaign_analytics_page.has_records() or campaign_analytics_page.has_no_records_message()
 
@@ -328,12 +330,23 @@ def test_campaign_analytics_filter_by_department(campaign_analytics_page):
     assert campaign_analytics_page.has_records() or campaign_analytics_page.has_no_records_message()
 
 
-@pytest.mark.skip(reason="The 'Search User' filter exists in the DOM but is permanently hidden (display:none) in the current environment/role.")
 @pytest.mark.regression
 def test_campaign_analytics_filter_by_user(campaign_analytics_page):
-    """Filtering by User updates the report (best-effort caveat)."""
+    """Filtering by User updates the report (best-effort caveat).
+
+    CONFIRMED live (user report + DOM): the 'Search User' async-select
+    filter does render and IS selectable in this environment/role on
+    testqa.gtsstaging -- the previous skip's "permanently hidden
+    (display:none)" claim was wrong (or role/environment-specific and no
+    longer applicable). "kanchan" narrowly matches this instance's
+    confirmed real user -- Test Account123
+    (kanchan.shinde@globeteleservices.com) -- rather than the generic
+    single-letter "a" used by the sibling Agent/Department filters,
+    since _select_first_async_option() just clicks whatever comes back
+    first and a known-good, specific search term is safer than hoping
+    "a" surfaces something sensible."""
     ensure_on_report_page(campaign_analytics_page)
-    campaign_analytics_page.filter_by_user("a")
+    campaign_analytics_page.filter_by_user("kanchan")
     assert campaign_analytics_page.has_records() or campaign_analytics_page.has_no_records_message()
 
 

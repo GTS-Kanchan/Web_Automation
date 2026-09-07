@@ -65,8 +65,17 @@ Differences from the SMS reference (all called out with reasons):
   - Bonus coverage added (not in the SMS reference): the "Columns"
     dropdown, confirmed present in the WhatsApp DOM with checkboxes for
     all 7 columns (actions/name/category/from/to/created-at/status).
-  - TC_16 (sort) and TC_17 (pagination) removed, matching the SMS
-    reference exactly ("always skipped on this page").
+  - TC_16 (sort by Created At) was originally removed to match the SMS
+    reference ("always skipped on this page") -- that assumption was
+    NEVER independently re-verified against this page's own DOM. A later
+    fresh DOM capture confirms real wire:click="sortBy('<field>')"
+    attributes on 6 of the 7 headers (name/category/from_date/to_date/
+    created_at/status), plus wire:click="clearSort('<field>')" (single
+    pill) and wire:click.prevent="clearSorts" (clear-all). Sorting is
+    therefore now covered by TestBonusSortableColumns /
+    TestBonusClearSorts at the bottom of this file instead of being
+    skipped. TC_17 (pagination) remains untested -- no pagination-control
+    DOM evidence exists (only 2 rows / a single page were ever captured).
 
 Migrated to Playwright: local page-object fixture renamed
 `download_center_page` (built on conftest.py's `module_logged_in_page`)
@@ -78,7 +87,7 @@ whatsapp_download_center_page.py's click_delete_icon()/confirm_delete()
 docstrings) instead of `driver.switch_to.alert`.
 
 Run:
-    pytest tests/test_whatsapp_download_center_flow.py -v
+    pytest tests/whatsapp/download_center/test_whatsapp_download_center_flow.py -v
 """
 import time
 from datetime import date, datetime, timedelta
@@ -883,3 +892,93 @@ class TestBonusColumnsPanel:
         assert after != before, "Category column checkbox state did not toggle"
         # Restore original state so subsequent tests see all columns
         download_center_page.toggle_column("category")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Bonus coverage (not in the SMS reference) — Sortable column headers.
+#
+# A fresh live DOM capture of this page confirms real
+# wire:click="sortBy('<field>')" attributes on 6 of the 7 table headers
+# (name, category, from_date, to_date, created_at, status) — Actions is a
+# plain <span> with no sortBy call and is not sortable. This corrects an
+# assumption this suite had inherited from the SMS Download Center
+# reference ("TC_16 sort — always skipped on this page") that was never
+# independently re-verified against THIS page's own DOM; since the fresh
+# capture proves sorting genuinely works here, it is now tested rather
+# than skipped. Pagination (TC_17) remains untested — no pagination-control
+# DOM evidence exists (only 2 rows / a single page were ever captured), so
+# it stays a documented gap rather than a guess.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestBonusSortableColumns:
+    """Bonus: each of the 6 confirmed-sortable columns can be sorted via
+    its header's wire:click="sortBy('<field>')" control, and the resulting
+    sort is reflected as a removable 'Applied Sorting' pill (confirmed via
+    the matching wire:click="clearSort('<field>')" remove control)."""
+
+    def _assert_sort_and_clear(self, download_center_page, field):
+        ensure_on_dc_page(download_center_page)
+        download_center_page.click_sort_header(field)
+        download_center_page.page.wait_for_timeout(800)
+        assert download_center_page.is_sort_applied(field), (
+            f"Sorting by '{field}' did not produce a removable sort pill for that field"
+        )
+        download_center_page.clear_sort(field)
+        reset_filters(download_center_page)
+
+    def test_bonus_sort_by_name(self, download_center_page):
+        self._assert_sort_and_clear(download_center_page, "name")
+
+    def test_bonus_sort_by_category(self, download_center_page):
+        self._assert_sort_and_clear(download_center_page, "category")
+
+    def test_bonus_sort_by_from_date(self, download_center_page):
+        self._assert_sort_and_clear(download_center_page, "from_date")
+
+    def test_bonus_sort_by_to_date(self, download_center_page):
+        self._assert_sort_and_clear(download_center_page, "to_date")
+
+    def test_bonus_sort_by_created_at(self, download_center_page):
+        self._assert_sort_and_clear(download_center_page, "created_at")
+
+    def test_bonus_sort_by_status(self, download_center_page):
+        self._assert_sort_and_clear(download_center_page, "status")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Bonus coverage — Clear-sort controls (single pill + clear-all), confirmed
+# from the same DOM capture: wire:click="clearSort('<field>')" for a single
+# pill's remove control, and the distinct wire:click.prevent="clearSorts"
+# for the "clear all sorts" control.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestBonusClearSorts:
+    """Bonus: clearing an applied sort, one column at a time or all at once."""
+
+    def test_bonus_clear_single_sort(self, download_center_page):
+        ensure_on_dc_page(download_center_page)
+        download_center_page.click_sort_header("status")
+        download_center_page.page.wait_for_timeout(800)
+        assert download_center_page.is_sort_applied("status"), (
+            "Sort pill for 'status' not present after sorting"
+        )
+        download_center_page.clear_sort("status")
+        download_center_page.page.wait_for_timeout(800)
+        assert not download_center_page.is_sort_applied("status"), (
+            "Sort pill for 'status' still present after clear_sort('status')"
+        )
+        reset_filters(download_center_page)
+
+    def test_bonus_clear_all_sorts(self, download_center_page):
+        ensure_on_dc_page(download_center_page)
+        download_center_page.click_sort_header("name")
+        download_center_page.page.wait_for_timeout(800)
+        assert download_center_page.is_sort_applied("name"), (
+            "Sort pill for 'name' not present after sorting"
+        )
+        download_center_page.clear_all_sorts()
+        download_center_page.page.wait_for_timeout(800)
+        assert not download_center_page.is_sort_applied("name"), (
+            "Sort pill for 'name' still present after clear_all_sorts()"
+        )
+        reset_filters(download_center_page)

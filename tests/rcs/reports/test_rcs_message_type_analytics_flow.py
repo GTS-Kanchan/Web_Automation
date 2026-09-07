@@ -265,10 +265,12 @@ def test_message_type_analytics_TC11_search_invalid_message_type(message_type_an
 @pytest.mark.regression
 def test_message_type_analytics_TC12_filter_by_product(message_type_analytics_page):
     """TC_12: Filtering by Transactional/OTP/Promotional shows only
-    matching data."""
+    matching data. Uses toggle_product_filter_option() (checkbox-based,
+    see its docstring) instead of the old unconfirmed select_product_filter()
+    guess -- get_product_filter_value() doesn't apply to a checkbox
+    multiselect, so it's dropped rather than asserted on."""
     ensure_on_report_page(message_type_analytics_page)
-    message_type_analytics_page.select_product_filter("Transactional")
-    assert message_type_analytics_page.get_product_filter_value() == "Transactional"
+    message_type_analytics_page.toggle_product_filter_option("transactional")
     message_type_analytics_page.page.wait_for_timeout(1000)
     assert message_type_analytics_page.has_records() or message_type_analytics_page.has_no_records_message()
 
@@ -303,8 +305,19 @@ def test_message_type_analytics_filter_by_department(message_type_analytics_page
 
 @pytest.mark.regression
 def test_message_type_analytics_filter_by_user(message_type_analytics_page):
-    """Filtering by User updates the report (best-effort caveat)."""
-    pytest.skip("User filter is not present on the Message Type Analytics report")
+    """Filtering by User updates the report (best-effort caveat).
+
+    CONFIRMED live (user report + DOM): the 'Search User' async-select
+    filter IS present and selectable in this environment/role on
+    testqa.gtsstaging -- the previous "not present on this report"
+    skip reason was wrong (this page already had a fully implemented
+    filter_by_user(), just never exercised because of the hard skip
+    below it). "kanchan" narrowly matches this instance's confirmed
+    real user -- Test Account123
+    (kanchan.shinde@globeteleservices.com)."""
+    ensure_on_report_page(message_type_analytics_page)
+    message_type_analytics_page.filter_by_user("kanchan")
+    assert message_type_analytics_page.has_records() or message_type_analytics_page.has_no_records_message()
 
 
 # ── TC_13-14 — Export ─────────────────────────────────────────────────────

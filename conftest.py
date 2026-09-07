@@ -439,10 +439,28 @@ def pytest_runtest_makereport(item, call):
 
     # Pass 3: for class-based / module-scoped tests where funcargs may be
     # empty, ask pytest's fixture manager directly via getfixturevalue()
+    #
+    # IMPORTANT: only for a fixture this test ACTUALLY requested (directly
+    # or transitively) -- req.fixturenames reflects that closure without
+    # instantiating anything. getfixturevalue() itself does not just look
+    # up an existing value: calling it on a fixture the test never asked
+    # for CREATES that fixture on the spot, which for "page"/"logged_in_page"
+    # cascades into launching a real Chromium browser. Non-UI suites (e.g.
+    # tests/sms/api, which use Playwright's APIRequestContext and never
+    # touch a Page) have no page/logged_in_page anywhere in their fixture
+    # graph, so Pass 1 and 2 above always miss and this fallback used to
+    # fire unconditionally on every phase of every test -- silently
+    # launching (and, in headed mode, visibly popping open) a browser
+    # window for pure API tests that never wanted one. Guarding on
+    # fixturenames keeps this fallback working exactly as before for
+    # tests that genuinely use page/logged_in_page, while making it a
+    # true no-op for everything else.
     if pw_page is None:
         req = getattr(item, "_request", None)
         if req is not None:
             for fname in ("page", "logged_in_page"):
+                if fname not in req.fixturenames:
+                    continue
                 try:
                     val = req.getfixturevalue(fname)
                     if val is not None:

@@ -1,0 +1,67 @@
+# environments.yaml
+# Define one block per instance. Add as many as you need — switching
+# environments is just changing `active_environment` below or overriding
+# it via the ENV_NAME environment variable / --env CLI flag.
+
+active_environment: dev
+
+environments:
+  testqa:
+    base_url: "https://testqa.cpaas.globeteleservices.com"
+    sms_send_path: "/api/sms/send"
+    campaign_send_path: "/api/sms/campaign/send"
+    template_send_path: "/api/sms/template/send"
+    send_msg_path: "/api/sms/send-msg"
+    sms_json_path: "/api/sms/json"
+    webengage_send_path: "/api/v1/sms/webengage/send"
+    # Token can also be supplied via env var SMS_API_TOKEN_TESTQA (preferred for CI).
+    # If set, the env var always wins over the value here.
+    auth_token: "96|M7uofiXwASnjZp8QN8wWaQSFnO8AIDdmXl9t5fXj19985c1c"
+    campaign_id: "08284c94-ec11-4135-8f03-93b428b31669"
+    template_id: "828"
+    timeout_seconds: 15
+    verify_ssl: true
+
+  dev:
+    base_url: "https://testqa.gtsstaging.com"
+    sms_send_path: "/api/sms/send"
+    campaign_send_path: "/api/sms/campaign/send"
+    template_send_path: "/api/sms/template/send"
+    send_msg_path: "/api/sms/send-msg"
+    sms_json_path: "/api/sms/json"
+    webengage_send_path: "/api/v1/sms/webengage/send"
+    # Token can also be supplied via env var SMS_API_TOKEN_DEV (preferred for CI).
+    auth_token: "019f459b-d9c2-704a-804e-6343ef5e83df|9747rBAtPx33I9lwp04AiszieGQd221NOKYN2Z5q5042a514"
+    campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    template_id: "7075"
+    timeout_seconds: 15
+    verify_ssl: true
+
+  production:
+    base_url: "https://test.cerfsolutions.com"
+    sms_send_path: "/api/sms/send"
+    campaign_send_path: "/api/sms/campaign/send"
+    template_send_path: "/api/sms/template/send"
+    send_msg_path: "/api/sms/send-msg"
+    sms_json_path: "/api/sms/json"
+    webengage_send_path: "/api/v1/sms/webengage/send"
+    auth_token: "193|5jlGF0wDJ3DQSOcLA4Z46XyGpuJPaNXrTILfp483a1f8e224"
+    campaign_id: "22709452-14e3-4896-b8a3-20341a22c2a8"
+    template_id: "6513"  # TODO: Set the production template ID
+    timeout_seconds: 15
+    verify_ssl: true
+
+  malaysia:
+    base_url: "https://demo.mycpaasplus.com"
+    sms_send_path: "/api/sms/send"
+    campaign_send_path: "/api/sms/campaign/send"
+    template_send_path: "/api/sms/template/send"
+    send_msg_path: "/api/sms/send-msg"
+    sms_json_path: "/api/sms/json"
+    webengage_send_path: "/api/v1/sms/webengage/send"
+    # Token can also be supplied via env var SMS_API_TOKEN_MALAYSIA
+    auth_token: "019f5b90-33af-72a5-806f-9b6a4b5fd668|fTHVTMBZp5k31nC2N9JrHzjyiyLkPxU88KVb0ywK6027fd57"
+    campaign_id: "13288824-ef19-4385-8a25-4aef57d5c077"
+    template_id: "39"
+    timeout_seconds: 30
+    verify_ssl: true

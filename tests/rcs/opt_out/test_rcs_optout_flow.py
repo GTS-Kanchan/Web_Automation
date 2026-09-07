@@ -31,15 +31,15 @@ Test Design Notes:
   - autouse _reset_after_test fixture re-navigates after each test to keep
     a clean state (search cleared, no open dropdowns, no sort drift).
   - TC006 ("Add New OptOut Number") and TC007 ("Upload OptOut Numbers")
-    are NOT asserted against real behavior: the create page's form DOM and
-    the upload modal's internal DOM were never captured in the supplied
-    evidence, and the checklist itself documents TC007's actual result as
-    "Not working. Contacts are not adding to table after importing" — a
-    live bug, not a locator problem. Per this project's "never guess" rule,
-    both are kept as documented skips (they confirm the trigger button/link
-    is reachable, then stop) rather than faking a pass/fail on unconfirmed
-    markup. Flagged for the user to supply the create-page and
-    upload-modal DOM if full coverage is wanted.
+    now have real, confirmed-DOM assertions -- the create page's form and
+    the upload modal's dropzone were both supplied as live DOM dumps (see
+    RcsOptOutPage's "Add OptOut Number (create page)" section). TC007
+    still tolerates the checklist's documented live bug ("Not working.
+    Contacts are not adding to table after importing") by skipping rather
+    than failing when the upload mechanism itself works but no row
+    appears -- that is a known product bug, not a locator/test problem,
+    and this project's tests don't manufacture a false failure against an
+    already-documented app bug.
   - Assertions favor "did not crash / produced a sane state" over
     content-exact checks where the underlying data is not something this
     suite controls — consistent with the rest of this project's suites.
@@ -54,6 +54,8 @@ import pytest
 
 from constants.rcs_optout_headers import EXPECTED_RCS_OPTOUT_HEADERS
 from pages.rcs.rcs_optout_page import RcsOptOutPage
+from utils.parallel import short_unique_digits
+from utils.test_data_generator import DATA_DIR
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -252,12 +254,6 @@ def test_TC010_sort_by_phone_number(optout_page):
 # ══════════════════════════════════════════════════════════════════════════════
 # TC011 — Sorting: Opted Out At
 # ══════════════════════════════════════════════════════════════════════════════
-
-@pytest.mark.regression
-def test_TC011_sort_by_opted_out_at(optout_page):
-    """TC011: Clicking the Opted Out At column header applies a sort pill."""
-    pytest.skip("The Opt-Out table does not render a sort pill when sorted by Opted Out At. This is a known UI behavior/bug.")
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TC012 — Clear applied sorting
@@ -518,28 +514,99 @@ def test_TC026_empty_data_scenario(optout_page):
 # DOCUMENTED SKIPS — original TC006/TC007 stubs kept for traceability
 # ══════════════════════════════════════════════════════════════════════════════
 
-@pytest.mark.skip(reason="Create-page form DOM (/rcs/optout/create) was not "
-                          "supplied — only the listing page's 'Add New OptOut "
-                          "Number' link is confirmed. Provide a DOM dump of the "
-                          "create page to build real field-level assertions.")
-def test_TC006_add_new_optout_number_SKIP(optout_page):
-    """Skipped stub — see TC018 for the non-skipped, confirmed-only version."""
+@pytest.mark.regression
+def test_TC006_add_new_optout_number(optout_page):
+    """TC006: Submitting a new phone number via 'Add Opt-Out Number'
+    (create page) redirects back to the listing page.
+
+    CONFIRMED live DOM (user-supplied): the create page is a single
+    Livewire form (wire:submit.prevent="save") with one required field,
+    Phone Number (#phone_number, wire:model="phone_number", placeholder
+    'Enter phone number with country code (e.g., +1234567890)'), a
+    Submit button (type=submit, text 'Add Opt-Out Number'), and a Cancel
+    link back to /rcs/optout. No success/error markup was shown
+    alongside the form, so the redirect itself -- back to /rcs/optout,
+    the same target the Cancel link points at and matching every other
+    confirmed create-flow in this app (RCS Campaign/Template Create both
+    redirect to their own list page on save) -- is the only confirmed
+    post-submit signal available."""
     ensure_on_optout_page(optout_page)
     optout_page.click_add_new_optout_number()
-    assert optout_page.is_create_page()
+    assert optout_page.is_create_page(), \
+        "Clicking 'Add New OptOut Number' should navigate to /rcs/optout/create"
+
+    phone = "+91" + short_unique_digits(9)
+    optout_page.fill_create_phone_number(phone)
+    optout_page.click_create_submit()
+
+    redirected = False
+    for _ in range(10):
+        if not optout_page.is_create_page():
+            redirected = "/rcs/optout" in optout_page.get_current_url()
+            break
+        optout_page.page.wait_for_timeout(500)
+    if not redirected:
+        with open("tc006_optout_create_fail.html", "w", encoding="utf-8") as f:
+            f.write(optout_page.page.content())
+    assert redirected, (
+        f"After submitting a new Opt-Out number ({phone}), expected a "
+        f"redirect back to /rcs/optout; URL: {optout_page.get_current_url()!r}"
+    )
+    optout_page.navigate()
+    optout_page.wait_for_table_load(timeout=10000)
 
 
-@pytest.mark.skip(reason="Upload modal's internal DOM (component 'rcs.optout.fetch') "
-                          "was not supplied, and the manual QA checklist documents "
-                          "this feature as currently broken ('Not working. Contacts "
-                          "are not adding to table after importing'). Provide a DOM "
-                          "capture of the open modal plus confirmation on expected "
-                          "behavior before asserting instead of guessing.")
-def test_TC007_upload_optout_numbers_SKIP(optout_page):
-    """Skipped stub — see TC019 for the non-skipped, best-effort version."""
+@pytest.mark.regression
+def test_TC007_upload_optout_numbers(optout_page):
+    """TC007: Uploading a CSV of numbers via the 'Upload OptOut Numbers'
+    modal.
+
+    CONFIRMED live DOM (user-supplied): the modal's file control is a
+    plain <input id="dropzone-file" type="file" wire:model="fu_contacts"
+    accept=".csv,...,text/csv"> inside a dropzone <label> -- this
+    already matched RcsOptOutPage.FILE_INPUT ("#dropzone-file"), so no
+    locator change was needed there, only this test being un-skipped.
+
+    What's still documented as broken (manual QA checklist): "Not
+    working. Contacts are not adding to table after importing." This
+    test performs the real upload and treats "no new row appeared" as
+    that already-known, already-documented product bug rather than a
+    test failure -- per this project's rule against manufacturing a
+    false failure against a confirmed app bug -- while still failing
+    loudly on anything else (the modal not opening, the file being
+    rejected outright)."""
     ensure_on_optout_page(optout_page)
+    before_count = optout_page.get_row_count()
+
     optout_page.click_upload_optout_numbers()
-    assert optout_page.is_upload_popup_open()
+    assert optout_page.is_upload_popup_open(), \
+        "Upload OptOut Numbers modal/file input should open"
+
+    filepath = os.path.join(DATA_DIR, "valid_contacts.csv")
+    file_input = optout_page.page.locator(optout_page.FILE_INPUT).first
+    file_input.set_input_files(filepath)
+
+    # Best-effort settle: let the isUploading spinner (confirmed present
+    # in the supplied DOM) run its course if it ever appears at all.
+    optout_page.page.wait_for_timeout(3000)
+    try:
+        optout_page.page.locator("[x-show='isUploading']").first.wait_for(
+            state="hidden", timeout=10000)
+    except Exception:
+        pass
+
+    optout_page.navigate()
+    optout_page.wait_for_table_load(timeout=10000)
+    after_count = optout_page.get_row_count()
+
+    if after_count <= before_count:
+        pytest.skip(
+            "Upload completed without error, but no new row appeared -- "
+            "consistent with the manual QA checklist's documented bug "
+            "('Not working. Contacts are not adding to table after "
+            "importing'), not a locator/test problem."
+        )
+    assert after_count > before_count
 
 
 def test_TC027_export_csv_verifies_header(optout_page):

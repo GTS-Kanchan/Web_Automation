@@ -1,0 +1,550 @@
+# test_data.yaml
+# Sample payloads used by the test suite. Keep secrets (real phone numbers,
+# tokens) out of this file if it's committed to a shared/public repo —
+# override sensitive values via env vars in CI instead.
+
+sms_send:
+  valid_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    text: "This is an automated test message."
+    type: "N"
+    product: "Transactional"
+    template_id: "123456789012"
+    entity_id: "23423423423423"
+
+  # Mirrors a real GTS staging payload — longer entity_id/template_id
+  # than the doc's sample, sent from GTS's own adapter.
+  valid_payload_gts_adapter:
+    from: "DUMMY"
+    to:
+      - "918999614816"
+    text: "Test message from GTS Staging using GTS adapter"
+    type: "N"
+    product: "Transactional"
+    entity_id: "1701164872369547174"
+    template_id: "150245188685280"
+
+  missing_from_payload:
+    to:
+      - "917002088565"
+    text: "Missing the from field."
+    type: "N"
+
+  missing_to_payload:
+    from: "DUMMY"
+    text: "Missing the to field."
+    type: "N"
+
+  missing_text_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    type: "N"
+
+  empty_text_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    text: ""
+    type: "N"
+
+  empty_to_array_payload:
+    from: "DUMMY"
+    to: []
+    text: "Empty recipient list test."
+    type: "N"
+
+  invalid_number_payload:
+    from: "DUMMY"
+    to:
+      - "123"   # deliberately malformed
+    text: "Invalid number test."
+    type: "N"
+
+  invalid_number_with_letters_payload:
+    from: "DUMMY"
+    to:
+      - "91ABCDEFGHIJ"
+    text: "Non-numeric recipient test."
+    type: "N"
+
+  mixed_valid_invalid_numbers_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+      - "123"
+    text: "One valid, one invalid number."
+    type: "N"
+
+  duplicate_numbers_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+      - "917002088565"
+    text: "Duplicate recipient test."
+    type: "N"
+
+  too_many_numbers_payload:
+    from: "DUMMY"
+    # generated at runtime in code if you need >50; kept short here for readability
+    to: []
+    text: "Bulk limit test."
+    type: "N"
+
+  invalid_type_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    text: "Invalid type value test."
+    type: "X"
+
+  unicode_text_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    text: "परीक्षण संदेश यूनिकोड में"
+    type: "U"
+
+  long_text_over_one_unit_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    # >160 chars so units should be > 1 for plain text
+    text: "This is a deliberately long test message designed to exceed one hundred and sixty characters so that the API should report more than one unit consumed for this particular plain text SMS payload."
+    type: "N"
+
+  missing_entity_id_indian_sender_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    text: "Indian number without entity_id."
+    type: "N"
+    product: "Transactional"
+
+  invalid_product_value_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    text: "Invalid product value test."
+    type: "N"
+    product: "NotARealProductType"
+
+  extra_unexpected_field_payload:
+    from: "DUMMY"
+    to:
+      - "917002088565"
+    text: "Payload with an unexpected extra field."
+    type: "N"
+    unexpected_field: "should be ignored or rejected gracefully"
+
+campaign_send:
+  valid_payload:
+    id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    to:
+      - "917002088565"
+    params:
+      "1": "Test"
+
+  missing_id_payload:
+    to:
+      - "917002088565"
+    params:
+      "1": "Test"
+
+  missing_to_payload:
+    id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    params:
+      "1": "Test"
+
+  missing_params_payload:
+    id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    to:
+      - "917002088565"
+
+  invalid_id_format_payload:
+    id: "not-a-valid-uuid"
+    to:
+      - "917002088565"
+    params:
+      "1": "Test"
+
+  empty_params_payload:
+    id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    to:
+      - "917002088565"
+    params: {}
+
+
+template_send:
+  valid_payload:
+    id: "808"
+    to:
+      - "917002088565"
+      - "919990009990"
+    params:
+      name: "test1"
+
+
+  missing_id_payload:
+    to:
+      - "917002088565"
+    params:
+      name: "test1"
+
+  missing_to_payload:
+    id: "7079"
+    params:
+      name: "test1"
+
+  empty_to_array_payload:
+    id: "7079"
+    to: []
+    params:
+      name: "test1"
+
+  missing_params_payload:
+    id: "7079"
+    to:
+      - "917002088565"
+
+  empty_params_payload:
+    id: "7079"
+    to:
+      - "917002088565"
+    params: {}
+
+  nonexistent_template_id_payload:
+    id: "999999999"
+    to:
+      - "917002088565"
+    params:
+      name: "test1"
+
+  non_numeric_id_payload:
+    id: "not-a-template-id"
+    to:
+      - "917002088565"
+    params:
+      name: "test1"
+
+  invalid_number_payload:
+    id: "7079"
+    to:
+      - "123"
+    params:
+      name: "test1"
+
+  multiple_recipients_payload:
+    id: "808"
+    to:
+      - "917002088565"
+      - "919990009990"
+      - "918999614816"
+    params:
+      name: "MultiRecipientTest"
+
+  missing_placeholder_param_payload:
+    # Template 7079 expects a "name" param — omit it to see how the API
+    # handles a template call with an incomplete params object.
+    id: "7079"
+    to:
+      - "917002088565"
+    params: {}
+
+  extra_unexpected_param_payload:
+    id: "7079"
+    to:
+      - "917002088565"
+    params:
+      name: "test1"
+      unexpected_param: "should be ignored or rejected gracefully"
+
+send_msg:
+  # This endpoint takes query params, not a JSON body. `params` here is a
+  # Python list — api_client.send_msg() JSON-encodes it into the query
+  # string automatically, matching the sample curl's
+  # params=["test","test2","test2","test2"].
+  valid_query_params:
+    campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    phone: "919550322394"
+    params: ["test"]
+
+  missing_campaign_id:
+    phone: "919550322394"
+    params: ["test", "test2", "test2", "test2"]
+
+  missing_phone:
+    campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    params: ["test", "test2", "test2", "test2"]
+
+  missing_params:
+    campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    phone: "919550322394"
+
+  empty_params_array:
+    campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    phone: "919550322394"
+    params: []
+
+  invalid_phone_format:
+    campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    phone: "123"
+    params: ["test", "test2", "test2", "test2"]
+
+  non_numeric_phone:
+    campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    phone: "91ABCDEFGHIJ"
+    params: ["test", "test2", "test2", "test2"]
+
+  nonexistent_campaign_id:
+    campaign_id: "00000000-0000-0000-0000-000000000000"
+    phone: "919550322394"
+    params: ["test", "test2", "test2", "test2"]
+
+  malformed_campaign_id_format:
+    campaign_id: "not-a-valid-uuid"
+    phone: "919550322394"
+    params: ["test", "test2", "test2", "test2"]
+
+  extra_unexpected_query_param:
+    campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
+    phone: "919550322394"
+    params: ["test", "test2", "test2", "test2"]
+    unexpected_query_param: "should be ignored or rejected gracefully"
+
+sms_json:
+  # Mirrors the exact real-world sample payload: a `root` object supplies
+  # default from/text/to, and `data` entries selectively override or omit
+  # fields to inherit from root. Several entries are deliberately
+  # incomplete on purpose (missing from/to/text) to exercise inheritance.
+  real_sample_payload:
+    root:
+      from: "GTSTXT"
+      text: "This is test message"
+      to:
+        - "919995628865"
+    data:
+      # Full override: own from/to/text, ignores root entirely.
+      - from: "DUMMY"
+        to:
+          - "918993872333"
+        text: "सुप्रभात! आज का दिन आपके जीवन में नई उम्मीद, नई ऊर्जा और नई संभावनाएँ लेकर आए।"
+      # Only `to` given — from/text should inherit from root.
+      - to:
+          - "918999614820"
+      # Full override including template_id.
+      - from: "SMSOTP"
+        to:
+          - "918999614820"
+        text: "Click on above link : cpaas.globeteleservices.com/AD-JIO/jio/{code}"
+        template_id: "21345673212344342103"
+      # Only `text` given — from/to should inherit from root.
+      - text: "Please click on above link"
+      # from/to/template_id given, no text — text should inherit from root.
+      - from: "213443"
+        to:
+          - "918899776655"
+        template_id: "45673212344342103"
+      # Only `from` given — to/text should inherit from root.
+      - from: "LSPSCA"
+
+  # Simpler, single-entry version for quick smoke checks.
+  minimal_valid_payload:
+    root:
+      from: "DUMMY"
+      text: "Default root message."
+      to:
+        - "917002088565"
+    data:
+      - to:
+          - "919990009990"
+
+  missing_root_payload:
+    data:
+      - from: "DUMMY"
+        to:
+          - "917002088565"
+        text: "No root object at all."
+
+  missing_data_payload:
+    root:
+      from: "DUMMY"
+      text: "Root with no data array."
+      to:
+        - "917002088565"
+
+  empty_data_array_payload:
+    root:
+      from: "DUMMY"
+      text: "Root present, data is empty."
+      to:
+        - "917002088565"
+    data: []
+
+  entry_with_no_inheritable_fields_at_all:
+    # An entry that's just `{}` — everything should inherit from root.
+    root:
+      from: "DUMMY"
+      text: "Fully inherited message."
+      to:
+        - "917002088565"
+    data:
+      - {}
+
+  root_missing_from:
+    root:
+      text: "Root missing the from field."
+      to:
+        - "917002088565"
+    data:
+      - {}
+
+  root_missing_text:
+    root:
+      from: "DUMMY"
+      to:
+        - "917002088565"
+    data:
+      - {}
+
+  root_missing_to:
+    root:
+      from: "DUMMY"
+      text: "Root missing the to field."
+    data:
+      - {}
+
+  entry_invalid_number:
+    root:
+      from: "DUMMY"
+      text: "Testing an invalid override number."
+      to:
+        - "917002088565"
+    data:
+      - to:
+          - "123"
+
+  entry_with_invalid_type_value:
+    root:
+      from: "DUMMY"
+      text: "Testing invalid type on an entry."
+      to:
+        - "917002088565"
+    data:
+      - type: "X"
+
+sms_send_get:
+  valid_query_params:
+    from: "BITLAA"
+    to: "917002088566"
+    text: "Hi test, Below is the URL of Service ROUTE NO-30,MUDALAGI- BANG., Date 2025-08-13 dept time - 06:30 PM Please Click on the link to access the chart. http://www.tktinfo.in/BITLAA/dkNCdmw5ZTVFcEdnLXN1Zw/sl - BITLA SOFTWARE PRIVATE LIMITED"
+    api_token: "VALID_TOKEN"
+  
+  missing_to_param:
+    from: "BITLAA"
+    text: "Hi test"
+    api_token: "VALID_TOKEN"
+  
+  missing_from_param:
+    to: "917002088566"
+    text: "Hi test"
+    api_token: "VALID_TOKEN"
+  
+  missing_text_param:
+    from: "BITLAA"
+    to: "917002088566"
+    api_token: "VALID_TOKEN"
+  
+  invalid_token_param:
+    from: "BITLAA"
+    to: "917002088566"
+    text: "Hi test"
+    api_token: "invalid-token"
+
+webengage_send:
+  valid_payload:
+    version: "2.0"
+    smsData:
+      toNumber: "918074318217"
+      fromNumber: "DUMMY"
+      body: "1234 is the Onetime password (OTP) for your transaction at satish for testing. Do not share this. If not requested, contact Bank Customer Care. CERF."
+    metadata:
+      campaignType: "PROMOTIONAL"
+      timestamp: "2018-01-25T10:24:16+0000"
+      messageId: "111112222333334444555"
+      custom:
+        key1: "val1"
+        key2: "val2"
+      indiaDLT:
+        contentTemplateId: "1507166245188685280"
+        principalEntityId: "1701164872369547174"
+        telemarketerId: null
+
+  missing_sms_data:
+    version: "2.0"
+    metadata:
+      campaignType: "PROMOTIONAL"
+      timestamp: "2018-01-25T10:24:16+0000"
+      messageId: "111112222333334444555"
+      custom:
+        key1: "val1"
+        key2: "val2"
+      indiaDLT:
+        contentTemplateId: "1507166245188685280"
+        principalEntityId: "1701164872369547174"
+        telemarketerId: null
+
+  missing_to_number:
+    version: "2.0"
+    smsData:
+      fromNumber: "DUMMY"
+      body: "1234 is the Onetime password (OTP) for your transaction at satish for testing. Do not share this. If not requested, contact Bank Customer Care. CERF."
+    metadata:
+      campaignType: "PROMOTIONAL"
+      timestamp: "2018-01-25T10:24:16+0000"
+      messageId: "111112222333334444555"
+      custom:
+        key1: "val1"
+        key2: "val2"
+      indiaDLT:
+        contentTemplateId: "1507166245188685280"
+        principalEntityId: "1701164872369547174"
+        telemarketerId: null
+
+  missing_from_number:
+    version: "2.0"
+    smsData:
+      toNumber: "918074318217"
+      body: "1234 is the Onetime password (OTP) for your transaction at satish for testing. Do not share this. If not requested, contact Bank Customer Care. CERF."
+    metadata:
+      campaignType: "PROMOTIONAL"
+      timestamp: "2018-01-25T10:24:16+0000"
+      messageId: "111112222333334444555"
+      custom:
+        key1: "val1"
+        key2: "val2"
+      indiaDLT:
+        contentTemplateId: "1507166245188685280"
+        principalEntityId: "1701164872369547174"
+        telemarketerId: null
+
+  missing_body:
+    version: "2.0"
+    smsData:
+      toNumber: "918074318217"
+      fromNumber: "DUMMY"
+    metadata:
+      campaignType: "PROMOTIONAL"
+      timestamp: "2018-01-25T10:24:16+0000"
+      messageId: "111112222333334444555"
+      custom:
+        key1: "val1"
+        key2: "val2"
+      indiaDLT:
+        contentTemplateId: "1507166245188685280"
+        principalEntityId: "1701164872369547174"
+        telemarketerId: null
+
+

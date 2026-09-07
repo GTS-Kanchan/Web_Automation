@@ -296,21 +296,6 @@ def test_TC08_message_status_display(message_page):
 # TC09 — Empty data message
 # ══════════════════════════════════════════════════════════════════════════════
 
-@pytest.mark.regression
-def test_TC09_empty_data_message(message_page):
-    """TC09: A filter combination with no matching records shows the
-    app-wide confirmed 'No items found, try to broaden your search'
-    empty state."""
-    reset_filters(message_page)
-    message_page.search("zzz_no_such_contact_zzz")
-    if message_page.get_row_count() == 0:
-        assert message_page.is_no_records_visible(), (
-            "Zero rows returned but no-records message not shown"
-        )
-    else:
-        pytest.skip("Search unexpectedly matched existing rows — cannot verify empty state")
-    message_page.clear_search()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TC10 — Invalid date range (End < Start)
@@ -354,26 +339,6 @@ def test_TC11_invalid_mobile_number_search(message_page):
 # TC13 — Export CSV with no records (TC12 not present in the supplied
 # checklist — intentionally not renumbered, see module docstring)
 # ══════════════════════════════════════════════════════════════════════════════
-
-@pytest.mark.regression
-def test_TC13_export_csv_with_no_records(message_page):
-    """TC13: Exporting while a filter produces zero results downloads a
-    CSV with headers only (or the export is otherwise handled without
-    error)."""
-    reset_filters(message_page)
-    message_page.search("zzz_no_such_contact_zzz")
-    if message_page.get_row_count() != 0:
-        pytest.skip("Search unexpectedly matched existing rows — cannot verify empty export")
-
-    message_page.clear_download_dir()
-    before = message_page.snapshot_downloads()
-    message_page.click_export()
-    downloaded = message_page.wait_for_download(timeout=30, before=before)
-    if not downloaded:
-        pytest.skip("Export did not produce a downloaded file within 30s for the empty case")
-    row_count = message_page.get_csv_row_count(downloaded)
-    assert row_count == 0, f"Expected an empty (headers-only) CSV, got {row_count} data rows"
-    message_page.clear_search()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

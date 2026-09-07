@@ -185,10 +185,13 @@ def test_tc08_filter_by_agent(status_analytics_page):
 
 @pytest.mark.regression
 def test_tc09_filter_by_product_type(status_analytics_page):
-    """TC_09: Filtering by Product Type (Transactional) updates the report."""
+    """TC_09: Filtering by Product Type (Transactional) updates the report.
+    Uses toggle_product_filter_option() (checkbox-based, see its
+    docstring) instead of the old unconfirmed select_product_filter()
+    guess -- get_product_filter_value() doesn't apply to a checkbox
+    multiselect, so it's dropped rather than asserted on."""
     ensure_on_report_page(status_analytics_page)
-    status_analytics_page.select_product_filter("Transactional")
-    assert status_analytics_page.get_product_filter_value() == "Transactional"
+    status_analytics_page.toggle_product_filter_option("transactional")
     status_analytics_page.page.wait_for_timeout(1000)
     assert status_analytics_page.has_records() or status_analytics_page.has_no_records_message()
 
@@ -204,8 +207,19 @@ def test_tc10_filter_by_department(status_analytics_page):
 @pytest.mark.regression
 def test_tc11_filter_by_user(status_analytics_page):
     """TC_11: Filtering by User updates the report (same best-effort
-    caveat as TC_10)."""
-    pytest.skip("User filter is missing from the QA UI for RCS Status Analytics")
+    caveat as TC_10).
+
+    CONFIRMED live (user report + DOM): the 'Search User' async-select
+    filter IS present and selectable in this environment/role on
+    testqa.gtsstaging -- the previous "missing from the QA UI" skip
+    reason was wrong (this page already had a fully implemented
+    filter_by_user(), just never exercised because of the hard skip
+    below it). "kanchan" narrowly matches this instance's confirmed
+    real user -- Test Account123
+    (kanchan.shinde@globeteleservices.com)."""
+    ensure_on_report_page(status_analytics_page)
+    status_analytics_page.filter_by_user("kanchan")
+    assert status_analytics_page.has_records() or status_analytics_page.has_no_records_message()
 
 
 # ── TC_12-13 — Date Range ─────────────────────────────────────────────────

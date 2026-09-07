@@ -35,7 +35,7 @@ Migrated to Playwright: local page-object fixture renamed `optout_page`
 pytest-playwright's reserved `page` fixture.
 
 Run:
-    pytest tests/test_whatsapp_optout_flow.py -v
+    pytest tests/whatsapp/more/test_whatsapp_optout_flow.py -v
 """
 import pytest
 

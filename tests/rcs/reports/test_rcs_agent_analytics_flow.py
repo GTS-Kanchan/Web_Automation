@@ -256,10 +256,12 @@ def test_agent_analytics_TC11_search_invalid_agent(agent_analytics_page):
 @pytest.mark.regression
 def test_agent_analytics_TC12_filter_by_product(agent_analytics_page):
     """TC_12: Filtering by Transactional/OTP/Promotional shows only
-    matching data."""
+    matching data. Uses toggle_product_filter_option() (checkbox-based,
+    see its docstring) instead of the old unconfirmed select_product_filter()
+    guess -- get_product_filter_value() doesn't apply to a checkbox
+    multiselect, so it's dropped rather than asserted on."""
     ensure_on_report_page(agent_analytics_page)
-    agent_analytics_page.select_product_filter("Transactional")
-    assert agent_analytics_page.get_product_filter_value() == "Transactional"
+    agent_analytics_page.toggle_product_filter_option("transactional")
     agent_analytics_page.page.wait_for_timeout(1000)
     assert agent_analytics_page.has_records() or agent_analytics_page.has_no_records_message()
 
@@ -285,9 +287,11 @@ def test_agent_analytics_filter_by_department(agent_analytics_page):
 
 @pytest.mark.regression
 def test_agent_analytics_filter_by_user(agent_analytics_page):
-    """Filtering by User updates the report (best-effort caveat)."""
+    """Filtering by User updates the report (best-effort caveat).
+
+    CONFIRMED live (user report + DOM): "kanchan" narrowly matches this instance's confirmed real user for the Search User async-select filter -- Test Account123 (kanchan.shinde@globeteleservices.com) -- on testqa.gtsstaging, used here instead of the generic single-letter "a" since _select_first_async_option() just clicks whatever comes back first and a known-good, specific search term is safer than hoping "a" surfaces something sensible."""
     ensure_on_report_page(agent_analytics_page)
-    agent_analytics_page.filter_by_user("a")
+    agent_analytics_page.filter_by_user("kanchan")
     assert agent_analytics_page.has_records() or agent_analytics_page.has_no_records_message()
 
 

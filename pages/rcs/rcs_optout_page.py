@@ -45,6 +45,10 @@ class RcsOptOutPage(BasePage):
         "xpath=//button[@*[name()='wire:click']='bulkDelete' and contains(@*[name()='wire:key'],'bulk-action-bulkDelete')]"
     )
     ROW_CHECKBOX = "input[type='checkbox'][wire\\:key^='rcs_optoutsselectedItems-']"
+    # CONFIRMED live DOM (user-supplied): the table header's "select
+    # all" checkbox -- an Alpine x-ref, not a wire:model -- drives
+    # setAllSelected()/clearSelected() via its x-on:click handler.
+    BULK_SELECT_ALL_CHECKBOX = "input[x-ref='bulkSelectAllCheckbox']"
 
     # ── Sorting ──────────────────────────────────────────────────────────────
     SORT_PHONE_BTN = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('phone_number')\")]"
@@ -369,19 +373,41 @@ class RcsOptOutPage(BasePage):
         cb.click(force=True)
         self.page.wait_for_timeout(500)
 
+    def select_all_rows(self):
+        """CONFIRMED live (user report + DOM): unlike SMS Blocked
+        Numbers, this page's Bulk Actions -> Export needs at least one
+        row explicitly selected first -- Export produced no download at
+        all (30s timeout) with nothing selected. Ticks the header
+        BULK_SELECT_ALL_CHECKBOX (Alpine x-ref, drives setAllSelected())
+        rather than a single row, so the export covers the full current
+        listing -- matching what "Export" implies. Checks is_checked()
+        first since the checkbox's real state is Alpine-bound (:checked)
+        and can't be read off a static "checked" HTML attribute alone.
+        Returns whether the checkbox ended up checked (never raises)."""
+        try:
+            cb = self.h.wait_for_element_visible(self.BULK_SELECT_ALL_CHECKBOX, timeout=8000)
+            if not cb.is_checked():
+                cb.scroll_into_view_if_needed()
+                cb.click(force=True)
+                self.page.wait_for_timeout(800)
+            return cb.is_checked()
+        except Exception:
+            return False
+
     def export_csv(self, timeout_ms=30000):
-        """Opens Bulk Actions and clicks Export, capturing the resulting
-        download via page.expect_download() (no row checkboxes selected
-        first -- mirrors the confirmed-working Bulk Actions -> Export
-        pattern already proven on SmsBlockedNumbersPage.export_csv(),
-        the closest sibling "blocked numbers" screen: the export acts on
-        the current filtered listing, not an explicit row selection).
+        """Selects all rows (see select_all_rows()'s docstring for why:
+        CONFIRMED live this page's Export needs an explicit selection
+        first, unlike the SMS Blocked Numbers sibling this method
+        originally modeled itself on), then opens Bulk Actions and
+        clicks Export, capturing the resulting download via
+        page.expect_download().
 
         Returns {"elapsed_s", "file_path", "file_size"} on success, or
         None on failure (timeout / no download triggered) -- same
         never-raises contract used throughout this codebase's Bulk
         Actions -> Export methods."""
         try:
+            self.select_all_rows()
             self.open_bulk_actions_dropdown()
             btn = self.h.wait_for_element_clickable(self.BULK_ACTION_EXPORT, timeout=10000)
             btn.scroll_into_view_if_needed()
@@ -492,11 +518,41 @@ class RcsOptOutPage(BasePage):
         except Exception:
             return False
 
-    # ── Add OptOut Number (create page) — best-effort, see module
-    # docstring caveat #8. Not asserted against; flagged/skipped in tests. ──
+    # ── Add OptOut Number (create page) — CONFIRMED live DOM
+    # (user-supplied full form dump): a single Livewire form
+    # (wire:submit.prevent="save") with one required field, Phone
+    # Number (#phone_number, wire:model="phone_number"), a submit
+    # button (type=submit, text "Add Opt-Out Number"), and a Cancel
+    # link back to /rcs/optout (not /create). No success/error markup
+    # was shown alongside the form -- the redirect target itself (the
+    # same /rcs/optout the Cancel link points at, matching every other
+    # confirmed create-flow in this app) is the only signal callers can
+    # check against. ──
 
     def is_create_page(self):
         return "/rcs/optout/create" in self.get_current_url()
+
+    PHONE_NUMBER_INPUT = "#phone_number"
+    CREATE_SUBMIT_BTN = (
+        "xpath=//button[@type='submit' and contains(normalize-space(.),'Add Opt-Out Number')]"
+    )
+    CREATE_CANCEL_LINK = (
+        "xpath=//a[contains(@href,'/rcs/optout') and not(contains(@href,'/create')) "
+        "and contains(normalize-space(.),'Cancel')]"
+    )
+
+    def fill_create_phone_number(self, value):
+        el = self.h.wait_for_element_visible(self.PHONE_NUMBER_INPUT)
+        el.fill(value)
+        return el
+
+    def click_create_submit(self):
+        self._js_click(self.CREATE_SUBMIT_BTN, timeout=10000)
+        self.page.wait_for_timeout(1500)
+
+    def click_create_cancel(self):
+        self._js_click(self.CREATE_CANCEL_LINK, timeout=10000)
+        self.page.wait_for_timeout(1500)
 
     # ── Performance ──────────────────────────────────────────────────────────
 

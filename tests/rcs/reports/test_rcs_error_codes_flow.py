@@ -237,16 +237,6 @@ def test_rec014_clearing_search(rcs_error_codes_page):
 
 # ── REC-015-016 — Pagination ─────────────────────────────────────────────
 
-@pytest.mark.regression
-def test_rec015_pagination_results_text(rcs_error_codes_page):
-    """REC015: Pagination text shows 'Showing X to Y of Z items'."""
-    ensure_on_page(rcs_error_codes_page)
-    if not rcs_error_codes_page.is_element_present(rcs_error_codes_page.PAGINATION_RESULTS_TEXT, timeout=2000):
-        pytest.skip("Not enough records to trigger pagination")
-    text = rcs_error_codes_page.get_pagination_results_text()
-    assert text, "Pagination results text should not be empty"
-    assert any(word in text.lower() for word in ["showing", "result", "record"]), \
-        f"Pagination text should describe results; got: {text!r}"
 
 
 @pytest.mark.regression

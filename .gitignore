@@ -6,3 +6,26 @@ config/environments/*.env
 reports/
 
 scripts/
+
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Pytest
+.pytest_cache/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Temporary files
+_to_delete/
+*.old
+*.b64

@@ -59,6 +59,50 @@ class WhatsappDownloadCenterPage(BasePage):
         "/following-sibling::span[1]"
     )
 
+    # ── Sort-by-attribute locators (all 6 confirmed-sortable columns) ────────
+    # A fresh live DOM capture of this page confirms real
+    # wire:click="sortBy('<field>')" attributes on 6 of the 7 table headers
+    # (Actions is a plain <span> with no sortBy call — not sortable). This
+    # is the SAME pattern already confirmed and used elsewhere in this
+    # codebase for other livewire-tables pages, e.g.
+    # pages/whatsapp/whatsapp_message_report_page.py's SORT_*_BTN locators
+    # and pages/rcs/rcs_agent_page.py's SORT_*_BTN/CLEAR_ALL_SORTS_BTN.
+    # `@wire:click=...` is invalid XPath (the colon is parsed as an
+    # undeclared namespace prefix, silently failing the whole expression —
+    # see README.md) so `@*[name()='wire:click']` is used instead.
+    SORT_NAME_BTN       = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('name')\")]"
+    SORT_CATEGORY_BTN   = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('category')\")]"
+    SORT_FROM_DATE_BTN  = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('from_date')\")]"
+    SORT_TO_DATE_BTN    = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('to_date')\")]"
+    SORT_CREATED_AT_BTN = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('created_at')\")]"
+    SORT_STATUS_BTN     = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('status')\")]"
+
+    # Clear-sort controls, confirmed from the same DOM capture:
+    #   - a single applied-sort pill's remove control uses plain
+    #     wire:click="clearSort('<field>')" (no .prevent — confirmed exact
+    #     attribute, same pattern as pages/rcs/rcs_optout_page.py's
+    #     clear_all_sorts() fallback which matches on 'clearSort(').
+    #   - the "clear all sorts" control uses wire:click.prevent="clearSorts"
+    #     (WITH .prevent — confirmed distinct from the single-pill form and
+    #     from the plain wire:click="clearSorts" used on sibling pages
+    #     such as whatsapp_message_report_page.py, so it is NOT reused
+    #     verbatim here).
+    CLEAR_SORT_PILL_BY_FIELD_XPATH = (
+        "xpath=//*[contains(@*[name()='wire:click'],\"clearSort('{field}')\")]"
+    )
+    CLEAR_ALL_SORTS_BTN = (
+        "xpath=//*[contains(@*[name()='wire:click.prevent'],'clearSorts')]"
+    )
+
+    _SORT_BTN_BY_FIELD = {
+        "name":       SORT_NAME_BTN,
+        "category":   SORT_CATEGORY_BTN,
+        "from_date":  SORT_FROM_DATE_BTN,
+        "to_date":    SORT_TO_DATE_BTN,
+        "created_at": SORT_CREATED_AT_BTN,
+        "status":     SORT_STATUS_BTN,
+    }
+
     # Refresh link (<a> tag, NOT a <button>)
     REFRESH_LINK = "xpath=//a[contains(normalize-space(),'Refresh')][not(contains(@href,'create'))]"
 
@@ -482,6 +526,57 @@ class WhatsappDownloadCenterPage(BasePage):
             return self.page.locator(self.APPLIED_SORT_PILL).first.inner_text().strip()
         except Exception:
             return ""
+
+    def click_sort_header(self, field):
+        """Click a column's sort header. `field` is one of the 6 confirmed
+        sortable field names: name/category/from_date/to_date/created_at/
+        status (Actions has no sortBy)."""
+        locator = self._SORT_BTN_BY_FIELD.get(field)
+        if not locator:
+            return
+        try:
+            self._js_click(locator, timeout=10000)
+            self.page.wait_for_timeout(1500)
+        except Exception:
+            try:
+                self.page.evaluate(
+                    "(f) => { window.Livewire && window.Livewire.all().forEach(function(c) {"
+                    "  try { c.call('sortBy', f); } catch(e) {}"
+                    "}); }",
+                    field
+                )
+                self.page.wait_for_timeout(1500)
+            except Exception:
+                pass
+
+    def is_sort_applied(self, field):
+        """Return True if a 'clear this sort' pill control (confirmed
+        wire:click="clearSort('<field>')") is present -- i.e. `field`
+        currently has an active sort applied."""
+        try:
+            xpath = self.CLEAR_SORT_PILL_BY_FIELD_XPATH.format(field=field)
+            return self.page.locator(xpath).count() > 0
+        except Exception:
+            return False
+
+    def clear_sort(self, field):
+        """Click the single sort pill's remove control for `field`
+        (confirmed wire:click="clearSort('<field>')")."""
+        try:
+            xpath = self.CLEAR_SORT_PILL_BY_FIELD_XPATH.format(field=field)
+            self._js_click(xpath, timeout=8000)
+            self.page.wait_for_timeout(1000)
+        except Exception:
+            pass
+
+    def clear_all_sorts(self):
+        """Click the 'clear all sorts' control (confirmed
+        wire:click.prevent="clearSorts")."""
+        try:
+            self._js_click(self.CLEAR_ALL_SORTS_BTN, timeout=8000)
+            self.page.wait_for_timeout(1000)
+        except Exception:
+            pass
 
     def get_created_at_values(self):
         """Return list of Created at cell texts from all visible rows."""

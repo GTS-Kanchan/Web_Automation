@@ -344,9 +344,11 @@ def test_country_analytics_filter_by_department(country_analytics_page):
 @pytest.mark.regression
 def test_country_analytics_filter_by_user(country_analytics_page):
     """Filtering by User updates the report (best-effort caveat, see module
-    docstring)."""
+    docstring).
+
+    CONFIRMED live (user report + DOM): "kanchan" narrowly matches this instance's confirmed real user for the Search User async-select filter -- Test Account123 (kanchan.shinde@globeteleservices.com) -- on testqa.gtsstaging, used here instead of the generic single-letter "a" since _select_first_async_option() just clicks whatever comes back first and a known-good, specific search term is safer than hoping "a" surfaces something sensible."""
     ensure_on_report_page(country_analytics_page)
-    country_analytics_page.filter_by_user("a")
+    country_analytics_page.filter_by_user("kanchan")
     assert country_analytics_page.has_records() or country_analytics_page.has_no_records_message()
 
 

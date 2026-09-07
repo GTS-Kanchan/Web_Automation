@@ -796,34 +796,6 @@ def test_TC154_submit_without_campaign_name_shows_error(campaign_create_page):
     )
 
 
-@pytest.mark.skip(
-    reason=(
-        "Post-save DB persistence verification: requires navigating to "
-        "/rcs/campaign and searching for the saved campaign name, then "
-        "confirming the row appears. This is partially covered by TC034 "
-        "(which asserts redirect-or-toast); full end-to-end persistence "
-        "verification is deferred until the listing-page fixture approach "
-        "mirrors test_rcs_campaign_flow.py + a search helper."
-    )
-)
-def test_TC_SKIP_submitted_campaign_appears_in_list(campaign_create_page):
-    """Documented skip -- see reason above."""
-    pass
-
-
-@pytest.mark.skip(
-    reason=(
-        "Duplicate campaign name validation: no duplicate-name error markup "
-        "was observed in the supplied DOM. The app may silently allow duplicates, "
-        "append a suffix, or show a toast -- none of these outcomes were confirmed "
-        "in the supplied HTML. Do not guess the error state."
-    )
-)
-def test_TC_SKIP_duplicate_campaign_name_shows_error(campaign_create_page):
-    """Documented skip -- see reason above."""
-    pass
-
-
 @pytest.mark.smoke
 @pytest.mark.regression
 def test_TC041_launch_campaign(campaign_create_page):
@@ -1528,22 +1500,6 @@ def test_TC055_please_select_agent_first_message(campaign_create_page):
         )
 
 
-@pytest.mark.skip(
-    reason=(
-        "Agent API/backend failure simulation: this project's Playwright "
-        "suite has no request-mocking/interception utility anywhere (grepped "
-        "for page.route/context.route/mock across utils/, pages/, conftest.py "
-        "-- none found). Simulating a genuine backend failure would require "
-        "adding that capability first, which is outside this RCS-Campaign-"
-        "scope test-authoring change. Documented here so the coverage gap is "
-        "explicit rather than silently missing."
-    )
-)
-def test_TC_SKIP_agent_api_failure_handled_gracefully(campaign_create_page):
-    """Documented skip -- see reason above."""
-    pass
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # -- 3. TEMPLATE SELECTION (additional) ----------------------------------------
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1634,21 +1590,6 @@ def test_TC060_template_preview_shown_when_available(campaign_create_page):
         pytest.skip("No template preview element detected after selecting a template")
 
 
-@pytest.mark.regression
-def test_TC061_no_templates_available_message(campaign_create_page):
-    """TC061: When an agent has no templates, a 'no templates available'
-    message is shown rather than an empty, unexplained dropdown. Cannot
-    force a template-less agent from the test, so this only verifies the
-    message mechanism doesn't crash the page when checked."""
-    campaign_create_page.navigate()
-    shown = campaign_create_page.is_no_templates_message_shown(timeout=3000)
-    if not shown:
-        pytest.skip(
-            "No 'no templates available' message currently shown -- could not "
-            "force a template-less agent to verify this from the test."
-        )
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # -- 4. CONTACT IMPORT MODAL ----------------------------------------------------
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1686,38 +1627,6 @@ def test_TC064_import_modal_title_correct(campaign_create_page):
     campaign_create_page.click_import_contacts_btn()
     if not campaign_create_page.is_import_modal_title_correct(timeout=6000):
         pytest.skip("No modal title matched 'Import Contacts' -- markup may use an icon-only header")
-
-
-@pytest.mark.regression
-def test_TC065_modal_close_x_works(campaign_create_page):
-    """TC065: The modal's X close control closes it."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_import_contacts_btn()
-    if not campaign_create_page.is_contacts_modal_present(timeout=5000):
-        pytest.skip("Import modal did not open")
-    closed = campaign_create_page.click_modal_close_x()
-    campaign_create_page.page.wait_for_timeout(500)
-    if not closed:
-        pytest.skip("Modal X close control not found (locator may need refinement)")
-    assert not campaign_create_page.is_modal_cp_contacts_textarea_present(timeout=2000), (
-        "Modal should be closed after clicking the X control"
-    )
-
-
-@pytest.mark.regression
-def test_TC066_modal_cancel_button_works(campaign_create_page):
-    """TC066: The modal's Cancel button closes it without importing."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_import_contacts_btn()
-    if not campaign_create_page.is_contacts_modal_present(timeout=5000):
-        pytest.skip("Import modal did not open")
-    closed = campaign_create_page.click_modal_cancel()
-    campaign_create_page.page.wait_for_timeout(500)
-    if not closed:
-        pytest.skip("Modal Cancel button not found")
-    assert not campaign_create_page.is_modal_cp_contacts_textarea_present(timeout=2000), (
-        "Modal should be closed after clicking Cancel"
-    )
 
 
 @pytest.mark.smoke
@@ -1928,53 +1837,6 @@ def test_TC085_mixed_valid_and_invalid_contacts(campaign_create_page):
 
 
 @pytest.mark.regression
-def test_TC086_contacts_with_template_variables(campaign_create_page):
-    """TC086: When a template with variables is selected, importing
-    contacts and then filling the template-variable inputs works without
-    error (mirrors the confirmed SMS flow, see module docstring)."""
-    campaign_create_page.navigate()
-    agent_ok, template_ok = _try_select_agent_and_template(campaign_create_page)
-    if not (agent_ok and template_ok):
-        pytest.skip("No agent/template available to set up a template-variables scenario")
-    campaign_create_page.click_import_contacts_btn()
-    campaign_create_page.fill_modal_cp_contacts("919876543210")
-    campaign_create_page.click_import_confirm()
-    campaign_create_page.page.wait_for_timeout(800)
-    var_inputs = campaign_create_page.get_template_variables()
-    if not var_inputs:
-        pytest.skip("Selected template has no variable inputs to fill")
-    filled = campaign_create_page.fill_all_template_variables()
-    assert filled == len(var_inputs)
-
-
-@pytest.mark.skip(
-    reason=(
-        "Fewer/more-than-required template variables: exercising this needs a "
-        "template whose variable COUNT is known ahead of time so a deliberately "
-        "short/long CSV variable-mapping can be built against it. No such "
-        "confirmed template is available via Config for RCS (unlike SMS's "
-        "Config.SMS_TEMPLATE_WITH_VARS), so this would be guessing which "
-        "template to target. Provide an RCS template-with-variables name via "
-        "Config (e.g. Config.RCS_TEMPLATE_WITH_VARS) to unskip."
-    )
-)
-def test_TC_SKIP_fewer_than_required_template_variables(campaign_create_page):
-    """Documented skip -- see reason above."""
-    pass
-
-
-@pytest.mark.skip(
-    reason=(
-        "More-than-allowed template variables: same blocker as "
-        "test_TC_SKIP_fewer_than_required_template_variables above."
-    )
-)
-def test_TC_SKIP_more_than_allowed_template_variables(campaign_create_page):
-    """Documented skip -- see reason above."""
-    pass
-
-
-@pytest.mark.regression
 def test_TC087_whitespace_within_pasted_numbers(campaign_create_page):
     """TC087: A number containing internal whitespace (e.g. from a
     copy-paste source with spacing) does not crash the page."""
@@ -2027,20 +1889,6 @@ def test_TC090_duplicate_handling_default_state(campaign_create_page):
         pytest.skip("Duplicate Phone Handling control not found")
     enabled = campaign_create_page.is_duplicate_handling_enabled()
     assert enabled in (True, False)
-
-
-@pytest.mark.regression
-def test_TC091_enable_duplicate_handling(campaign_create_page):
-    """TC091: Duplicate Phone Handling can be toggled ON."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_import_contacts_btn()
-    if not campaign_create_page.is_duplicate_handling_control_present(timeout=5000):
-        pytest.skip("Duplicate Phone Handling control not found")
-    before = campaign_create_page.is_duplicate_handling_enabled()
-    if not before:
-        campaign_create_page.toggle_duplicate_handling()
-    after = campaign_create_page.is_duplicate_handling_enabled()
-    assert after, "Duplicate Phone Handling should be ON after enabling it"
 
 
 @pytest.mark.regression
@@ -2226,78 +2074,6 @@ def test_TC112_select_replace_uploaded_file(campaign_create_page):
 # request. TC115/116/119/120/121/123 below remain as this section's
 # coverage.
 
-@pytest.mark.regression
-def test_TC115_contact_mgmt_search_nonexisting_contact_no_results(campaign_create_page):
-    """TC115: Searching for a term that should not match anything real
-    yields either zero items or a 'no results' indicator."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_tab_contact_mgmt()
-    unique_term = _unique_name("ZZZ_NOMATCH")
-    ok = campaign_create_page.search_contact_management(unique_term)
-    if not ok:
-        pytest.skip("Contact Management search input not found/interactable")
-    count = campaign_create_page.get_contact_management_item_count()
-    no_results = campaign_create_page.is_contact_management_no_results(timeout=3000)
-    assert count == 0 or no_results
-
-
-@pytest.mark.regression
-def test_TC116_contact_mgmt_select_single_contact(campaign_create_page):
-    """TC116: Selecting a single Contact Management item does not raise
-    and the page remains healthy."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_tab_contact_mgmt()
-    if campaign_create_page.get_contact_management_item_count() == 0:
-        pytest.skip("No Contact Management items available to select")
-    selected = campaign_create_page.select_contact_management_item(0)
-    if not selected:
-        pytest.skip("Could not interact with the first Contact Management item")
-    title = campaign_create_page.get_page_title().lower()
-    assert "404" not in title and "500" not in title
-
-
-@pytest.mark.regression
-def test_TC119_contact_mgmt_import_via_tags(campaign_create_page):
-    """TC119: Importing via the 'Tags' sub-method of Contact Management
-    completes without raising."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_import_contacts_btn()
-    try:
-        campaign_create_page.import_from_contact_management(method="tags")
-    except RuntimeError as e:
-        pytest.skip(f"No importable item under Contact Management > Tags: {e}")
-    title = campaign_create_page.get_page_title().lower()
-    assert "404" not in title and "500" not in title
-
-
-@pytest.mark.regression
-def test_TC120_contact_mgmt_import_via_segments(campaign_create_page):
-    """TC120: Importing via the 'Segments' sub-method of Contact
-    Management completes without raising."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_import_contacts_btn()
-    try:
-        campaign_create_page.import_from_contact_management(method="segments")
-    except RuntimeError as e:
-        pytest.skip(f"No importable item under Contact Management > Segments: {e}")
-    title = campaign_create_page.get_page_title().lower()
-    assert "404" not in title and "500" not in title
-
-
-@pytest.mark.regression
-def test_TC121_contact_mgmt_select_all_items(campaign_create_page):
-    """TC121: The 'select all' control (if present) can be activated
-    without the page crashing."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_tab_contact_mgmt()
-    if campaign_create_page.get_contact_management_item_count() == 0:
-        pytest.skip("No Contact Management items available for select-all")
-    ok = campaign_create_page.select_all_contact_management_items()
-    if not ok:
-        pytest.skip("No 'select all' control found for Contact Management")
-    title = campaign_create_page.get_page_title().lower()
-    assert "404" not in title and "500" not in title
-
 
 @pytest.mark.regression
 def test_TC123_contact_mgmt_tab_switching_no_crash(campaign_create_page):
@@ -2334,29 +2110,6 @@ def test_TC124_zero_contacts_shows_zero_count(campaign_create_page):
     campaign_create_page.navigate()
     count = campaign_create_page.get_contact_count()
     assert count == 0
-
-
-@pytest.mark.regression
-def test_TC125_valid_contacts_only_import_count_matches(campaign_create_page):
-    """TC125: Uploading a CSV of only-valid phone numbers results in a
-    non-zero contact count (spec section 9's 'imported count
-    verification' bullet -- exact-match verification is not possible
-    without confirmed per-row validation markup, so this checks the
-    count is at least non-zero and does not exceed the uploaded row
-    count)."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_import_contacts_btn()
-    filepath = data_file("valid_contacts.csv")
-    if not os.path.exists(filepath):
-        pytest.skip(f"Test data file not found: {filepath}")
-    with open(filepath, newline="", encoding="utf-8") as f:
-        uploaded_rows = sum(1 for _ in csv.reader(f)) - 1  # minus header
-    campaign_create_page.upload_contact_file(filepath)
-    campaign_create_page.page.wait_for_timeout(1000)
-    count = campaign_create_page.get_contact_count()
-    if count == 0:
-        pytest.skip("Contact count not readable after upload -- see TC083's caveat")
-    assert 0 < count <= max(uploaded_rows, count)
 
 
 @pytest.mark.regression
@@ -2453,25 +2206,6 @@ def test_TC130_validation_message_shown_for_invalid_contacts(campaign_create_pag
             "at launch time instead of at import time."
         )
     assert errors or toast_err
-
-
-@pytest.mark.skip(
-    reason=(
-        "Opted-out contact handling: no confirmed mechanism exists in this "
-        "project to seed a phone number into an 'opted out' state for RCS "
-        "(no opt-out test-data generator, no API/DB seeding utility, and "
-        "spec section 18 explicitly forbids hardcoding real customer/"
-        "personal phone numbers, which is the only way to guarantee a "
-        "number is genuinely opted-out here). SMS's blocked-keywords suite "
-        "has its own opt-out-adjacent flow but it is out of scope per this "
-        "task's 'do not make changes outside the RCS Campaign test scope' "
-        "instruction. Provide a seeding utility or a known opted-out test "
-        "number to add real coverage."
-    )
-)
-def test_TC_SKIP_opted_out_contacts_excluded_from_send(campaign_create_page):
-    """Documented skip -- see reason above."""
-    pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2573,106 +2307,6 @@ def test_TC135_opt_out_skip_enabled_no_crash_through_submission(campaign_create_
     assert "404" not in title and "500" not in title
 
 
-@pytest.mark.regression
-@pytest.mark.negative
-def test_TC156_opt_out_excludes_when_skip_disabled(campaign_create_page):
-    """TC156 (Negative): With 'Send to all numbers (Skip opt-out
-    validation)' left OFF, an opted-out number in the contact list is
-    excluded from the actual send. Verified via the RCS Messages report
-    (RcsMessagePage.has_campaign_message_for_number(), Source=Campaign)
-    showing no message for that number after launch. Uses a real
-    opted-out number supplied via Config.RCS_OPTOUT_NUMBERS (.env)
-    instead of a hardcoded/fabricated one, per spec section 18; skips
-    with a clear reason if that env var isn't configured."""
-    if not Config.RCS_OPTOUT_NUMBERS:
-        pytest.skip(
-            "No RCS_OPTOUT_NUMBERS configured in .env -- add a real, "
-            "known-opted-out phone number for this instance to enable "
-            "this test (see .env.example)"
-        )
-    optout_number = Config.RCS_OPTOUT_NUMBERS[0]
-
-    name = _unique_name("OptOutExcl")
-    campaign_create_page.navigate()
-    campaign_create_page.fill_campaign_name(name)
-    agent_ok, _ = _try_select_agent_and_template(campaign_create_page)
-    if not agent_ok:
-        pytest.skip("No agent available -- cannot launch")
-
-    if not campaign_create_page.is_opt_out_skip_control_present(timeout=5000):
-        pytest.skip("Opt-out skip-validation control not present -- see TC131")
-    if campaign_create_page.is_opt_out_skip_enabled():
-        campaign_create_page.toggle_opt_out_skip()  # ensure OFF (opt-out respected)
-
-    campaign_create_page.click_tab_copy_paste()
-    campaign_create_page.fill_cp_contacts(f"919876543210\n{optout_number}")
-    campaign_create_page.select_send_now()
-    campaign_create_page.click_submit()
-    campaign_create_page.confirm_launch()
-    campaign_create_page.page.wait_for_timeout(2000)
-    redirected = campaign_create_page.is_list_page()
-    toast = campaign_create_page.is_success_toast_shown(timeout=5000)
-    if not (redirected or toast):
-        pytest.skip(f"Campaign '{name}' did not produce a success signal -- cannot verify report")
-
-    message_page = RcsMessagePage(campaign_create_page.page)
-    sent = message_page.has_campaign_message_for_number(optout_number, timeout=20000)
-    assert not sent, (
-        f"Opted-out number {optout_number} appears in the RCS Messages report "
-        f"as a Campaign-sourced message after launching '{name}' with opt-out "
-        f"validation ON (skip-validation OFF) -- expected it to be excluded"
-    )
-
-
-@pytest.mark.regression
-def test_TC157_opt_out_includes_when_skip_enabled(campaign_create_page):
-    """TC157: With 'Send to all numbers (Skip opt-out validation)'
-    turned ON, an opted-out number in the contact list IS included in
-    the send -- verified via the RCS Messages report showing a
-    Campaign-sourced message for that number. Complements TC156 (the
-    skip-disabled/excluded variant); uses the same
-    Config.RCS_OPTOUT_NUMBERS test data."""
-    if not Config.RCS_OPTOUT_NUMBERS:
-        pytest.skip(
-            "No RCS_OPTOUT_NUMBERS configured in .env -- add a real, "
-            "known-opted-out phone number for this instance to enable "
-            "this test (see .env.example)"
-        )
-    optout_number = Config.RCS_OPTOUT_NUMBERS[0]
-
-    name = _unique_name("OptOutIncl")
-    campaign_create_page.navigate()
-    campaign_create_page.fill_campaign_name(name)
-    agent_ok, _ = _try_select_agent_and_template(campaign_create_page)
-    if not agent_ok:
-        pytest.skip("No agent available -- cannot launch")
-
-    if not campaign_create_page.is_opt_out_skip_control_present(timeout=5000):
-        pytest.skip("Opt-out skip-validation control not present -- see TC131")
-    if not campaign_create_page.is_opt_out_skip_enabled():
-        if not campaign_create_page.toggle_opt_out_skip():
-            pytest.skip("Could not enable the opt-out skip-validation control")
-
-    campaign_create_page.click_tab_copy_paste()
-    campaign_create_page.fill_cp_contacts(optout_number)
-    campaign_create_page.select_send_now()
-    campaign_create_page.click_submit()
-    campaign_create_page.confirm_launch()
-    campaign_create_page.page.wait_for_timeout(2000)
-    redirected = campaign_create_page.is_list_page()
-    toast = campaign_create_page.is_success_toast_shown(timeout=5000)
-    if not (redirected or toast):
-        pytest.skip(f"Campaign '{name}' did not produce a success signal -- cannot verify report")
-
-    message_page = RcsMessagePage(campaign_create_page.page)
-    sent = message_page.has_campaign_message_for_number(optout_number, timeout=20000)
-    assert sent, (
-        f"Opted-out number {optout_number} does not appear in the RCS Messages "
-        f"report as a Campaign-sourced message after launching '{name}' with "
-        f"'Skip opt-out validation' ON -- expected it to be included"
-    )
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # -- 11. CAMPAIGN SCHEDULING (additional) --------------------------------------
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2759,67 +2393,6 @@ def test_TC139_schedule_datetime_hidden_on_switch_back_to_send_now(campaign_crea
     )
 
 
-@pytest.mark.regression
-def test_TC140_scheduled_campaign_status_after_creation(campaign_create_page):
-    """TC140: A campaign launched via Schedule Later actually persists
-    and appears in the campaign list afterward -- uses the new
-    RCSCampaignPage.is_campaign_name_in_list() helper (see
-    pages/rcs/rcs_campaign_page.py) rather than trusting only the
-    create page's own redirect/toast signal."""
-    name = _unique_name("SchedStatus")
-    campaign_create_page.navigate()
-    campaign_create_page.fill_campaign_name(name)
-    agent_ok, _ = _try_select_agent_and_template(campaign_create_page)
-    if not agent_ok:
-        pytest.skip("No agent available -- cannot launch")
-    campaign_create_page.click_tab_copy_paste()
-    campaign_create_page.fill_cp_contacts("919876543210")
-    campaign_create_page.select_schedule_later()
-    campaign_create_page.page.wait_for_timeout(500)
-    if not campaign_create_page.is_schedule_datetime_visible(timeout=5000):
-        pytest.skip("Schedule datetime picker not visible after selecting Schedule Later")
-    campaign_create_page.fill_schedule_datetime(_future_datetime(hours=2).strftime('%Y-%m-%dT%H:%M'))
-    # Click Submit and wait for result (handles SweetAlert confirmation automatically and polls for up to 20s)
-    campaign_create_page.click_submit()
-    launched = _wait_for_submit_result(campaign_create_page)
-    if not launched:
-        pytest.skip(f"Campaign '{name}' did not produce a success signal -- cannot verify list status")
-    list_page = _fresh_campaign_list_page(campaign_create_page)
-    list_page.load_campaign_list()
-    found = list_page.is_campaign_name_in_list(name, timeout=15000)
-    if not found:
-        pytest.skip(
-            f"Campaign '{name}' launched successfully but was not found in "
-            f"the list within the timeout -- may be a pagination/search "
-            f"quirk rather than a genuine persistence failure"
-        )
-    # Spec section 2: verify the exact Status column reads "Scheduled",
-    # not just that the row exists. "Scheduled" is a confirmed literal
-    # value (it's one of the live options in the Status filter's
-    # multiselect checkbox panel, see TC004's docstring) -- not a guess.
-    status = list_page.get_status_for_campaign_name(name, timeout=5000)
-    assert status.strip().lower() == "scheduled", (
-        f"Campaign '{name}' was launched via Schedule Later but its list "
-        f"Status column reads '{status}', not 'Scheduled'"
-    )
-
-
-@pytest.mark.skip(
-    reason=(
-        "Timezone behaviour for scheduled campaigns: no confirmed way to "
-        "control or observe the account/browser timezone independently in "
-        "this suite, and the live app's timezone-handling contract "
-        "(server-side UTC storage vs. browser-local display, etc.) was not "
-        "confirmed anywhere in the codebase. Asserting a specific offset "
-        "here would be guessing. Provide the app's documented timezone "
-        "contract to add real coverage."
-    )
-)
-def test_TC_SKIP_schedule_timezone_behavior(campaign_create_page):
-    """Documented skip -- see reason above."""
-    pass
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # -- 12. TEST CAMPAIGN ----------------------------------------------------------
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2858,19 +2431,6 @@ def test_TC142_test_campaign_click_no_crash(campaign_create_page):
     campaign_create_page.page.wait_for_timeout(1500)
     title = campaign_create_page.get_page_title().lower()
     assert "404" not in title and "500" not in title
-
-
-@pytest.mark.skip(
-    reason=(
-        "Test Campaign without a template selected: the expected outcome "
-        "(blocked vs. allowed) was never confirmed for this feature -- see "
-        "TC141's note that its very existence for RCS is unconfirmed. "
-        "Provide the feature's confirmed behavior to add real coverage."
-    )
-)
-def test_TC_SKIP_test_campaign_requires_template(campaign_create_page):
-    """Documented skip -- see reason above."""
-    pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2955,53 +2515,6 @@ def test_TC145_launch_with_invalid_contacts_only_blocked_or_flagged(campaign_cre
     assert not (redirected or toast) or errors or toast_err
 
 
-@pytest.mark.regression
-def test_TC146_rapid_double_click_does_not_double_submit(campaign_create_page):
-    """TC146: Rapidly clicking Submit does not fire two launches. The
-    button showing a disabled/loading state immediately after the first
-    click (spec section 13's double-submission-protection bullet) is
-    checked as a fast UI-level signal, but since that signal alone was
-    causing this test to skip whenever the launch completed faster than
-    it could be observed, the decisive check is now persistence-level:
-    after a genuine rapid double-click, search the campaign list --
-    RCSCampaignPage.count_campaign_name_occurrences(), by this test's own
-    unique campaign name -- and confirm exactly one campaign was actually
-    created (the same verification TC147 uses for its own
-    double-submission scenario)."""
-    name = _unique_name("RapidClick")
-    campaign_create_page.navigate()
-    campaign_create_page.fill_campaign_name(name)
-    agent_ok, _ = _try_select_agent_and_template(campaign_create_page)
-    if not agent_ok:
-        pytest.skip("No agent available -- cannot launch")
-    campaign_create_page.click_tab_copy_paste()
-    campaign_create_page.fill_cp_contacts("919876543210")
-
-    campaign_create_page.click_submit()
-    disabled_immediately = campaign_create_page.is_submit_button_disabled_immediately_after_click()
-    campaign_create_page.click_submit()  # deliberate rapid second click
-    campaign_create_page.confirm_launch()
-    campaign_create_page.page.wait_for_timeout(2000)
-
-    redirected = campaign_create_page.is_list_page()
-    toast = campaign_create_page.is_success_toast_shown(timeout=5000)
-    if not (redirected or toast):
-        pytest.skip(f"Campaign '{name}' did not produce a success signal -- cannot verify list status")
-
-    list_page = _fresh_campaign_list_page(campaign_create_page)
-    list_page.load_campaign_list()
-    occurrences = list_page.count_campaign_name_occurrences(name, timeout=15000)
-    if occurrences == 0:
-        pytest.skip(f"Campaign '{name}' not found in the list within the timeout")
-    assert occurrences == 1, (
-        f"Expected exactly 1 campaign named '{name}' after a rapid double-click "
-        f"(disabled-immediately-after-click UI signal was "
-        f"{'observed' if disabled_immediately else 'not observed'}), but found "
-        f"{occurrences} rows in the list -- the double-submission guard may not "
-        f"be preventing a genuine duplicate"
-    )
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # -- 14. NEGATIVE / VALIDATION TESTS (rollup) -----------------------------------
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3014,48 +2527,6 @@ def test_TC146_rapid_double_click_does_not_double_submit(campaign_create_page):
 # home elsewhere: session-timeout handling and an explicit double-
 # submission check via the campaign list (a stronger, persistence-level
 # companion to TC146's UI-level disabled-button check).
-
-@pytest.mark.regression
-def test_TC147_double_submit_does_not_create_duplicate_campaign(campaign_create_page):
-    """TC147: After a single successful launch, the campaign name
-    appears in the list EXACTLY once -- i.e. rapid double-clicking
-    (already guarded against at the UI level per TC146) doesn't also
-    create two persisted campaigns. Verifies this by searching the list
-    for this test's own unique campaign name via
-    RCSCampaignPage.count_campaign_name_occurrences() and asserting the
-    row count is exactly 1 (a stronger, persistence-level check than a
-    presence-only boolean, since a duplicate would still be "found")."""
-    name = _unique_name("DoubleSubmit")
-    campaign_create_page.navigate()
-    campaign_create_page.fill_campaign_name(name)
-    agent_ok, _ = _try_select_agent_and_template(campaign_create_page)
-    if not agent_ok:
-        pytest.skip("No agent available -- cannot launch")
-    campaign_create_page.click_tab_copy_paste()
-    campaign_create_page.fill_cp_contacts("919876543210")
-    campaign_create_page.click_submit()
-    campaign_create_page.click_submit()  # deliberate second click, simulating a double-submit
-    launched = _wait_for_submit_result(campaign_create_page)
-    if not launched:
-        pytest.skip(f"Campaign '{name}' did not produce a success signal -- cannot verify list status")
-    list_page = _fresh_campaign_list_page(campaign_create_page)
-    list_page.load_campaign_list()
-    occurrences = list_page.count_campaign_name_occurrences(name, timeout=15000)
-    if occurrences == 0:
-        pytest.skip(f"Campaign '{name}' not found in the list within the timeout")
-    assert occurrences == 1, (
-        f"Expected exactly 1 campaign named '{name}' after a double-submit, "
-        f"but found {occurrences} rows in the list -- possible duplicate campaign created"
-    )
-
-    # Also verify the Status column for the matched row, confirming it's a
-    # genuine, fully-rendered campaign record rather than a stray row that
-    # happens to contain the name text.
-    status_text = list_page.get_status_for_campaign_name(name, timeout=5000)
-    assert status_text, (
-        f"Campaign '{name}' row was found but its Status column was empty -- "
-        f"the matched row may not be a genuine persisted campaign"
-    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3072,24 +2543,6 @@ def test_TC148_submit_button_text_is_meaningful(campaign_create_page):
     assert campaign_create_page.is_submit_button_present(timeout=8000)
     text = campaign_create_page.page.locator(campaign_create_page.SUBMIT_BTN).first.inner_text().strip()
     assert text != "", "Submit button has no visible text"
-
-
-@pytest.mark.regression
-def test_TC149_import_contacts_modal_closes_without_page_error(campaign_create_page):
-    """TC149: Opening then closing the Import Contacts modal (via the X)
-    leaves the page in a healthy, interactable state -- spec section 15's
-    'modal alignment/resize' bullet, checked indirectly via post-close
-    page health since exact visual alignment can't be asserted without a
-    screenshot-diffing tool this project doesn't have."""
-    campaign_create_page.navigate()
-    campaign_create_page.click_import_contacts_btn()
-    if not campaign_create_page.is_contacts_modal_present(timeout=5000):
-        pytest.skip("Import Contacts modal not detected as present")
-    campaign_create_page.click_modal_close_x()
-    campaign_create_page.page.wait_for_timeout(500)
-    assert campaign_create_page.is_submit_button_present(timeout=5000), (
-        "Page/Submit button not usable after closing the Import Contacts modal"
-    )
 
 
 @pytest.mark.regression

@@ -12,6 +12,35 @@ class WhatsAppMessageReportPage(BasePage):
 
     MODAL_CONTAINER = "#modal-container"
 
+    # ── "View" popup internals (component 'whatsapp.campaign.message.view')
+    # confirmed from a real captured DOM dump of the OPEN popup (message
+    # id 129644 / "91720*****07" row) -- see module docstring update. Every
+    # field row in the popup follows the identical "<label>: <value>"
+    # pattern (a text-gray-500 label element immediately followed by a
+    # sibling value element), grouped under a section <h4> heading, so
+    # fields are located by (section heading text, label text) rather than
+    # by index or class name, which is otherwise unstable (WireUI classes
+    # like bg-green-100/text-green-800 vary per value/state).
+    MODAL_TITLE = "xpath=//h3[normalize-space(.)='Message Details']"
+    MODAL_CLOSE_BUTTON = "xpath=//button[contains(@*[name()='wire:click'],'closeModal')]"
+    MODAL_CURRENT_STATUS = "xpath=//p[normalize-space(.)='Current Status']/preceding-sibling::h4[1]"
+    MODAL_CONTACT_NUMBER = "xpath=//p[normalize-space(.)='Contact Number']/following-sibling::p[1]"
+    MODAL_CATEGORY_TYPE = "xpath=//p[normalize-space(.)='Category Type']/following-sibling::span[1]"
+    MODAL_MESSAGE_CONTENT = (
+        "xpath=//h4[contains(normalize-space(.),'Message Content')]/parent::div"
+        "//p[contains(@class,'whitespace-pre-wrap')]"
+    )
+
+    # Section headings used to scope the generic (label -> value) lookups
+    # below -- several labels (e.g. "Status:", "Campaign Name:") repeat
+    # across multiple sections with different meanings, so every lookup
+    # must be scoped to its own section's heading, never done globally.
+    MODAL_SECTION_BASIC_INFO = "Basic Information"
+    MODAL_SECTION_WABA_INFO = "WABA Information"
+    MODAL_SECTION_TEMPLATE_DETAILS = "Template Details"
+    MODAL_SECTION_CAMPAIGN_INFO = "Campaign Information"
+    MODAL_SECTION_TIMELINE = "Timeline"
+
     # ── Search ───────────────────────────────────────────────────────────────
     SEARCH_BOX = "input[wire\\:model\\.live='search'][placeholder='Search Mobile Number']"
 
@@ -398,6 +427,77 @@ class WhatsAppMessageReportPage(BasePage):
             return self.page.locator(self.MODAL_CONTAINER).first.is_visible()
         except Exception:
             return False
+
+    def is_message_view_popup_open(self):
+        return self.is_element_present(self.MODAL_TITLE, timeout=5000)
+
+    def close_message_view_popup(self):
+        self._js_click(self.MODAL_CLOSE_BUTTON, timeout=5000)
+        self.page.wait_for_timeout(500)
+
+    def get_modal_current_status(self):
+        el = self.h.wait_for_element_visible(self.MODAL_CURRENT_STATUS, timeout=8000)
+        return el.inner_text().strip()
+
+    def get_modal_contact_number(self):
+        el = self.h.wait_for_element_visible(self.MODAL_CONTACT_NUMBER, timeout=8000)
+        return el.inner_text().strip()
+
+    def get_modal_category_type(self):
+        el = self.h.wait_for_element_visible(self.MODAL_CATEGORY_TYPE, timeout=8000)
+        return el.inner_text().strip()
+
+    def get_modal_message_content(self):
+        el = self.h.wait_for_element_visible(self.MODAL_MESSAGE_CONTENT, timeout=8000)
+        return el.inner_text().strip()
+
+    def _modal_section_field(self, section_heading, label, timeout=8000):
+        # Generic (section heading, "label:") -> value lookup shared by
+        # every multi-field section of the popup (Basic Information, WABA
+        # Information, Template Details, Campaign Information).
+        xpath = (
+            f"xpath=//h4[contains(normalize-space(.),'{section_heading}')]/parent::div"
+            f"//span[normalize-space(text())='{label}:']/following-sibling::span[1]"
+        )
+        el = self.h.wait_for_element_visible(xpath, timeout=timeout)
+        return el.inner_text().strip()
+
+    def get_modal_basic_info_field(self, label):
+        return self._modal_section_field(self.MODAL_SECTION_BASIC_INFO, label)
+
+    def get_modal_waba_field(self, label):
+        return self._modal_section_field(self.MODAL_SECTION_WABA_INFO, label)
+
+    def get_modal_template_field(self, label):
+        return self._modal_section_field(self.MODAL_SECTION_TEMPLATE_DETAILS, label)
+
+    def get_modal_campaign_info_field(self, label):
+        return self._modal_section_field(self.MODAL_SECTION_CAMPAIGN_INFO, label)
+
+    def get_modal_timeline_field(self, label, timeout=3000):
+        # Timeline rows (Created/Sent/Delivered/Read) are EACH individually
+        # conditional on the message having reached that status -- confirmed
+        # in the captured DOM via per-row Blade if-blocks. Returns None when
+        # this popup doesn't render that row (rather than raising), so
+        # callers can treat "no such timestamp yet" as a real, expected
+        # outcome instead of a locator failure.
+        xpath = (
+            f"xpath=//h4[contains(normalize-space(.),'{self.MODAL_SECTION_TIMELINE}')]/parent::div"
+            f"//span[normalize-space(text())='{label}:']/following-sibling::span[1]"
+        )
+        if not self.is_element_present(xpath, timeout=timeout):
+            return None
+        return self.page.locator(xpath).first.inner_text().strip()
+
+    def has_button_click_section(self):
+        return self.is_element_present(
+            "xpath=//h4[contains(normalize-space(.),'Button Click')]", timeout=3000
+        )
+
+    def has_error_section(self):
+        return self.is_element_present(
+            "xpath=//h4[contains(normalize-space(.),'Error')]", timeout=3000
+        )
 
     # ── Pagination ───────────────────────────────────────────────────────────
 

@@ -262,8 +262,22 @@ def test_usage_analytics_TC11_search_invalid_input_no_records(usage_analytics_pa
 @pytest.mark.regression
 def test_usage_analytics_TC12_filter_by_product(usage_analytics_page):
     """TC_12: Filtering by Transactional/OTP/Promotional shows only
-    matching data."""
-    pytest.skip("Product filter 'transactional' option is missing or untogglable in QA UI")
+    matching data.
+
+    CONFIRMED live (user-supplied DOM): the Product filter is a set of
+    checkboxes, not a native <select> -- ids follow
+    "rcs_product_report-filter-product-0/1/2/3" with a "value" attribute
+    of "promotional"/"transactional"/"otp"/"multi_use" each, exactly
+    matching toggle_product_filter_option()'s already-confirmed locator
+    (its own docstring already documented this same DOM). The previous
+    "missing or untogglable in QA UI" skip reason was wrong -- this
+    method just was never exercised because of the hard skip below it.
+    Mirrors test_usage_analytics_filter_by_source()'s toggle-then-verify
+    shape."""
+    ensure_on_report_page(usage_analytics_page)
+    usage_analytics_page.toggle_product_filter_option("transactional")
+    usage_analytics_page.page.wait_for_timeout(1000)
+    assert usage_analytics_page.has_records() or usage_analytics_page.has_no_records_message()
 
 
 @pytest.mark.regression
@@ -289,9 +303,11 @@ def test_usage_analytics_filter_by_source(usage_analytics_page):
 
 @pytest.mark.regression
 def test_usage_analytics_filter_by_user(usage_analytics_page):
-    """Filtering by User updates the report (best-effort caveat)."""
+    """Filtering by User updates the report (best-effort caveat).
+
+    CONFIRMED live (user report + DOM): "kanchan" narrowly matches this instance's confirmed real user for the Search User async-select filter -- Test Account123 (kanchan.shinde@globeteleservices.com) -- on testqa.gtsstaging, used here instead of the generic single-letter "a" since _select_first_async_option() just clicks whatever comes back first and a known-good, specific search term is safer than hoping "a" surfaces something sensible."""
     ensure_on_report_page(usage_analytics_page)
-    usage_analytics_page.filter_by_user("a")
+    usage_analytics_page.filter_by_user("kanchan")
     assert usage_analytics_page.has_records() or usage_analytics_page.has_no_records_message()
 
 
