@@ -50,6 +50,34 @@ def data_file(name):
     return os.path.join(GEN_DATA_DIR, name)
 
 
+# Real test assets for the Create Sender ID form's "Registration Documents"
+# (Optional) upload -- confirmed via a real pasted DOM (see the
+# FORM_DOCUMENT_* comment block on SMSSenderIDPage). The PDF is the EXACT
+# file a real manual test already uploaded through this widget (its
+# filename in the captured DOM's rendered <li> list item matches this
+# fixture's original name byte-for-byte) -- i.e. it's already proven to
+# pass the app's own upload validation, not just a locator guess. The ZIP
+# was supplied alongside it for the same purpose. Both are well under the
+# confirmed "Max 5MB each" limit. The image case reuses
+# whatsapp_carousel_sample.jpg (already in this repo for WhatsApp's
+# Carousel card-media upload) rather than adding a third near-duplicate
+# binary fixture.
+#
+# expects_view_link (3rd tuple element): a real pytest run confirmed a
+# .zip upload renders Remove ONLY -- no "View" link (browsers can't
+# preview a zip inline). Only pdf was directly confirmed to render View
+# in the original DOM capture; image is assumed to behave like pdf (both
+# are natural-preview types) but has NOT been independently confirmed --
+# if a real run shows image also lacking View, flip this to False and
+# report back so SMSSenderIDPage's docstrings can be corrected too.
+REGISTRATION_DOCUMENT_SAMPLES = [
+    # (file_kind, file_path, expects_view_link)
+    ("pdf", data_file("sms_sender_id_registration_doc_sample.pdf"), True),
+    ("zip", data_file("sms_sender_id_registration_doc_sample.zip"), False),
+    ("image", data_file("whatsapp_carousel_sample.jpg"), True),
+]
+
+
 # ── Module-scoped fixtures: ONE browser, ONE login ────────────────────────────
 
 @pytest.fixture(scope="module", autouse=True)
@@ -304,6 +332,117 @@ class TestCreateSenderIdUIFlow:
         if found:
             _created.append(new_id)
         assert found, f"Sender ID '{new_id}' not found in list after UI flow creation"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PART 3b — Registration Documents (Optional) upload — NEW feature
+# CONFIRMED via a real pasted DOM on the Create Sender ID form: an optional
+# file input (wire:model="document", accept=".pdf,.zip,.jpg,.jpeg,.png,
+# .gif,.webp,image/*", "Max 5MB each"). A successful upload renders a
+# <li wire:key="new-doc-{i}"> with the filename and a "Remove" button
+# (wire:click="removeDocument({i})") -- see SMSSenderIDPage.
+# upload_registration_document()/get_uploaded_document_names()/
+# is_document_remove_button_present()/remove_document(). The "View" link
+# is NOT universal: a real pytest run confirmed .zip renders Remove only
+# (see REGISTRATION_DOCUMENT_SAMPLES' expects_view_link column and
+# is_document_view_link_present()'s docstring on SMSSenderIDPage).
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestSenderIdRegistrationDocumentUpload:
+
+    @pytest.mark.regression
+    @pytest.mark.parametrize("file_kind,file_path,expects_view_link", REGISTRATION_DOCUMENT_SAMPLES,
+                              ids=[k for k, _, _ in REGISTRATION_DOCUMENT_SAMPLES])
+    def test_create_sender_id_with_registration_document(self, sender_id_page, file_kind, file_path, expects_view_link):
+        """Creates a real Sender ID with a Registration Document attached
+        (one of each confirmed accepted type: pdf/zip/image), verifies the
+        uploaded file's name renders with a "Remove" button (confirmed for
+        every type) and, only where expects_view_link says so, a "View"
+        link too -- a real pytest run showed .zip renders Remove ONLY.
+        Then saves and confirms the Sender ID itself still ends up in the
+        list -- i.e. the upload doesn't silently block a real submission."""
+        new_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        assert SMSSenderIDPage.is_valid_sender_id(new_id, "IN"), \
+            f"Generated ID '{new_id}' failed validation"
+
+        _to_list(sender_id_page)
+        sender_id_page.click_create_sender_id()
+        sender_id_page.fill_sender_id(new_id)
+        try:
+            sender_id_page.select_country("India")
+        except Exception:
+            pass
+        try:
+            sender_id_page.select_type("Transactional")
+        except Exception:
+            pass
+        sender_id_page.fill_entity_id(SMSSenderIDPage.generate_random_entity_id())
+
+        sender_id_page.upload_registration_document(file_path)
+
+        expected_name = os.path.basename(file_path)
+        uploaded_names = sender_id_page.get_uploaded_document_names()
+        assert any(expected_name in n for n in uploaded_names), (
+            f"Uploaded Registration Document '{expected_name}' ({file_kind}) did not "
+            f"appear in the document list after upload -- got {uploaded_names!r}"
+        )
+        assert sender_id_page.is_document_remove_button_present(), (
+            f"No 'Remove' button rendered for the uploaded {file_kind} Registration Document"
+        )
+        if expects_view_link:
+            assert sender_id_page.is_document_view_link_present(), (
+                f"No 'View' link rendered for the uploaded {file_kind} Registration "
+                "Document -- expected one (expects_view_link=True in "
+                "REGISTRATION_DOCUMENT_SAMPLES). If this type genuinely never gets a "
+                "View link, flip that entry to False."
+            )
+
+        sender_id_page.click_save()
+        sender_id_page.page.wait_for_timeout(2000)
+
+        found = sender_id_page.is_sender_id_present_in_list(new_id)
+        if found:
+            _created.append(new_id)
+        assert found, (
+            f"Sender ID '{new_id}' with a {file_kind} Registration Document attached "
+            "was not found in the list after save -- the document upload may have "
+            "blocked submission, or introduced a delay beyond the existing timeout."
+        )
+
+    @pytest.mark.regression
+    def test_remove_registration_document_before_save(self, sender_id_page):
+        """Uploads a Registration Document, clicks its Remove button, and
+        verifies the list entry disappears -- exercises the confirmed
+        removeDocument(i) button BEFORE ever saving the form, so a removed
+        document can never end up attached to a real created Sender ID."""
+        new_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+        _to_list(sender_id_page)
+        sender_id_page.click_create_sender_id()
+        sender_id_page.fill_sender_id(new_id)
+        try:
+            sender_id_page.select_country("India")
+        except Exception:
+            pass
+        try:
+            sender_id_page.select_type("Transactional")
+        except Exception:
+            pass
+        sender_id_page.fill_entity_id(SMSSenderIDPage.generate_random_entity_id())
+
+        sender_id_page.upload_registration_document(REGISTRATION_DOCUMENT_SAMPLES[0][1])
+        assert sender_id_page.get_uploaded_document_names(), \
+            "Document upload did not render a list entry to remove"
+
+        sender_id_page.remove_document(0)
+        sender_id_page.page.wait_for_timeout(1000)
+
+        assert not sender_id_page.get_uploaded_document_names(), \
+            "Registration Document list entry still present after clicking Remove"
+
+        # Leave the form without saving -- this test only exercises upload/remove,
+        # it never creates a real Sender ID.
+        _to_list(sender_id_page)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

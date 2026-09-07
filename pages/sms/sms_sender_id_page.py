@@ -128,6 +128,51 @@ class SMSSenderIDPage(BasePage):
     # required.", "The sender id has already been taken."
     FORM_VALIDATION_ERROR = "label.text-negative-600, [class*='text-negative']"
 
+    # ── Registration Documents upload (Create Sender ID form, optional) ──────
+    # CONFIRMED from a real pasted DOM (Create Sender ID form): an optional
+    # "Registration Documents" field --
+    #   <input type="file" wire:model="document" wire:key="doc-input-1"
+    #    accept=".pdf,.zip,.jpg,.jpeg,.png,.gif,.webp,image/*">
+    # -- helper text confirms "images, PDF, or ZIP. Max 5MB each." A
+    # wire:loading[wire:target="document"] element shows "Uploading..."
+    # while the upload is in flight. After a successful upload the app
+    # renders one <li wire:key="new-doc-{i}"> per document, each with the
+    # original filename and a "Remove" <button
+    # wire:click="removeDocument({i})">.
+    #
+    # The "View" <a> (opens a signed S3 preview URL in a new tab) is NOT
+    # rendered for every accepted file type -- a real pytest run confirmed
+    # a .zip upload gets Remove ONLY, no View link (browsers can't preview
+    # a zip inline, so the app apparently only offers View for previewable
+    # types like PDF/images). Only pdf was directly confirmed to render
+    # View in the original DOM capture; image is assumed to behave like
+    # pdf (both are natural-preview types) but has NOT been independently
+    # confirmed -- see EXPECTS_VIEW_LINK in test_sms_sender_id.py's
+    # REGISTRATION_DOCUMENT_SAMPLES and is_document_view_link_present()'s
+    # docstring below.
+    #
+    # Only index 0 (the one document uploaded in the real capture) is
+    # directly confirmed; index 1+ is extrapolated from the confirmed
+    # "new-doc-{i}"/"removeDocument({i})" pattern for a second/third
+    # document (this project's "already-confirmed pattern at a different
+    # index" exception).
+    FORM_DOCUMENT_UPLOAD_INPUT = "input[wire\\:model='document']"
+    FORM_DOCUMENT_UPLOADING_INDICATOR = (
+        "xpath=//div[@*[name()='wire:target']='document']"
+        "[contains(normalize-space(.),'Uploading')]"
+    )
+    FORM_DOCUMENT_LIST_ITEMS = (
+        "xpath=//li[starts-with(@*[name()='wire:key'],'new-doc-')]"
+    )
+    FORM_DOCUMENT_VIEW_LINK = (
+        "xpath=//li[starts-with(@*[name()='wire:key'],'new-doc-')]"
+        "//a[normalize-space()='View']"
+    )
+    FORM_DOCUMENT_REMOVE_LINK = (
+        "xpath=//li[starts-with(@*[name()='wire:key'],'new-doc-')]"
+        "//button[normalize-space()='Remove']"
+    )
+
     # ── Row-level actions ─────────────────────────────────────────────────────
     # Edit: <a href=".../senderid/{id}/edit"> — confirmed from DOM
     ROW_EDIT_BTN = "xpath=//table//tbody//tr[1]//a[contains(@href,'/senderid/') and contains(@href,'/edit')]"
@@ -382,6 +427,76 @@ class SMSSenderIDPage(BasePage):
         toggle = self.h.wait_for_element_visible(self.TOGGLE_OPEN_SENDER)
         if (toggle.is_checked() and not enable) or (not toggle.is_checked() and enable):
             toggle.click()
+
+    def _document_remove_button(self, index):
+        """Per-document Remove button (wire:click="removeDocument({index})")
+        -- see the FORM_DOCUMENT_* comment block above for what was
+        confirmed vs. extrapolated."""
+        return f"xpath=//button[@*[name()='wire:click']='removeDocument({index})']"
+
+    def upload_registration_document(self, file_path):
+        """Uploads file_path via the confirmed optional Registration
+        Documents file input (wire:model="document") on the Create Sender
+        ID form. file_path must point to a real, existing file whose
+        extension is one of the confirmed accepted types (.pdf, .zip,
+        .jpg, .jpeg, .png, .gif, .webp). Waits for the confirmed
+        wire:loading[wire:target="document"] "Uploading..." indicator to
+        appear and then disappear (best-effort -- a fast upload may
+        resolve before this method ever observes it as visible), giving
+        Livewire time to finish the upload and render the new
+        <li wire:key="new-doc-{i}"> entry before returning."""
+        file_input = self.page.locator(self.FORM_DOCUMENT_UPLOAD_INPUT).first
+        file_input.wait_for(state="attached", timeout=10000)
+        file_input.set_input_files(os.path.abspath(file_path))
+        try:
+            indicator = self.page.locator(self.FORM_DOCUMENT_UPLOADING_INDICATOR).first
+            indicator.wait_for(state="visible", timeout=3000)
+            indicator.wait_for(state="hidden", timeout=20000)
+        except Exception:
+            pass
+        self.page.wait_for_timeout(1000)
+
+    def get_uploaded_document_names(self):
+        """Returns the filename text shown in each rendered
+        <li wire:key="new-doc-{i}"> Registration Document list entry, in
+        DOM order. Empty list if none have been uploaded (or removed)."""
+        items = self.page.locator(self.FORM_DOCUMENT_LIST_ITEMS)
+        names = []
+        for i in range(items.count()):
+            try:
+                text = items.nth(i).locator("span").first.inner_text().strip()
+                if text:
+                    names.append(text)
+            except Exception:
+                pass
+        return names
+
+    def is_document_view_link_present(self):
+        """True if at least one uploaded Registration Document's "View"
+        link is present (does not distinguish which document -- use
+        get_uploaded_document_names() to check a specific filename).
+
+        NOT true for every accepted file type: a real pytest run confirmed
+        a .zip upload renders Remove ONLY, no View link -- see the
+        FORM_DOCUMENT_* comment block above. Callers must not assert this
+        for zip uploads; check is_document_remove_button_present()
+        instead (that one IS confirmed for every type, including zip)."""
+        return self.is_element_present(self.FORM_DOCUMENT_VIEW_LINK, timeout=5000)
+
+    def is_document_remove_button_present(self):
+        """True if at least one uploaded Registration Document's "Remove"
+        button is present. Unlike is_document_view_link_present(), this
+        IS confirmed present for every accepted file type (pdf/zip/image
+        alike) -- a real pytest run showed a .zip upload still renders
+        Remove even though it has no View link."""
+        return self.is_element_present(self.FORM_DOCUMENT_REMOVE_LINK, timeout=5000)
+
+    def remove_document(self, index=0):
+        """Clicks the confirmed per-document Remove button
+        (wire:click="removeDocument({index})") -- see
+        _document_remove_button()'s docstring."""
+        self._js_click(self._document_remove_button(index))
+        self.page.wait_for_timeout(1000)
 
     def click_save(self):
         # JS click bypasses any sidebar overlay that may intercept regular clicks
