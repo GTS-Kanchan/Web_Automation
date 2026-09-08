@@ -22,7 +22,11 @@ import time
 import pytest
 
 from pages.sms.sms_sender_id_page import SMSSenderIDPage
-from utils.test_data_generator import generate_all, DATA_DIR as GEN_DATA_DIR
+from utils.test_data_generator import (
+    generate_all,
+    DATA_DIR as GEN_DATA_DIR,
+    sender_id_sample_csv_path,
+)
 from constants.sms_sender_id_headers import EXPECTED_SMS_SENDER_ID_HEADERS
 from utils.file_validator import (
     EmptyFileError,
@@ -42,7 +46,20 @@ pytestmark = [pytest.mark.sms, pytest.mark.sender_id]
 # this file moved from tests/ to tests/sms/sender_id/. Use the canonical
 # one directly instead of shadowing it.
 DATA_DIR = GEN_DATA_DIR
-UPLOAD_CSV = os.path.join(DATA_DIR, "sender_id_sample.csv")
+# UPLOAD_CSV used to be the single shared DATA_DIR/sender_id_sample.csv path
+# every xdist worker wrote to. Once gen_sender_id_sample_csv() started
+# randomizing its Sender_ID column (see that function's docstring), a real
+# run showed this test uploading one set of IDs but verifying a different
+# set that was never uploaded -- another worker's concurrent generate_all()
+# call had overwritten the shared file between this test's own CSV read
+# (for verification) and Playwright's separate read of it (for the actual
+# upload). sender_id_sample_csv_path() now points at THIS worker's own
+# subdirectory instead, so no other worker's write can ever land in that
+# gap. Safe to resolve at import time -- it only depends on worker_id(),
+# which is fixed for the life of this worker process; it does NOT read the
+# file's content (that part stays a fresh in-test read, see the comment
+# above TestUploadSenderIds below).
+UPLOAD_CSV = sender_id_sample_csv_path()
 
 
 def data_file(name):
@@ -579,8 +596,38 @@ def _read_csv_sender_ids(csv_path: str) -> list:
         return fallback
 
 
-# Read IDs dynamically from the actual CSV so we verify real content
-CSV_SENDER_IDS = _read_csv_sender_ids(UPLOAD_CSV) if os.path.exists(UPLOAD_CSV) else ["DJHAJK", "OTPSYU", "667423"]
+# NOTE: CSV_SENDER_IDS used to be read here, at MODULE IMPORT time -- i.e.
+# before the module-scoped `generate_test_data` autouse fixture above (which
+# calls generate_all()) had run even once. That was harmless while
+# sender_id_sample.csv was 100% static content, but utils/test_data_generator.py
+# now regenerates this file with a FRESH random Sender_ID triple on every
+# call (see gen_sender_id_sample_csv()'s docstring for why: re-uploading the
+# exact same 3 sender IDs run after run meant every run past the first was
+# re-submitting IDs that already existed, and the app's response to an
+# all-duplicate import isn't the "success" response a fresh import gets --
+# that's what caused test_upload_csv_and_verify_in_list to fail with "CSV
+# upload should show a success message or toast"). Reading the CSV at
+# import time would capture whatever content happened to be on disk from a
+# PREVIOUS run/module, not the fresh IDs this run's fixture is about to
+# write -- so this is now read fresh, inside the test itself, AFTER
+# generate_test_data has regenerated the file (fixtures always run before
+# the test body). See test_upload_csv_and_verify_in_list below.
+#
+# SECOND BUG (fixed after the above): even reading fresh, in-test, wasn't
+# enough -- a real run showed this test uploading Sender_IDs that did NOT
+# match the ones it verified against, because UPLOAD_CSV used to be a single
+# path shared by every xdist worker. Two independent reads of that shared
+# path happen in this test (this file's own csv_sender_ids read below, then
+# a SECOND, separate read inside sender_id_page.upload_file() ->
+# set_input_files(), which re-reads the file from disk at call time rather
+# than reusing bytes from the first read) -- and under `--dist loadscope` a
+# DIFFERENT test module on a DIFFERENT worker can call generate_all() at any
+# moment, since it isn't scoped to this module. If that other worker's write
+# landed in the gap between this test's two reads, the IDs verified and the
+# IDs actually uploaded came from two different writers -- upload one set,
+# verify a different set, exactly as reported. UPLOAD_CSV now resolves via
+# sender_id_sample_csv_path() to a per-worker subdirectory instead of the
+# shared DATA_DIR, so no other worker's write can ever land in that gap.
 
 
 class TestUploadSenderIds:
@@ -612,7 +659,10 @@ class TestUploadSenderIds:
         appears as an exact <td> match in the list — NOT just "any row exists".
 
         Steps:
-          1. Read which IDs are in the CSV (dynamic, not hardcoded).
+          1. Read which IDs are in the CSV (dynamic, not hardcoded — and, as
+             of this run, freshly regenerated with unique IDs by the
+             module-scoped generate_test_data fixture, not the same 3 IDs
+             every run — see the comment above this class).
           2. Record row count before upload.
           3. Upload the file and wait for the import to fully complete.
           4. Assert a success indicator appeared (toast / inline message).
@@ -621,7 +671,11 @@ class TestUploadSenderIds:
         """
         if not os.path.exists(UPLOAD_CSV):
             pytest.skip(f"CSV file not found: {UPLOAD_CSV}")
-        if not CSV_SENDER_IDS:
+        # Read fresh, now, rather than a module-level constant -- see the
+        # comment above this class for why that ordering mattered once this
+        # file stopped being static content.
+        csv_sender_ids = _read_csv_sender_ids(UPLOAD_CSV)
+        if not csv_sender_ids:
             pytest.skip("No sender IDs could be parsed from the CSV file")
 
         self._skip_if_no_permission(sender_id_page)
@@ -654,7 +708,7 @@ class TestUploadSenderIds:
 
         # ── Verify each ID in the list — exact match only ────────────────────
         missing = []
-        for sid in CSV_SENDER_IDS:
+        for sid in csv_sender_ids:
             # is_sender_id_present_in_list navigates to the list, optionally
             # searches, and requires an exact <td> match — not just any rows.
             found = sender_id_page.is_sender_id_present_in_list(sid)

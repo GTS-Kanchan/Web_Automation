@@ -50,19 +50,32 @@ def _tmp_path(final_path):
 # File helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _write_csv(filename, rows, headers=None):
+def _write_csv(filename, rows, headers=None, directory=None):
     """Writes to a per-worker temp file, then os.replace()s it onto the
-    final shared path. generate_all() is called once per test MODULE (every
-    SMS flow file's autouse `generate_test_data` fixture), and under
-    parallel xdist execution several worker processes can call it at the
-    same moment for the SAME shared file (these are static, deterministic
-    files, not per-worker data — e.g. valid_template.xlsx). Without this,
-    two workers writing the same path concurrently could race: one process
-    reading the file mid-write by another. os.replace() is atomic on both
-    POSIX and Windows, so every reader always sees either the fully-old or
-    fully-new file, never a partial one."""
+    final path (DATA_DIR/filename, or `directory`/filename when given).
+    generate_all() is called once per test MODULE (every SMS flow file's
+    autouse `generate_test_data` fixture), and under parallel xdist
+    execution several worker processes can call it at the same moment for
+    the SAME shared file (these are static, deterministic files, not
+    per-worker data — e.g. valid_template.xlsx). Without this, two workers
+    writing the same path concurrently could race: one process reading the
+    file mid-write by another. os.replace() is atomic on both POSIX and
+    Windows, so every reader always sees either the fully-old or
+    fully-new file, never a partial one.
+
+    That atomicity guarantee is NOT enough on its own for a file whose
+    *content* is randomized per call (see gen_sender_id_sample_csv()) — two
+    workers can each atomically write a COMPLETE but DIFFERENT random
+    payload to the same shared path, and a test that reads the file once
+    for verification and lets it be read again (e.g. Playwright's
+    set_input_files()) for upload can end up acting on two different
+    writers' bytes across those two reads, even though every individual
+    write was torn-free. The `directory` param lets a caller sidestep that
+    class of bug entirely by pointing at a worker-scoped directory (see
+    utils.parallel.worker_scoped_dir) so two workers never share the path
+    at all, rather than merely never observing a torn write on it."""
     from utils.parallel import worker_id
-    final_path = _path(filename)
+    final_path = os.path.join(directory or DATA_DIR, filename)
     tmp_path = f"{final_path}.{worker_id()}.{os.getpid()}.tmp"
     with open(tmp_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -113,6 +126,99 @@ def gen_valid_sender_id_xlsx(rows):
 
 def gen_valid_sender_id_csv(rows):
     _write_csv("valid_sender_id.csv", rows[:3], SENDER_ID_HEADERS)
+
+
+# Column headers for sender_id_sample.csv -- CONFIRMED from a real sample
+# file (Sender_ID, Type, Country_Code, Entity_ID). This is a DIFFERENT
+# schema from SENDER_ID_HEADERS above (that one matches this app's own
+# bulk-import TEMPLATE headers; sender_id_sample.csv is a separate,
+# hand-provided real upload sample used specifically by
+# tests/sms/sender_id/test_sms_sender_id.py's
+# TestUploadSenderIds.test_upload_csv_and_verify_in_list).
+SENDER_ID_SAMPLE_HEADERS = ["Sender_ID", "Type", "Country_Code", "Entity_ID"]
+
+
+def sender_id_sample_csv_path():
+    """Path to THIS WORKER's own sender_id_sample.csv, under
+    DATA_DIR/<worker_id>/ (see utils.parallel.worker_scoped_dir) rather
+    than the single shared DATA_DIR/sender_id_sample.csv every worker used
+    to write. worker_id() is fixed for the lifetime of one xdist worker
+    process, so this path is safe to compute once at import time -- unlike
+    the file's own CONTENT, which must never be read at import time (see
+    the comment above TestUploadSenderIds in test_sms_sender_id.py).
+
+    Why this needs to be worker-scoped at all: a real run showed
+    test_upload_csv_and_verify_in_list uploading one set of Sender_IDs but
+    verifying a completely different set that was never uploaded. Root
+    cause -- the test reads the CSV once (to know what to verify) and
+    Playwright's upload_file()/set_input_files() reads the SAME shared
+    path a second, independent time (to actually upload). generate_all()
+    runs once per test MODULE, and under `--dist loadscope` a DIFFERENT
+    module on a DIFFERENT worker can call it concurrently -- if that
+    worker's gen_sender_id_sample_csv() call landed in the gap between
+    this test's two reads, the bytes verified and the bytes uploaded came
+    from two different writers. Routing every worker to its own
+    subdirectory removes the shared path entirely, so no other worker can
+    ever land a write in between this worker's own two reads."""
+    from utils.parallel import worker_scoped_dir
+    return os.path.join(worker_scoped_dir(DATA_DIR), "sender_id_sample.csv")
+
+
+def gen_sender_id_sample_csv():
+    """sender_id_sample.csv -- the 3-row bulk-upload sample
+    test_upload_csv_and_verify_in_list uploads and then verifies every row
+    landed in the Sender ID list. Written to THIS WORKER's own
+    subdirectory (see sender_id_sample_csv_path()) rather than the shared
+    DATA_DIR, so two workers regenerating it concurrently can never race
+    on the same path.
+
+    UPDATED (2026-09): this file used to be committed as static, hand-placed
+    content with a FIXED Sender_ID triple (GYAFZG/GULWRA/QKQKON) that
+    generate_all() never touched at all -- every run re-uploaded the exact
+    same 3 sender IDs. That worked the very first time this file was used
+    against a given environment (fresh IDs, fresh rows), but every run
+    after that was re-submitting IDs that already existed from the
+    previous run, and this app's response to an all-duplicate-rows import
+    is NOT the same "success" response a genuinely-new import gets --
+    that's what caused test_upload_csv_and_verify_in_list to fail with
+    "CSV upload should show a success message or toast after import" once
+    the account had already run this test once (the test's own docstring
+    already listed "IDs already existed and were rejected as duplicates"
+    as a suspected cause, but nothing generated fresh ones until now).
+
+    Only the Sender_ID column is randomized here -- Type/Country_Code/
+    Entity_ID are left EXACTLY as the original confirmed-working sample
+    had them (same values, same row order), since those were proven to
+    make this exact upload succeed and there's no reason to risk that by
+    also randomizing fields that don't need to be unique (Entity_ID in
+    particular refers to this account's one existing DLT-registered
+    entity -- reusing it across rows is expected, not a duplicate
+    conflict). This mirrors how gen_valid_template_xlsx's `ts` suffix in
+    generate_all() already keeps Template DLT IDs/names unique per run
+    while leaving everything else about those rows untouched.
+
+    Making the Sender_ID column random is *why* this file also needed to
+    become worker-scoped (see sender_id_sample_csv_path()'s docstring) --
+    back when its content was 100% static, two workers racing to write the
+    same shared path was harmless (last writer wins, but with identical
+    bytes either way); once the content differs per call, "last writer
+    wins" can mean a reader observes different writers across two reads of
+    what it assumed was one stable file."""
+    import random, string
+    from utils.parallel import worker_scoped_dir
+
+    def _rand_sender_id():
+        return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+    rows = [
+        [_rand_sender_id(), "Transactional", "IN", "'170115804644479'"],
+        [_rand_sender_id(), "OTP",           "IN", "'170115804644478'"],
+        [_rand_sender_id(), "Promotional",   "IN", "'170115804644477'"],
+    ]
+    _write_csv(
+        "sender_id_sample.csv", rows, SENDER_ID_SAMPLE_HEADERS,
+        directory=worker_scoped_dir(DATA_DIR),
+    )
 
 
 def gen_invalid_format_pdf():
@@ -240,8 +346,18 @@ def gen_invalid_template_format():
 def generate_all():
     """
     Generate every test data file.
-    Uses static, hard-coded test data.
-    Called once per test session from conftest.py.
+    Uses static, hard-coded test data -- EXCEPT sender_id_sample.csv, whose
+    Sender_ID column is randomized on every call and which is written to a
+    worker-scoped subdirectory rather than DATA_DIR itself (see
+    gen_sender_id_sample_csv()'s and sender_id_sample_csv_path()'s
+    docstrings for why -- re-uploading the exact same sender IDs on every
+    run broke test_upload_csv_and_verify_in_list, and once the content was
+    randomized, two workers racing on one shared path could make a reader
+    observe different workers' bytes across two separate reads of it), and
+    the Template DLT IDs/names in the `tmpl` dict below, which were already
+    randomized per call via the `ts` suffix before this change.
+    Called once per test module (each SMS/RCS/WhatsApp/Email flow test
+    file's own autouse `generate_test_data` fixture calls this).
     """
     _ensure_dir()
 
@@ -348,6 +464,10 @@ def generate_all():
     # Write Sender ID files
     gen_valid_sender_id_xlsx(sid["valid"])
     gen_valid_sender_id_csv(sid["valid"])
+    # sender_id_sample.csv: NOT built from the static `sid` dict above --
+    # see gen_sender_id_sample_csv()'s own docstring for why its Sender_ID
+    # column is randomized on every call instead.
+    gen_sender_id_sample_csv()
     gen_invalid_format_pdf()
     gen_large_file_xlsx()
     gen_duplicate_sender_ids_csv(sid["duplicates"])

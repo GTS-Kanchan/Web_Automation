@@ -122,9 +122,23 @@ class SmsBlockedKeywordsPage(BasePage):
     # @error() block, a WireUI toast, and a SweetAlert2 dialog are all
     # checked together in one short polling loop (order-independent),
     # scoped to the modal where possible to reduce false positives.
+    #
+    # CONFIRMED (real pasted DOM, empty-Keyword submit on the Add Keyword
+    # modal): the actual validation message renders as
+    #   <label class="text-sm text-negative-600 mt-2" for="keyword">
+    #       The keyword field is required.
+    #   </label>
+    # i.e. this app's WireUI "negative" semantic-color class, not either of
+    # the guessed standard-Tailwind "text-red-500"/"text-red-600" classes --
+    # the exact same gap already found and fixed for the Sender ID form's
+    # validation messages (see FORM_VALIDATION_ERROR in
+    # pages/sms/sms_sender_id_page.py). Kept the red-class check too (in
+    # case a different validation path on this same modal ever renders one)
+    # so this is a strict widening, not a replacement.
     VALIDATION_ERROR_MSG = (
         "xpath=//div[@id='modal-container']"
-        "//*[(contains(@class,'text-red-500') or contains(@class,'text-red-600')) "
+        "//*[(contains(@class,'text-red-500') or contains(@class,'text-red-600') "
+        "or contains(@class,'text-negative')) "
         "and normalize-space(text())!='*' and normalize-space(text())!='']"
     )
     TOAST_NOTIFICATION_TEXT = (
