@@ -23,6 +23,22 @@ failure, for exactly that reason.
 Migrated pattern: module-scoped page-object fixture built on
 conftest.py's `module_logged_in_page`, matching every other RCS list
 suite (e.g. tests/rcs/campaigns/test_rcs_campaign_flow.py).
+
+Test independence audit (2026-09-08): both tests here are read-only/
+export style with no cross-test data dependency -- TC001 only checks
+the list page's URL, and TC002 (Export CSV) neither reads nor requires
+anything TC001 did. Fixture scope is deliberately KEPT at
+scope="module" (not migrated to the function-scoped `logged_in_page`
+pattern) because there is no mutable-state chain to break: the
+module-scoped `template_list_page` fixture's own setup always
+navigates to the list page before the first test runs, and the
+autouse `_reset_after_test` fixture below unconditionally re-navigates
+back to the list page after every test regardless of outcome -- so
+under `-n 10` (this suite does not rely on `--dist loadscope`), no
+test ever depends on UI state a different test happened to leave
+behind. TC001 additionally calls navigate_to_list() itself so it
+establishes its own required UI state explicitly rather than only via
+fixture/autouse timing.
 """
 import pytest
 
@@ -63,6 +79,7 @@ def _reset_after_test(template_list_page):
 @pytest.mark.smoke
 def test_TC001_list_page_loads(template_list_page):
     """TC001: RCS Template list page loads without a 404 or error page."""
+    template_list_page.navigate_to_list()
     assert template_list_page.is_list_page(), "URL should be /rcs/template (not /create)"
 
 
@@ -80,6 +97,7 @@ def test_TC002_export_csv_verifies_header(template_list_page):
     -- its locator is a best-effort guess, not independently confirmed
     (see RcsTemplateCreatePage.click_export_csv()'s docstring); the
     header-row assertion itself, once a file is in hand, is exact."""
+    template_list_page.navigate_to_list()
     result = template_list_page.click_export_csv(timeout_ms=30000)
     if result is None:
         pytest.skip(

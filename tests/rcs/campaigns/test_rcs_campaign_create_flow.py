@@ -23,6 +23,30 @@ with a fresh context per test there is no shared page state to reset
 between tests, and it's redundant with the fixture's/tests' own
 navigate() calls.
 
+Parallel-safety note: nothing in this file requires `--dist loadscope`
+for correctness. Every test gets its own `logged_in_page`-backed context
+(no state shared across tests), and every test that launches a real
+campaign (TC041, TC042, the e2e* tests, TC043, TC158/159, ...) generates
+its own name via `_unique_name()` fresh at call time and only ever reads
+that same variable back (see `_fresh_campaign_list_page()` usages below)
+-- no test depends on another test's campaign, another test's execution
+order, or module-level mutable state (there is none in this file).
+`pytest tests/rcs/campaigns/test_rcs_campaign_create_flow.py -n 20`
+(no `--dist loadscope`) is expected to be exactly as correct as with it;
+loadscope only affects which worker each test happens to land on, not
+what any test depends on.
+
+Cleanup note: RCSCampaignPage (pages/rcs/rcs_campaign_page.py) has no
+delete/remove method for a campaign -- confirmed by inspection, not
+assumed -- so tests here that launch a real campaign (Send Now or
+Schedule) cannot clean it up afterward. This is a pre-existing
+limitation of the page object, not something this migration introduces;
+adding one would mean guessing a delete-confirmation locator that has
+never been captured from a live DOM, which this project's own working
+discipline (see pages/rcs/rcs_campaign_page.py and every `# CONFIRMED`
+comment throughout this file) explicitly avoids. Campaigns created by
+these tests are left in the live app, same as before this migration.
+
 TC001-TC043 and the four `TC_SKIP_*` stubs below are UNCHANGED from the
 prior version of this file (only the fixture scope above them changed) --
 preserved per this update's "do not touch working tests" constraint.

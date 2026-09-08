@@ -5,6 +5,18 @@ Migrated to Playwright: local page-object fixture renamed
 `agent_page` (built on conftest.py's `module_logged_in_page`) to avoid
 shadowing pytest-playwright's reserved `page` fixture.
 
+Independence note: this suite is purely read-only / list-viewing (search,
+date filters, sort, columns, export, and a row "View" modal) -- there is
+no agent-creation flow anywhere in RcsAgentPage, so no test here ever
+depends on data created by an earlier test in this module. The only
+cross-test risk is *page state* (search text, date filters, or an open
+"View" modal) leaking from one test to the next on the shared
+module-scoped `agent_page`. `_reset_agent_page_state` (autouse, below)
+eliminates that by forcing a real navigate() + wait_for_table_load()
+after every test, so each test can also be run alone
+(`pytest tests/rcs/agent/test_rcs_agent_flow.py::test_RCSxxx -v`) and is
+safe under `pytest -n <N>` without relying on `--dist loadscope`.
+
 Run:
     pytest tests/test_rcs_agent_flow.py -v
 """
@@ -33,37 +45,36 @@ def agent_page(module_logged_in_page):
     return p
 
 
-def ensure_on_agent_page(p: RcsAgentPage):
-    if not p.is_agent_page():
-        p.navigate()
-        p.wait_for_table_load(timeout=10000)
+@pytest.fixture(autouse=True)
+def _reset_agent_page_state(agent_page):
+    """Force a full reload of the RCS Agents list after every test so the
+    next test always starts from a known-clean state -- no leftover search
+    text, no leftover date filters, and no still-open row "View" modal
+    (test_RCS014) left behind by whatever test ran before it.
 
-
-def reset_state(p: RcsAgentPage):
-    try:
-        p.clear_search()
-    except Exception:
-        pass
-    try:
-        p.clear_date_filters()
-    except Exception:
-        pass
+    RcsAgentPage has no single "clear everything" or "close modal" method,
+    and a URL-only "am I on the agent page" check would not detect an open
+    modal (the URL doesn't change), so a real `navigate()` is the only
+    reliable way to reset all of that state at once. This also makes each
+    test runnable in isolation: `agent_page` itself already does one fresh
+    navigate() at module setup, so the very first test to run starts clean
+    too."""
+    yield
+    agent_page.navigate()
+    agent_page.wait_for_table_load(timeout=15000)
 
 
 def test_RCS001_page_loads_successfully(agent_page):
-    ensure_on_agent_page(agent_page)
     assert agent_page.is_agent_page()
     assert agent_page.is_element_present(agent_page.TABLE, timeout=10000)
 
 
 def test_RCS002_page_title(agent_page):
-    ensure_on_agent_page(agent_page)
     title = agent_page.get_page_title_text()
     assert "rcs agents" in title.lower()
 
 
 def test_RCS003_breadcrumb_navigation(agent_page):
-    ensure_on_agent_page(agent_page)
     crumb = agent_page.get_breadcrumb_text().lower()
     assert "home" in crumb
     assert "channels" in crumb
@@ -71,13 +82,10 @@ def test_RCS003_breadcrumb_navigation(agent_page):
 
 
 def test_RCS004_records_displayed(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     assert agent_page.has_records()
 
 
 def test_RCS005_table_columns(agent_page):
-    ensure_on_agent_page(agent_page)
     headers = [h.lower() for h in agent_page.get_visible_column_headers()]
     expected = ["action", "logo", "agent name", "display name", "use case",
                 "status", "verification status", "created at"]
@@ -86,25 +94,18 @@ def test_RCS005_table_columns(agent_page):
 
 
 def test_RCS006_search_valid_keyword(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     agent_page.search("a")
     agent_page.page.wait_for_timeout(1000)
     assert agent_page.get_row_count() > 0 or agent_page.has_no_records_message()
-    agent_page.clear_search()
 
 
 def test_RCS007_search_invalid_keyword(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     agent_page.search("zzz_no_such_agent_zzz")
     agent_page.page.wait_for_timeout(1000)
     assert agent_page.has_no_records_message() or agent_page.get_row_count() == 0
-    agent_page.clear_search()
 
 
 def test_RCS008_clear_search(agent_page):
-    ensure_on_agent_page(agent_page)
     agent_page.search("zzz_no_such_agent_zzz")
     agent_page.page.wait_for_timeout(1000)
     agent_page.clear_search()
@@ -113,48 +114,37 @@ def test_RCS008_clear_search(agent_page):
 
 
 def test_RCS009_filters_button(agent_page):
-    ensure_on_agent_page(agent_page)
     agent_page.open_filters_popover()
     assert agent_page.is_element_present(agent_page.FILTER_CREATED_FROM, timeout=5000)
     assert agent_page.is_element_present(agent_page.FILTER_CREATED_TO, timeout=5000)
 
 
 def test_RCS010_created_from_date_filter(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     agent_page.set_created_from_filter("2025-01-01")
     agent_page.page.wait_for_timeout(1000)
     assert agent_page.has_records() or agent_page.has_no_records_message()
     from_val, _ = agent_page.get_filter_values()
     assert from_val == "2025-01-01"
-    agent_page.clear_date_filters()
 
 
 def test_RCS011_created_to_date_filter(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     agent_page.set_created_to_filter("2025-12-31")
     agent_page.page.wait_for_timeout(1000)
     assert agent_page.has_records() or agent_page.has_no_records_message()
     _, to_val = agent_page.get_filter_values()
     assert to_val == "2025-12-31"
-    agent_page.clear_date_filters()
 
 
 def test_RCS012_created_date_range_filter(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     agent_page.set_date_range_filter("2025-01-01", "2025-12-31")
     agent_page.page.wait_for_timeout(1000)
     assert agent_page.has_records() or agent_page.has_no_records_message()
     from_val, to_val = agent_page.get_filter_values()
     assert from_val == "2025-01-01"
     assert to_val == "2025-12-31"
-    agent_page.clear_date_filters()
 
 
 def test_RCS013_clear_filter(agent_page):
-    ensure_on_agent_page(agent_page)
     agent_page.set_date_range_filter("2025-01-01", "2025-12-31")
     agent_page.page.wait_for_timeout(1000)
     agent_page.clear_date_filters()
@@ -165,32 +155,29 @@ def test_RCS013_clear_filter(agent_page):
 
 
 def test_RCS014_view_action_button(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     clicked = agent_page.click_view_on_first_row()
     assert clicked
     opened = agent_page.is_modal_open() or agent_page.is_element_present(agent_page.MODAL_CONTAINER, timeout=5000)
     assert opened
-    ensure_on_agent_page(agent_page)
+    # No teardown call needed here: `_reset_agent_page_state` (autouse)
+    # does a real navigate() after every test, which reliably closes this
+    # modal for the next test even though RcsAgentPage has no dedicated
+    # "close modal" method.
 
 
 def test_RCS015_agent_name_values(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     values = agent_page.get_column_values("agent_name")
     assert len(values) > 0
     assert all(v.strip() != "" for v in values)
 
 
 def test_RCS016_display_name_values(agent_page):
-    ensure_on_agent_page(agent_page)
     values = agent_page.get_column_values("display_name")
     assert len(values) > 0
     assert all(v.strip() != "" for v in values)
 
 
 def test_RCS017_use_case_values(agent_page):
-    ensure_on_agent_page(agent_page)
     values = agent_page.get_column_values("use_case")
     assert len(values) > 0
     valid = {"transactional", "promotional", "multi_use", "otp"}
@@ -199,7 +186,6 @@ def test_RCS017_use_case_values(agent_page):
 
 
 def test_RCS018_status_values(agent_page):
-    ensure_on_agent_page(agent_page)
     values = agent_page.get_column_values("status")
     assert len(values) > 0
     valid = {"launched", "draft"}
@@ -208,7 +194,6 @@ def test_RCS018_status_values(agent_page):
 
 
 def test_RCS019_verification_status_values(agent_page):
-    ensure_on_agent_page(agent_page)
     values = agent_page.get_column_values("verification_status")
     assert len(values) > 0
     valid = {"verified", "pending", "rejected"}
@@ -217,34 +202,28 @@ def test_RCS019_verification_status_values(agent_page):
 
 
 def test_RCS020_created_at_values(agent_page):
-    ensure_on_agent_page(agent_page)
     values = agent_page.get_column_values("created_at")
     assert len(values) > 0
     assert all(v.strip() != "" for v in values)
 
 
 def test_RCS021_sorting_by_created_at(agent_page):
-    ensure_on_agent_page(agent_page)
-    reset_state(agent_page)
     agent_page.sort_by_created_at()
     assert agent_page.has_records() or agent_page.has_no_records_message()
 
 
 def test_RCS022_bulk_actions_dropdown(agent_page):
-    ensure_on_agent_page(agent_page)
     agent_page.open_bulk_actions_dropdown()
     assert agent_page.is_element_present(agent_page.BULK_ACTION_EXPORT, timeout=5000)
 
 
 def test_RCS023_columns_dropdown(agent_page):
-    ensure_on_agent_page(agent_page)
     agent_page.open_columns_dropdown()
     assert agent_page.is_element_present(agent_page.COLUMN_CHECKBOXES, timeout=5000)
     assert agent_page.is_element_present(agent_page.SELECT_ALL_COLUMNS_CHECKBOX, timeout=5000)
 
 
 def test_RCS025_page_refresh(agent_page):
-    ensure_on_agent_page(agent_page)
     agent_page.refresh_page()
     assert agent_page.is_agent_page()
     assert agent_page.has_records()
@@ -258,7 +237,6 @@ def test_RCS026_export_csv_verifies_header(agent_page):
     Export pattern already proven on SmsBlockedNumbersPage.export_csv()
     (see RcsAgentPage.export_csv() docstring): the export acts on the
     current filtered listing."""
-    ensure_on_agent_page(agent_page)
     result = agent_page.export_csv()
     if result is None:
         pytest.skip("Bulk Actions -> Export did not produce a downloaded file within 30s")

@@ -18,8 +18,19 @@ docstrings) instead of `driver.switch_to.alert`.
 Test Design Notes (see pages/rcs_download_center_page.py and
 pages/rcs_report_create_page.py module docstrings for the full list of
 confirmed DOM specifics):
-  - scope="module" — page object shared across all tests; popup state persists.
-  - ensure_on_dc_page() closes stale modals/alerts before each test.
+  - scope="module" — page object shared across all tests. Cross-test state
+    (open popup/delete-modal, active search/status/date filters) does NOT
+    persist as a dependency between tests: ensure_on_dc_page() closes any
+    stale modal/alert left open by a previous test before every test body
+    runs, and any test that changes filters/search resets them afterward
+    (reset_filters(), or its own cleanup step) rather than leaving that
+    state for the next test to inherit.
+  - TC_09's three View-modal tests, and TC_12/TC_13's delete tests, no
+    longer assume a specific PRIOR test in this file already put the page
+    into the state they need (an open modal / an existing disposable row)
+    -- each opens its own modal / creates its own disposable report (see
+    the `disposable_report` fixture below) so it passes standalone, in any
+    order, and under -n without relying on --dist loadscope.
   - Filters are live (wire:model.live) — no Apply button needed.
   - Status filter values are lowercase: "pending","processing","completed","failed".
   - Date filter uses TWO SEPARATE native <input type="date"> fields
@@ -69,6 +80,7 @@ Differences from the WhatsApp reference (all called out with reasons):
 """
 import os
 import time
+import uuid
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -141,6 +153,61 @@ def reset_filters(p: RcsDownloadCenterPage):
     """Hard-reset filters by re-navigating to the page."""
     p.navigate()
     p.wait_for_table_load(timeout=10000)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Disposable-report fixture — so delete-flow tests create their OWN row
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _delete_report_by_name(p: RcsDownloadCenterPage, name: str):
+    """Best-effort delete of a report by exact name search — used as a
+    teardown safety net for `disposable_report` below (and reusable by
+    any test that creates its own throwaway report) so a fixture-created
+    row never lingers for repeated/parallel runs to pile up, regardless
+    of whether the test itself already deleted it. Mirrors the same
+    click_delete_icon()/is_delete_modal_visible()/confirm_delete() calls
+    already confirmed and exercised directly by TestTC12ConfirmDelete
+    below — no new page-object locator/method, only reuse. Swallows
+    failures deliberately: a fixture teardown must never raise and mask
+    the test's own real pass/fail outcome (same rationale as every other
+    report suite's autouse `_reset_after_test` teardown in this
+    project)."""
+    try:
+        ensure_on_dc_page(p)
+        p.search(name)
+        p.page.wait_for_timeout(1500)
+        if p.get_row_count() == 0:
+            reset_filters(p)
+            return
+        p.click_delete_icon(row_idx=0)
+        p.page.wait_for_timeout(800)
+        if p.is_delete_modal_visible():
+            p.confirm_delete()
+            p.page.wait_for_timeout(1500)
+        reset_filters(p)
+    except Exception:
+        pass
+
+
+@pytest.fixture
+def disposable_report(download_center_page):
+    """Create a throwaway report with a per-call unique name (via the
+    same _create_date_range_report() helper TestTC19Report10Days and its
+    siblings already use further down this file) so a test needing a
+    delete-able row of its own does not depend on TestTC00CreateReport
+    (or any other test/file) having created one first -- independent of
+    file/collection order and safe under -n without --dist loadscope,
+    since every call gets its own uuid-suffixed name. Deletes it again
+    in teardown so repeated/parallel runs never pile up rows
+    indefinitely, whether or not the test itself already deleted it.
+
+    Yields the report's unique name; the test searches for that name
+    itself rather than assuming row 0 of the unfiltered table is its
+    row."""
+    name = f"Automated Test Report {uuid.uuid4().hex[:8]}"
+    _create_date_range_report(download_center_page, name, days=7)
+    yield name
+    _delete_report_by_name(download_center_page, name)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -423,7 +490,13 @@ class TestTC09ViewModal:
     """TC_09: Clicking the View icon opens the summary modal.
     NOTE: exact row action title is UNCONFIRMED for this page (table had
     zero rows at DOM-capture time) — see rcs_download_center_page.py's
-    module docstring. Skips gracefully if no rows exist."""
+    module docstring. Skips gracefully if no rows exist.
+
+    Independence: the two follow-on tests no longer assume
+    test_tc09_view_modal_opens ran first (in this order, in this worker)
+    and left the modal open for them -- each opens its own modal via the
+    same already-established click_view_icon(row_idx=0) call if it isn't
+    open already, so every test in this class passes standalone."""
 
     def test_tc09_view_modal_opens(self, download_center_page):
         ensure_on_dc_page(download_center_page)
@@ -436,12 +509,24 @@ class TestTC09ViewModal:
         )
 
     def test_tc09_modal_content_nonempty(self, download_center_page):
+        ensure_on_dc_page(download_center_page)
+        if not download_center_page.is_popup_open():
+            if download_center_page.get_row_count() == 0:
+                pytest.skip("No rows available to test view icon")
+            download_center_page.click_view_icon(row_idx=0)
+            download_center_page.page.wait_for_timeout(1500)
         if not download_center_page.is_popup_open():
             pytest.skip("Summary modal not open")
         text = download_center_page.get_popup_all_text()
         assert text, "Summary modal is open but shows no content"
 
     def test_tc09_modal_closes(self, download_center_page):
+        ensure_on_dc_page(download_center_page)
+        if not download_center_page.is_popup_open():
+            if download_center_page.get_row_count() == 0:
+                pytest.skip("No rows available to test view icon")
+            download_center_page.click_view_icon(row_idx=0)
+            download_center_page.page.wait_for_timeout(1500)
         if not download_center_page.is_popup_open():
             pytest.skip("Summary modal not open")
         download_center_page.close_popup()
@@ -542,17 +627,32 @@ class TestTC11DownloadDisabled:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TC_13 — Cancel delete keeps the row  (must run BEFORE TC_12)
+# TC_13 — Cancel delete keeps the row
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestTC13CancelDelete:
-    """TC_13: Clicking Cancel on the delete confirmation keeps the row."""
+    """TC_13: Clicking Cancel on the delete confirmation keeps the row.
 
-    def test_tc13_cancel_delete(self, download_center_page):
+    Independence: creates its OWN disposable report via the
+    `disposable_report` fixture (a uuid-suffixed "Automated Test Report
+    <id>") rather than operating on whatever happens to sit in row 0 of
+    the unfiltered table -- no longer depends on TestTC00CreateReport
+    having run first, and no longer needs to run "before TC_12" (the
+    previous ordering comment) since it no longer shares a row with it.
+    Searches for its own report by name so the row it cancels a delete
+    on is unambiguously its own, not an unrelated real row."""
+
+    def test_tc13_cancel_delete(self, download_center_page, disposable_report):
         ensure_on_dc_page(download_center_page)
+        download_center_page.search(disposable_report)
+        download_center_page.page.wait_for_timeout(1500)
         before_count = download_center_page.get_row_count()
         if before_count == 0:
-            pytest.skip("No rows to attempt cancel delete")
+            reset_filters(download_center_page)
+            pytest.skip(
+                f"'{disposable_report}' not visible yet -- report creation may "
+                f"still be queued"
+            )
 
         download_center_page.click_delete_icon(row_idx=0)
         download_center_page.page.wait_for_timeout(800)
@@ -565,31 +665,38 @@ class TestTC13CancelDelete:
         assert after_count == before_count, (
             f"Row count changed after cancel (before={before_count}, after={after_count})"
         )
+        reset_filters(download_center_page)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TC_12 — Confirm delete removes the row  (runs AFTER TC_13)
+# TC_12 — Confirm delete removes the row
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestTC12ConfirmDelete:
     """TC_12: Clicking Confirm on the delete confirmation removes the
-    report. SAFETY: searches for the specific throwaway report TC_00
-    created ("Automated Test Report") before deleting, rather than
-    deleting whatever sits in row 0 -- guarantees only the disposable
-    test report is ever removed."""
+    report.
 
-    REPORT_NAME = "Automated Test Report"
+    Independence: creates its OWN disposable report via the
+    `disposable_report` fixture (a uuid-suffixed "Automated Test Report
+    <id>") instead of depending on TestTC00CreateReport's specific,
+    fixed-name "Automated Test Report" row -- passes standalone, in any
+    collection order, and under -n without --dist loadscope, since each
+    invocation (and each parallel worker) gets its own uniquely-named
+    row. SAFETY (unchanged from the original): still searches for the
+    specific report by name before deleting, rather than deleting
+    whatever sits in row 0 -- guarantees only this test's own disposable
+    report is ever removed."""
 
-    def test_tc12_confirm_delete(self, download_center_page):
+    def test_tc12_confirm_delete(self, download_center_page, disposable_report):
         ensure_on_dc_page(download_center_page)
-        download_center_page.search(self.REPORT_NAME)
+        download_center_page.search(disposable_report)
         download_center_page.page.wait_for_timeout(1500)
         before_count = download_center_page.get_row_count()
         if before_count == 0:
             reset_filters(download_center_page)
             pytest.skip(
-                f"'{self.REPORT_NAME}' not found -- TC_00 may not have run, "
-                f"or the report isn't visible yet"
+                f"'{disposable_report}' not found -- report creation may still "
+                f"be queued"
             )
 
         download_center_page.click_delete_icon(row_idx=0)

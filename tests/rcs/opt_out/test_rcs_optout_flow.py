@@ -26,8 +26,23 @@ Key confirmed DOM specifics (see page object docstring for full detail):
   - Pagination: .paged-pagination-results, ~50015 records / 5002 pages.
 
 Test Design Notes:
-  - scope="module" — page object shared across all tests (same pattern as
-    every other suite in this project).
+  - scope="module" — page object shared across all tests. Independence
+    audit (test-independence pass, see repo-wide effort tracked
+    alongside tests/rcs/campaigns/test_rcs_campaign_create_flow.py's
+    function-scope migration): unlike that campaigns suite, this file
+    has NO test_create_X -> test_edit_X style chain -- no test here
+    searches for, edits, deletes, or count-asserts against data another
+    test created. TC006 is the only test that creates real data (a new
+    Opt-Out number) and nothing downstream depends on it (see its own
+    _optout_number_cleanup fixture below, which removes it in teardown).
+    Every test independently calls ensure_on_optout_page() as its first
+    line, so none of them assume where the previous test left the page.
+    module scope was therefore kept rather than migrated to function
+    scope + `logged_in_page` -- it is safe under `-n` because pytest
+    recreates a module-scoped fixture whenever xdist's default "load"
+    distribution splits a module's tests across workers/out of order,
+    and no test here depends on execution order or on a previous test's
+    state.
   - autouse _reset_after_test fixture re-navigates after each test to keep
     a clean state (search cleared, no open dropdowns, no sort drift).
   - TC006 ("Add New OptOut Number") and TC007 ("Upload OptOut Numbers")
@@ -107,6 +122,44 @@ def _reset_after_test(optout_page):
         ensure_on_optout_page(optout_page)
         optout_page.navigate()
         optout_page.wait_for_table_load(timeout=10000)
+    except Exception:
+        pass
+
+
+@pytest.fixture
+def _optout_number_cleanup(optout_page):
+    """Fixture-based create -> yield -> delete cleanup for any test that
+    creates a real Opt-Out number in the live app (currently only TC006).
+
+    The test appends the phone number it is about to create to the
+    yielded list *before* running its own assertions, so teardown below
+    -- which pytest runs even when the test body raises/fails, unlike a
+    hand-rolled try/except around the test's own logic -- can still find
+    and remove it. Deletion uses only confirmed methods: search() to
+    isolate the row, click_delete_on_first_row() (already used by
+    TC020) to open the SweetAlert2 confirmation, and confirm_delete()
+    (new on RcsOptOutPage, mirrors the existing cancel_delete() but
+    clicks through CONFIRM_DELETE_BTN -- a locator already confirmed and
+    defined in that file, just not previously wrapped in a method).
+
+    Best-effort only, matching this file's existing autouse
+    _reset_after_test teardown convention: a cleanup miss (e.g. the
+    search doesn't resolve before teardown's own timeout) must never
+    mask the test's real pass/fail result."""
+    created = []
+    yield created
+    for phone in created:
+        try:
+            ensure_on_optout_page(optout_page)
+            optout_page.clear_search()
+            optout_page.search(phone)
+            if optout_page.has_records():
+                if optout_page.click_delete_on_first_row():
+                    optout_page.confirm_delete()
+        except Exception:
+            pass
+    try:
+        optout_page.clear_search()
     except Exception:
         pass
 
@@ -515,7 +568,7 @@ def test_TC026_empty_data_scenario(optout_page):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.regression
-def test_TC006_add_new_optout_number(optout_page):
+def test_TC006_add_new_optout_number(optout_page, _optout_number_cleanup):
     """TC006: Submitting a new phone number via 'Add Opt-Out Number'
     (create page) redirects back to the listing page.
 
@@ -536,6 +589,7 @@ def test_TC006_add_new_optout_number(optout_page):
         "Clicking 'Add New OptOut Number' should navigate to /rcs/optout/create"
 
     phone = "+91" + short_unique_digits(9)
+    _optout_number_cleanup.append(phone)
     optout_page.fill_create_phone_number(phone)
     optout_page.click_create_submit()
 

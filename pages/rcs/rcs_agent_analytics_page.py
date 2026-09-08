@@ -148,7 +148,18 @@ class RcsAgentAnalyticsPage(BasePage):
         if self._is_visible(self.FILTER_DEPARTMENT_INPUT, timeout=1000):
             return
         self._js_click(self.FILTERS_BUTTON, timeout=10000)
-        self.page.wait_for_timeout(500)
+        # Wait for the panel itself to actually be open before returning,
+        # instead of a fixed page.wait_for_timeout(500) -- a real 12-worker
+        # parallel run showed toggle_product_filter_option()'s checkbox
+        # wait (input[id^='...-filter-product-'][value='transactional'])
+        # time out even though the click on FILTERS_BUTTON had registered:
+        # under load the panel's own open animation/render can outlast a
+        # fixed 500ms guess, so a caller waiting on a control INSIDE the
+        # panel starts its own wait before the panel is actually there.
+        # FILTER_DEPARTMENT_INPUT is the same element the guard above
+        # already treats as "the panel is open", so wait on it for real
+        # instead of guessing a delay.
+        self.h.wait_for_element_visible(self.FILTER_DEPARTMENT_INPUT, timeout=10000)
 
     def _select_first_async_option(self):
         """Best-effort: after typing into an async-select search box, click

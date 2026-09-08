@@ -146,7 +146,17 @@ class RcsStatusAnalyticsPage(BasePage):
         if self._is_visible(self.FILTER_AGENT_INPUT, timeout=1000):
             return
         self._js_click(self.FILTERS_BUTTON, timeout=10000)
-        self.page.wait_for_timeout(500)
+        # Hardened against a real load-sensitive race: a fixed 500ms sleep
+        # here was not always enough for the popover to actually finish
+        # opening before a caller (e.g. toggle_product_filter_option())
+        # went straight for one of its checkboxes -- under a busy shared
+        # staging backend the click-to-panel-rendered gap can exceed
+        # 500ms, so the checkbox wait timed out even though the checkbox
+        # itself waits properly. Wait on the panel's own confirmed-open
+        # marker (FILTER_AGENT_INPUT -- the same element used above to
+        # detect an already-open popover) so this method never hands back
+        # control before the popover has genuinely rendered.
+        self.h.wait_for_element_visible(self.FILTER_AGENT_INPUT)
 
     def _select_first_async_option(self, container_css):
         try:

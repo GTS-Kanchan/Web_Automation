@@ -498,6 +498,23 @@ class RcsOptOutPage(BasePage):
         self.page.wait_for_timeout(1000)
         return True
 
+    def confirm_delete(self):
+        """Mirrors cancel_delete() above but clicks through the SweetAlert2
+        confirmation instead of dismissing it, using CONFIRM_DELETE_BTN --
+        already defined alongside CANCEL_DELETE_BTN, just previously
+        unused by any method. Added to support fixture-based cleanup of
+        opt-out numbers created by this suite's tests (see
+        test_rcs_optout_flow.py's _optout_number_cleanup fixture). Never
+        raises; returns whether the confirm click went through."""
+        try:
+            btn = self.page.locator(self.CONFIRM_DELETE_BTN).first
+            btn.wait_for(state="visible", timeout=10000)
+            btn.click()
+        except Exception:
+            return False
+        self.page.wait_for_timeout(1000)
+        return True
+
     # ── Pagination ───────────────────────────────────────────────────────────
 
     def get_pagination_results_text(self):

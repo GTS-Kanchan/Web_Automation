@@ -19,7 +19,46 @@ Key confirmed form structure:
   - Cancel link    : <a href="/rcs/template">Cancel</a>
   - Success feedback: shared WireUI notification toast (wireui_notifications)
 
-Test Design Notes:
+Test independence audit (2026-09-08):
+  - Every test that creates/saves a template (TC012, TC013, TC020-TC023)
+    already generates its OWN fresh unique name via _unique_name() (see
+    below) called INSIDE the test body -- none of them read back or
+    reuse another test's created record, so this file never had the
+    create-then-edit/create-then-delete chain-dependency pattern flagged
+    project-wide (grepped: no test_edit_*/test_delete_* exist for RCS
+    templates at all -- see the "No delete/cleanup" note below for why).
+    Each test is independently runnable, e.g.
+    `pytest tests/rcs/templates/test_rcs_template_create_flow.py::test_TC020_full_e2e_create_and_verify_in_list -v`
+    works standalone with no other test having run first.
+  - Fixture scope was deliberately KEPT at scope="module" rather than
+    migrated to the function-scoped `logged_in_page` pattern used by
+    tests/rcs/campaigns/test_rcs_campaign_create_flow.py: that migration
+    is for files with genuine cross-test data dependencies on shared
+    mutable state, which this file does not have. The module-scoped
+    `template_create_page` fixture's own setup always navigates to the
+    create form before the first test runs it, and the autouse
+    `_reset_after_test` fixture below unconditionally re-navigates back
+    to the create form after every test (success or failure) -- so
+    regardless of which test in this module a given xdist worker
+    executes first (this suite runs `-n 10` WITHOUT `--dist loadscope`,
+    so ordering across workers is not guaranteed), the page is always
+    freshly re-navigated to the create form immediately before that
+    test's own body runs. TC001-TC003 (below) were additionally given
+    their own explicit navigate() call so each test establishes its own
+    required UI state directly rather than relying solely on
+    fixture/autouse timing to have already done so.
+  - No delete/cleanup capability exists for RCS templates anywhere in
+    this codebase: RcsTemplateCreatePage (pages/rcs/rcs_template_create_page.py)
+    has no delete method or DELETE_BTN-style locator, and there is no
+    separate RCS template list page object with one either (unlike e.g.
+    pages/sms/sms_template_page.py's row-based ROW_DELETE_BTN /
+    CONFIRM_DELETE_BTN, which is SMS-specific DOM never confirmed to
+    exist on the RCS Templates list). Per this project's "never guess a
+    DOM locator" rule, no delete-template page-object method or cleanup
+    fixture is added here -- every template these tests create is left
+    behind in the live app, same documented limitation as
+    tests/rcs/campaigns/test_rcs_campaign_create_flow.py already accepts
+    for RCS campaigns (no launch/delete cleanup there either).
   - scope="module" — page object shared across all tests (same pattern as
     every other suite in this project).
   - autouse _reset_after_test fixture re-navigates after each test.
@@ -161,12 +200,30 @@ RCS_CARD_SAMPLE_IMAGE = os.path.join(
 )
 
 def _unique_name(prefix="RCS_TPL"):
-    # Worker-safe: short_unique_tag() combines ms resolution + a worker tag
-    # + a short random suffix (~10 chars) so two parallel workers can never
-    # produce the same name, while staying close to the original
-    # second-resolution-only tag's length to keep total length <= 20 chars
-    # (e.g. RCS_TPL_482913w2K7 is ~18 chars). See utils/parallel.py.
-    return f"{prefix[:4]}_{short_unique_tag()}"
+    """Worker-safe unique RCS template name, called FRESH inside every
+    test that needs one (never memoized at module level as a single
+    shared name) so parallel workers and repeat runs never collide.
+
+    Deliberately mirrors RCSChannel.unique_campaign_name()'s exact
+    implementation and rationale (channels/rcs_channel.py) rather than
+    calling the unmodified RCSChannel().unique_template_name() inherited
+    from BaseChannel: that inherited default builds on unique_name()'s
+    longer epoch-ms/worker/counter/random suffix, which would exceed the
+    RCS Template Name field's own tight, hand-tuned character budget --
+    the exact same budget concern that made RCSChannel override
+    unique_campaign_name() with short_unique_tag() instead of the
+    BaseChannel default (short_unique_tag()'s own docstring in
+    utils/parallel.py literally names "the RCS template/campaign
+    creation flows" as one of the exact call sites it exists for).
+
+    channels/rcs_channel.py is READ-ONLY for this change, so this stays
+    a local helper rather than a promoted RCSChannel.unique_template_name()
+    override -- it should be promoted there (identical in shape to the
+    existing unique_campaign_name() override) the next time that file is
+    touched, so template-name generation doesn't need re-deriving in
+    every RCS template test file.
+    """
+    return f"{prefix[:8]}_{short_unique_tag()}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -198,6 +255,7 @@ def _reset_after_test(template_create_page):
 @pytest.mark.smoke
 def test_TC001_page_loads_successfully(template_create_page):
     """TC001: RCS Template Create page loads without a 404 or error page."""
+    template_create_page.navigate()
     assert template_create_page.is_create_page(), "URL should contain /rcs/template/create"
     title = template_create_page.get_title().lower()
     assert "404" not in title and "error" not in title
@@ -210,6 +268,7 @@ def test_TC001_page_loads_successfully(template_create_page):
 @pytest.mark.smoke
 def test_TC002_page_heading(template_create_page):
     """TC002: The form heading contains 'Create' and 'Template'."""
+    template_create_page.navigate()
     heading = template_create_page.get_page_heading_text()
     assert "create" in heading.lower() and "template" in heading.lower(), \
         f"Unexpected heading: {heading!r}"
@@ -222,6 +281,7 @@ def test_TC002_page_heading(template_create_page):
 @pytest.mark.smoke
 def test_TC003_form_fields_present(template_create_page):
     """TC003: Template Name, Type select, and Save button are present."""
+    template_create_page.navigate()
     assert template_create_page.is_form_loaded(), \
         "Name input and Type select should be present on the create page"
     assert template_create_page.is_save_button_present(), \
