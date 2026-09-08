@@ -178,6 +178,22 @@ class Config:
     # mutating agent state.
     RCS_AGENT_NAME = os.getenv("RCS_AGENT_NAME", "agentsim")
 
+    # ── RCS Template test data ───────────────────────────────────────────────
+    # Visible name of the RCS Agent used when creating a TEMPLATE.
+    # Deliberately a SEPARATE variable from RCS_AGENT_NAME above, NOT a
+    # reuse of it: every Template Type dropdown option confirmed in
+    # pages/rcs/rcs_template_create_page.py and tests/rcs/templates/
+    # test_rcs_template_create_flow.py (which options render at all, e.g.
+    # "Text Message with Document" vs "Rich Message") was captured live
+    # with the agent named "jioagent" selected -- a DIFFERENT agent from
+    # RCS_AGENT_NAME's default ("agentsim"). Defaulting this to "jioagent"
+    # preserves that confirmed behavior; silently reusing RCS_AGENT_NAME
+    # here instead would risk running the whole Template Type-dropdown
+    # suite against an agent whose options were never captured in a DOM
+    # dump. Override in .env only if you've re-confirmed the Type
+    # dropdown's options for the new agent.
+    RCS_TEMPLATE_AGENT_NAME = os.getenv("RCS_TEMPLATE_AGENT_NAME", "jioagent")
+
     # Phone number(s) already in an opted-out state on this instance
     # (comma-separated, e.g. 919876543210,919876543211). Required for the
     # opt-out validation tests (TC156/TC157) -- left empty by default since

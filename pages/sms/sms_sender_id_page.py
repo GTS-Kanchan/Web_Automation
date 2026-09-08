@@ -135,43 +135,70 @@ class SMSSenderIDPage(BasePage):
     #    accept=".pdf,.zip,.jpg,.jpeg,.png,.gif,.webp,image/*">
     # -- helper text confirms "images, PDF, or ZIP. Max 5MB each." A
     # wire:loading[wire:target="document"] element shows "Uploading..."
-    # while the upload is in flight. After a successful upload the app
-    # renders one <li wire:key="new-doc-{i}"> per document, each with the
-    # original filename and a "Remove" <button
-    # wire:click="removeDocument({i})">.
+    # while the upload is in flight.
+    #
+    # CORRECTION (2026-09-08): the row markup after a successful upload was
+    # originally guessed as one <li wire:key="new-doc-{i}"> per document.
+    # A real pytest run (test_remove_registration_document_before_save)
+    # proved that wrong -- get_uploaded_document_names() found zero <li>
+    # matches even though the row was genuinely rendered. Two real DOM
+    # fragments pasted right after that failure confirmed what's actually
+    # there:
+    #   <span class="text-sm text-gray-700 dark:text-gray-300 truncate">
+    #       4de98461-4f28-45c9-9af4-2c8442358e2c.png
+    #   </span>
+    #   <div class="flex items-center gap-3 shrink-0">
+    #       <a href="…/senderid/documents/preview?disk=s3&…" target="_blank"
+    #        class="text-sm font-medium text-green-600 …">View</a>
+    #       <button type="button" wire:click="removeDocument(0)"
+    #        class="text-sm font-medium text-red-600 …">Remove</button>
+    #   </div>
+    # The filename span and the View/Remove actions div are siblings inside
+    # some row wrapper whose own tag/attributes are still NOT confirmed --
+    # so the locators below deliberately never name that wrapper. Instead,
+    # get_uploaded_document_names() locates each confirmed Remove button
+    # and walks up to its nearest ancestor that also contains a filename
+    # span, which works regardless of what the actual wrapper element is.
+    #
+    # Also notable from that same fragment: the filename shown is NOT the
+    # originally uploaded filename -- it's a server-generated UUID (here
+    # "4de98461-4f28-45c9-9af4-2c8442358e2c.png") before the form is ever
+    # saved. get_uploaded_document_names() therefore returns whatever the
+    # app currently renders, not necessarily the original upload filename
+    # -- callers asserting a specific name must account for this.
     #
     # The "View" <a> (opens a signed S3 preview URL in a new tab) is NOT
     # rendered for every accepted file type -- a real pytest run confirmed
     # a .zip upload gets Remove ONLY, no View link (browsers can't preview
     # a zip inline, so the app apparently only offers View for previewable
     # types like PDF/images). Only pdf was directly confirmed to render
-    # View in the original DOM capture; image is assumed to behave like
-    # pdf (both are natural-preview types) but has NOT been independently
-    # confirmed -- see EXPECTS_VIEW_LINK in test_sms_sender_id.py's
-    # REGISTRATION_DOCUMENT_SAMPLES and is_document_view_link_present()'s
-    # docstring below.
+    # View in the original DOM capture; image is now ALSO confirmed (the
+    # fragment above shows a .png with a View link) -- see EXPECTS_VIEW_LINK
+    # in test_sms_sender_id.py's REGISTRATION_DOCUMENT_SAMPLES.
     #
-    # Only index 0 (the one document uploaded in the real capture) is
-    # directly confirmed; index 1+ is extrapolated from the confirmed
-    # "new-doc-{i}"/"removeDocument({i})" pattern for a second/third
-    # document (this project's "already-confirmed pattern at a different
-    # index" exception).
+    # Index 0 (the one document uploaded in the real capture) is directly
+    # confirmed; index 1+ is extrapolated from the confirmed
+    # "removeDocument({i})" pattern for a second/third document (this
+    # project's "already-confirmed pattern at a different index" exception).
     FORM_DOCUMENT_UPLOAD_INPUT = "input[wire\\:model='document']"
     FORM_DOCUMENT_UPLOADING_INDICATOR = (
         "xpath=//div[@*[name()='wire:target']='document']"
         "[contains(normalize-space(.),'Uploading')]"
     )
-    FORM_DOCUMENT_LIST_ITEMS = (
-        "xpath=//li[starts-with(@*[name()='wire:key'],'new-doc-')]"
+    # One per uploaded document, in DOM order -- confirmed wire:click pattern.
+    FORM_DOCUMENT_REMOVE_BUTTONS = (
+        "xpath=//button[starts-with(@*[name()='wire:click'],'removeDocument(')]"
     )
-    FORM_DOCUMENT_VIEW_LINK = (
-        "xpath=//li[starts-with(@*[name()='wire:key'],'new-doc-')]"
-        "//a[normalize-space()='View']"
+    # Relative XPath applied FROM a located Remove button (see
+    # get_uploaded_document_names()) -- climbs to the nearest ancestor that
+    # also contains a filename span, then reads that span. Deliberately
+    # does not name the row wrapper's own tag/attributes (not confirmed).
+    _DOCUMENT_NAME_FROM_REMOVE_BUTTON = (
+        "xpath=ancestor::*[.//span[contains(@class,'truncate')]][1]"
+        "//span[contains(@class,'truncate')]"
     )
-    FORM_DOCUMENT_REMOVE_LINK = (
-        "xpath=//li[starts-with(@*[name()='wire:key'],'new-doc-')]"
-        "//button[normalize-space()='Remove']"
-    )
+    FORM_DOCUMENT_VIEW_LINK = "xpath=//a[normalize-space()='View']"
+    FORM_DOCUMENT_REMOVE_LINK = "xpath=//button[normalize-space()='Remove']"
 
     # ── Row-level actions ─────────────────────────────────────────────────────
     # Edit: <a href=".../senderid/{id}/edit"> — confirmed from DOM
@@ -439,14 +466,26 @@ class SMSSenderIDPage(BasePage):
         Documents file input (wire:model="document") on the Create Sender
         ID form. file_path must point to a real, existing file whose
         extension is one of the confirmed accepted types (.pdf, .zip,
-        .jpg, .jpeg, .png, .gif, .webp). Waits for the confirmed
-        wire:loading[wire:target="document"] "Uploading..." indicator to
-        appear and then disappear (best-effort -- a fast upload may
-        resolve before this method ever observes it as visible), giving
-        Livewire time to finish the upload and render the new
-        <li wire:key="new-doc-{i}"> entry before returning."""
+        .jpg, .jpeg, .png, .gif, .webp).
+
+        Waits for the confirmed wire:loading[wire:target="document"]
+        "Uploading..." indicator to appear and then disappear -- best
+        effort only, since a real pytest run
+        (test_create_sender_id_with_registration_document[chromium-image])
+        showed this indicator can't be relied on alone: the flat sleep
+        that used to follow it was too short for at least one file type,
+        and get_uploaded_document_names() came back empty right after this
+        method returned even though the upload itself had succeeded.
+
+        So this method does NOT return on indicator-hidden (or on the
+        indicator never appearing) alone -- it then polls for the actual
+        outcome that matters: the confirmed FORM_DOCUMENT_REMOVE_BUTTONS
+        count increasing by one, for up to 20s. Raises AssertionError with
+        a clear message if that never happens, instead of silently
+        returning and leaving the caller to see a confusing empty list."""
         file_input = self.page.locator(self.FORM_DOCUMENT_UPLOAD_INPUT).first
         file_input.wait_for(state="attached", timeout=10000)
+        before_count = self.page.locator(self.FORM_DOCUMENT_REMOVE_BUTTONS).count()
         file_input.set_input_files(os.path.abspath(file_path))
         try:
             indicator = self.page.locator(self.FORM_DOCUMENT_UPLOADING_INDICATOR).first
@@ -454,17 +493,42 @@ class SMSSenderIDPage(BasePage):
             indicator.wait_for(state="hidden", timeout=20000)
         except Exception:
             pass
-        self.page.wait_for_timeout(1000)
+
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            if self.page.locator(self.FORM_DOCUMENT_REMOVE_BUTTONS).count() > before_count:
+                break
+            self.page.wait_for_timeout(250)
+        else:
+            raise AssertionError(
+                f"Registration Document upload of "
+                f"'{os.path.basename(file_path)}' did not render a new "
+                f"document row within 20s (had {before_count} document(s) "
+                "rendered before this upload) -- check the form for an "
+                "upload validation error."
+            )
+        # Small settle delay -- the row exists but Livewire may still be
+        # mid-morph on its exact contents (filename span text, View link).
+        self.page.wait_for_timeout(300)
 
     def get_uploaded_document_names(self):
-        """Returns the filename text shown in each rendered
-        <li wire:key="new-doc-{i}"> Registration Document list entry, in
-        DOM order. Empty list if none have been uploaded (or removed)."""
-        items = self.page.locator(self.FORM_DOCUMENT_LIST_ITEMS)
+        """Returns the filename text shown for each uploaded Registration
+        Document, in DOM order. Empty list if none have been uploaded (or
+        all have been removed).
+
+        Walks from each confirmed Remove button (FORM_DOCUMENT_REMOVE_BUTTONS)
+        up to its nearest ancestor that also contains a filename span, then
+        reads that span -- see the FORM_DOCUMENT_* comment block above for
+        why this doesn't assume any particular row wrapper element. Note
+        the returned name may be a server-generated UUID rather than the
+        originally uploaded filename (confirmed real behaviour before the
+        form is saved)."""
+        buttons = self.page.locator(self.FORM_DOCUMENT_REMOVE_BUTTONS)
         names = []
-        for i in range(items.count()):
+        for i in range(buttons.count()):
             try:
-                text = items.nth(i).locator("span").first.inner_text().strip()
+                span = buttons.nth(i).locator(self._DOCUMENT_NAME_FROM_REMOVE_BUTTON).first
+                text = span.inner_text().strip()
                 if text:
                     names.append(text)
             except Exception:

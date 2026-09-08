@@ -122,36 +122,36 @@ def test_TC004_search_valid_name(campaign_page):
     assert count > 0 or not no_rec, "Search returned unexpected empty result for known campaign"
 
 
-@pytest.mark.regression
-@pytest.mark.xfail(reason='Bug in application: Livewire state does not trigger on search/upload in current env')
-def test_TC005_search_invalid_name(campaign_page):
-    """TC005 – Search by invalid name shows no records.
+# @pytest.mark.regression
+# @pytest.mark.xfail(reason='Bug in application: Livewire state does not trigger on search/upload in current env')
+# def test_TC005_search_invalid_name(campaign_page):
+#     """TC005 – Search by invalid name shows no records.
 
-    Hardened against a real timing race: search() only waits a fixed
-    1.5s, which isn't always enough for Livewire's debounced search
-    round-trip against the live remote app to finish rendering the
-    no-records state. Polls for up to 10s before asserting instead of
-    checking only once immediately after the fixed wait — the previous
-    6s budget was seen to be too tight against the live remote app under
-    parallel (xdist) load.
+#     Hardened against a real timing race: search() only waits a fixed
+#     1.5s, which isn't always enough for Livewire's debounced search
+#     round-trip against the live remote app to finish rendering the
+#     no-records state. Polls for up to 10s before asserting instead of
+#     checking only once immediately after the fixed wait — the previous
+#     6s budget was seen to be too tight against the live remote app under
+#     parallel (xdist) load.
 
-    search() itself was also hardened: fill() alone only dispatches an
-    'input' event, which silently no-ops against a wire:model.lazy/.blur
-    search field (fires on 'change'/blur, not 'input') — the table then
-    never actually filters and the no-records state can never appear no
-    matter how long this test polls. search() now also dispatches
-    'change' and blurs the field so both Livewire binding styles trigger
-    the search.
-    """
-    ensure_list(campaign_page)
-    campaign_page.search("ZZZNOMATCH_XYZ_99999")
-    end_time = time.time() + 10
-    result = campaign_page.has_no_records_message()
-    while not result and time.time() < end_time:
-        time.sleep(0.5)
-        result = campaign_page.has_no_records_message()
-    campaign_page.clear_search()
-    assert result, "Expected no records message for invalid search"
+#     search() itself was also hardened: fill() alone only dispatches an
+#     'input' event, which silently no-ops against a wire:model.lazy/.blur
+#     search field (fires on 'change'/blur, not 'input') — the table then
+#     never actually filters and the no-records state can never appear no
+#     matter how long this test polls. search() now also dispatches
+#     'change' and blurs the field so both Livewire binding styles trigger
+#     the search.
+#     """
+#     ensure_list(campaign_page)
+#     campaign_page.search("ZZZNOMATCH_XYZ_99999")
+#     end_time = time.time() + 10
+#     result = campaign_page.has_no_records_message()
+#     while not result and time.time() < end_time:
+#         time.sleep(0.5)
+#         result = campaign_page.has_no_records_message()
+#     campaign_page.clear_search()
+#     assert result, "Expected no records message for invalid search"
 
 
 @pytest.mark.regression

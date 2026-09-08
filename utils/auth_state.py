@@ -205,6 +205,34 @@ def _perform_login_recording_failure(browser) -> None:
         _clear_failure_marker()
 
 
+def _save_auth_failure_screenshot(page, label: str) -> str:
+    """Best-effort screenshot of the login page at the exact moment an
+    authentication attempt fails, saved next to the shared auth state
+    (reports/.auth/<label>_<timestamp>.png) so a future failure doesn't
+    require digging through an unrelated test's own failure screenshot to
+    see what the login page actually looked like (that's how the very
+    first occurrence of this had to be diagnosed -- see the run where
+    test_TC010_messages_sent_count_displayed's re-auth failed with "no
+    error message found": the only visual evidence available was a
+    coincidental screenshot from test_TC009, a different, earlier test,
+    because setup-phase fixture errors aren't covered by conftest.py's
+    own call-phase-only screenshot-on-failure hook).
+
+    Returns a " -- screenshot saved to <path>" suffix for the exception
+    message, or "" if the screenshot itself couldn't be taken -- never
+    lets a screenshot failure mask the real authentication error."""
+    try:
+        os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+        path = os.path.join(
+            os.path.dirname(STATE_PATH),
+            f"{label}_{time.strftime('%Y%m%d_%H%M%S')}.png",
+        )
+        page.screenshot(path=path)
+        return f" -- screenshot saved to {path}"
+    except Exception:
+        return ""
+
+
 def _perform_login(browser) -> None:
     """The ONE real UI login for the whole run. Only ever called by the
     single worker holding the lock, immediately after confirming the state
@@ -232,9 +260,11 @@ def _perform_login(browser) -> None:
         lp.h.wait_for_url_contains("/", timeout=20000)
         if lp.is_login_page():
             error = lp.get_error_message()
+            shot = _save_auth_failure_screenshot(page, "login_failed")
             raise AuthenticationError(
                 "The one-time login did not redirect away from /login"
                 + (f" — platform said: {error}" if error else " (no error message found)")
+                + shot
             )
         _auth_log("Login successful")
 
@@ -246,6 +276,20 @@ def _perform_login(browser) -> None:
         context.storage_state(path=tmp_path)
         os.replace(tmp_path, STATE_PATH)
         _auth_log(f"Authentication state saved -> {STATE_PATH}")
+    except AuthenticationError:
+        raise
+    except Exception as exc:
+        # Anything else (a raw Playwright timeout from navigate()/login()/
+        # wait_for_url_contains(), a network error, ...) used to propagate
+        # un-wrapped -- still recorded as a failure by
+        # _perform_login_recording_failure()'s caller-side except Exception,
+        # but with no screenshot and a bare exception message. Wrapping it
+        # here gives every login failure path (not just the "silently still
+        # on /login" one above) the same screenshot + consistent message.
+        shot = _save_auth_failure_screenshot(page, "login_error")
+        raise AuthenticationError(
+            f"The one-time login raised {exc.__class__.__name__}: {exc}" + shot
+        ) from exc
     finally:
         context.close()
 

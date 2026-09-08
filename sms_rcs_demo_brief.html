@@ -1,0 +1,449 @@
+<title>SMS &amp; RCS Coverage Brief</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#f6f7fb;
+    --surface:#ffffff;
+    --surface-2:#eef0f8;
+    --border:#dfe3ec;
+    --ink:#171b2b;
+    --ink-soft:#5b6178;
+    --ink-faint:#8b91a8;
+    --accent:#3452d9;
+    --accent-soft:#e8ecfc;
+    --sms:#0f8f6c;
+    --sms-soft:#e2f6ee;
+    --rcs:#7c3aed;
+    --rcs-soft:#f0e9fe;
+    --amber:#b5650b;
+    --amber-soft:#fbeed9;
+    --shadow: 0 1px 2px rgba(23,27,43,0.04), 0 8px 24px -12px rgba(23,27,43,0.12);
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0d1020;
+      --surface:#151933;
+      --surface-2:#1c2140;
+      --border:#2b3157;
+      --ink:#eef0f8;
+      --ink-soft:#aab0cc;
+      --ink-faint:#767ea3;
+      --accent:#7d97ff;
+      --accent-soft:#232a55;
+      --sms:#3ddba0;
+      --sms-soft:#132a24;
+      --rcs:#b79bfd;
+      --rcs-soft:#241c3f;
+      --amber:#e2a34a;
+      --amber-soft:#33230f;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1020;
+    --surface:#151933;
+    --surface-2:#1c2140;
+    --border:#2b3157;
+    --ink:#eef0f8;
+    --ink-soft:#aab0cc;
+    --ink-faint:#767ea3;
+    --accent:#7d97ff;
+    --accent-soft:#232a55;
+    --sms:#3ddba0;
+    --sms-soft:#132a24;
+    --rcs:#b79bfd;
+    --rcs-soft:#241c3f;
+    --amber:#e2a34a;
+    --amber-soft:#33230f;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:900px;margin:0 auto;padding:56px 24px 96px;}
+
+  h1,h2,h3{font-family:'Sora',system-ui,sans-serif;letter-spacing:-0.01em;text-wrap:balance;color:var(--ink);}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+  .tabular{font-variant-numeric:tabular-nums;}
+
+  /* ---------- Hero ---------- */
+  .hero{margin-bottom:52px;}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;letter-spacing:0.08em;text-transform:uppercase;
+    color:var(--accent);background:var(--accent-soft);
+    padding:5px 12px;border-radius:100px;
+    margin-bottom:18px;
+  }
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  h1{font-size:clamp(28px,4vw,38px);font-weight:700;margin:0 0 12px;}
+  .hero p{font-size:16.5px;color:var(--ink-soft);max-width:60ch;margin:0;}
+  .hero .meta{margin-top:20px;font-size:13px;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;}
+
+  section{margin-bottom:52px;}
+  .section-head{margin-bottom:20px;}
+  .section-head h2{font-size:21px;font-weight:600;margin:0 0 6px;}
+  .section-head .sub{color:var(--ink-soft);font-size:14.5px;max-width:64ch;}
+  .section-num{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-faint);
+    letter-spacing:0.06em;margin-bottom:6px;display:block;
+  }
+
+  /* ---------- Channel summary cards ---------- */
+  .channels{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:640px){.channels{grid-template-columns:1fr;}}
+  .chan-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:22px 22px 20px;box-shadow:var(--shadow);
+  }
+  .chan-card.sms{border-top:3px solid var(--sms);}
+  .chan-card.rcs{border-top:3px solid var(--rcs);}
+  .chan-name{
+    display:flex;align-items:center;gap:8px;
+    font-family:'Sora',sans-serif;font-weight:600;font-size:15px;margin-bottom:14px;
+  }
+  .chan-swatch{width:9px;height:9px;border-radius:50%;}
+  .sms .chan-swatch{background:var(--sms);}
+  .rcs .chan-swatch{background:var(--rcs);}
+  .chan-total{font-size:34px;font-weight:700;font-family:'Sora',sans-serif;line-height:1;}
+  .chan-total .unit{font-size:14px;font-weight:500;color:var(--ink-soft);margin-left:6px;}
+  .chan-sub{color:var(--ink-soft);font-size:13px;margin-top:4px;}
+  .chan-foot{
+    margin-top:16px;padding-top:14px;border-top:1px dashed var(--border);
+    display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);
+  }
+  .chan-foot b{color:var(--ink);font-family:'IBM Plex Mono',monospace;font-weight:600;}
+
+  /* ---------- Feature area bars ---------- */
+  .bars{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px 22px;box-shadow:var(--shadow);}
+  .bar-row{
+    display:grid;grid-template-columns:130px 1fr 56px;align-items:center;gap:14px;
+    padding:13px 0;border-bottom:1px solid var(--border);
+  }
+  .bar-row:last-child{border-bottom:none;}
+  .bar-label{font-size:13.5px;color:var(--ink);font-weight:500;}
+  .bar-track{background:var(--surface-2);border-radius:6px;height:9px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:6px;}
+  .sms-fill{background:var(--sms);}
+  .rcs-fill{background:var(--rcs);}
+  .bar-count{font-family:'IBM Plex Mono',monospace;font-size:13px;text-align:right;color:var(--ink-soft);}
+
+  .bars-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:640px){.bars-cols{grid-template-columns:1fr;}}
+  .bars-cols h3{
+    font-size:13px;text-transform:uppercase;letter-spacing:0.06em;
+    font-family:'IBM Plex Mono',monospace;font-weight:600;margin:0 0 10px;
+    display:flex;align-items:center;gap:7px;
+  }
+  .bars-cols h3 .chan-swatch{width:8px;height:8px;}
+
+  /* ---------- Smoke tier strip ---------- */
+  .smoke-strip{
+    display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;
+  }
+  .smoke-pill{
+    flex:1;min-width:220px;
+    background:var(--amber-soft);border:1px solid var(--border);border-radius:10px;
+    padding:12px 16px;font-size:13px;color:var(--ink-soft);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .smoke-pill b{color:var(--amber);font-family:'IBM Plex Mono',monospace;font-size:14px;}
+
+  /* ---------- Single sign-on flow ---------- */
+  .flow{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:28px 24px;box-shadow:var(--shadow);
+  }
+  .flow-row{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;}
+  .flow-step{
+    flex:1;min-width:150px;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:10px;padding:14px 16px;font-size:13px;color:var(--ink-soft);
+    position:relative;
+  }
+  .flow-step .step-title{
+    font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);
+    font-size:12.5px;margin-bottom:5px;display:block;
+  }
+  .flow-arrow{
+    display:flex;align-items:center;justify-content:center;
+    color:var(--ink-faint);font-size:18px;padding:0 8px;flex:0 0 auto;
+  }
+  @media (max-width:700px){
+    .flow-row{flex-direction:column;}
+    .flow-arrow{transform:rotate(90deg);padding:6px 0;}
+  }
+  .flow-note{margin-top:18px;font-size:13.5px;color:var(--ink-soft);}
+  .flow-note b{color:var(--ink);}
+
+  .facts{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:10px;}
+  .facts li{
+    display:flex;gap:10px;font-size:14px;color:var(--ink-soft);
+    padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  }
+  .facts .k{
+    flex:0 0 auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent);
+    background:var(--accent-soft);border-radius:6px;padding:3px 8px;height:fit-content;white-space:nowrap;
+  }
+  .facts b{color:var(--ink);}
+
+  /* ---------- Demo commands ---------- */
+  .cmd-grid{display:grid;gap:10px;}
+  .cmd{
+    background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    padding:13px 16px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);
+  }
+  .cmd .tag{
+    flex:0 0 auto;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;
+    padding:4px 9px;border-radius:100px;font-family:'IBM Plex Mono',monospace;
+  }
+  .cmd .tag.sms{background:var(--sms-soft);color:var(--sms);}
+  .cmd .tag.rcs{background:var(--rcs-soft);color:var(--rcs);}
+  .cmd code{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--ink);overflow-x:auto;white-space:pre;}
+
+  /* ---------- Config footer ---------- */
+  .config-box{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:20px 22px;box-shadow:var(--shadow);
+  }
+  .config-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;font-size:13px;}
+  @media (max-width:520px){.config-grid{grid-template-columns:1fr;}}
+  .config-grid div{display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding:7px 0;}
+  .config-grid .ck{color:var(--ink-soft);}
+  .config-grid .cv{font-family:'IBM Plex Mono',monospace;color:var(--ink);}
+  .config-warn{margin-top:14px;font-size:12.5px;color:var(--ink-faint);}
+
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--border);font-size:12.5px;color:var(--ink-faint);}
+</style>
+
+<div class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow"><span class="dot"></span>CPaaS+ Test Automation</span>
+    <h1>SMS &amp; RCS Coverage Brief</h1>
+    <p>What's automated today across the SMS and RCS channels, and how the suite logs in once per run instead of once per test — for walking through the demo.</p>
+    <div class="meta">cpaas_playwright_tests · Playwright + pytest · counts from live <span class="mono">--collect-only</span> runs</div>
+  </div>
+
+  <section>
+    <span class="section-num">01 — COVERAGE</span>
+    <div class="section-head">
+      <h2>Channel coverage at a glance</h2>
+      <div class="sub">Every number below is a real collected test count, not an estimate — pulled straight from pytest's own collection pass per feature-area folder.</div>
+    </div>
+
+    <div class="channels">
+      <div class="chan-card sms">
+        <div class="chan-name"><span class="chan-swatch"></span>SMS</div>
+        <div class="chan-total tabular">716<span class="unit">tests</span></div>
+        <div class="chan-sub">7 feature areas · campaigns, messaging, reports, sender ID, templates, opt-out, API</div>
+        <div class="chan-foot">
+          <span>Smoke subset</span>
+          <b class="tabular">142 / 716</b>
+        </div>
+      </div>
+      <div class="chan-card rcs">
+        <div class="chan-name"><span class="chan-swatch"></span>RCS</div>
+        <div class="chan-total tabular">658<span class="unit">tests</span></div>
+        <div class="chan-sub">6 feature areas · reports, campaigns, templates, messaging, opt-out, agent</div>
+        <div class="chan-foot">
+          <span>Smoke subset</span>
+          <b class="tabular">101 / 658</b>
+        </div>
+      </div>
+    </div>
+
+    <div class="smoke-strip">
+      <div class="smoke-pill"><span>SMS smoke coverage</span><b>19.8%</b></div>
+      <div class="smoke-pill"><span>RCS smoke coverage</span><b>15.3%</b></div>
+      <div class="smoke-pill"><span>Whole suite (all channels)</span><b>2,246 tests</b></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="section-num">02 — BREAKDOWN</span>
+    <div class="section-head">
+      <h2>Automated by feature area</h2>
+      <div class="sub">Bars are scaled within each channel — Reports dominates both because it re-runs the same checks across every report type and date-range combination.</div>
+    </div>
+
+    <div class="bars-cols">
+      <div>
+        <h3><span class="chan-swatch" style="background:var(--sms)"></span>SMS</h3>
+        <div class="bars">
+          <div class="bar-row">
+            <div class="bar-label">Reports</div>
+            <div class="bar-track"><div class="bar-fill sms-fill" style="width:100%"></div></div>
+            <div class="bar-count tabular">289</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">API</div>
+            <div class="bar-track"><div class="bar-fill sms-fill" style="width:31.8%"></div></div>
+            <div class="bar-count tabular">92</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Campaigns</div>
+            <div class="bar-track"><div class="bar-fill sms-fill" style="width:25.6%"></div></div>
+            <div class="bar-count tabular">74</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Messaging</div>
+            <div class="bar-track"><div class="bar-fill sms-fill" style="width:25.3%"></div></div>
+            <div class="bar-count tabular">73</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Templates</div>
+            <div class="bar-track"><div class="bar-fill sms-fill" style="width:23.9%"></div></div>
+            <div class="bar-count tabular">69</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Sender ID</div>
+            <div class="bar-track"><div class="bar-fill sms-fill" style="width:22.5%"></div></div>
+            <div class="bar-count tabular">65</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Opt-out</div>
+            <div class="bar-track"><div class="bar-fill sms-fill" style="width:18.7%"></div></div>
+            <div class="bar-count tabular">54</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3><span class="chan-swatch" style="background:var(--rcs)"></span>RCS</h3>
+        <div class="bars">
+          <div class="bar-row">
+            <div class="bar-label">Reports</div>
+            <div class="bar-track"><div class="bar-fill rcs-fill" style="width:100%"></div></div>
+            <div class="bar-count tabular">417</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Campaigns</div>
+            <div class="bar-track"><div class="bar-fill rcs-fill" style="width:31.2%"></div></div>
+            <div class="bar-count tabular">130</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Messaging</div>
+            <div class="bar-track"><div class="bar-fill rcs-fill" style="width:8.4%"></div></div>
+            <div class="bar-count tabular">35</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Opt-out</div>
+            <div class="bar-track"><div class="bar-fill rcs-fill" style="width:6.5%"></div></div>
+            <div class="bar-count tabular">27</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Agent</div>
+            <div class="bar-track"><div class="bar-fill rcs-fill" style="width:6.0%"></div></div>
+            <div class="bar-count tabular">25</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Templates</div>
+            <div class="bar-track"><div class="bar-fill rcs-fill" style="width:5.8%"></div></div>
+            <div class="bar-count tabular">24</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="section-num">03 — RECENT ADDITIONS</span>
+    <div class="section-head">
+      <h2>What's new since the last pass</h2>
+      <div class="sub">Worth calling out live, since these were built and fixed against real app behaviour this week.</div>
+    </div>
+    <ul class="facts">
+      <li><span class="k">RCS · templates</span><span>Per-card media upload wired into both Rich Card Stand-alone and Carousel creation, plus a Card Height field correctly attributed to Stand-alone (not Carousel — corrected after a real skip proved the original placement wrong).</span></li>
+      <li><span class="k">RCS · templates</span><span>Template-list verification now reloads the page and re-polls once before giving up, closing a real "created successfully but not found in list" gap.</span></li>
+      <li><span class="k">SMS · sender ID</span><span>New parametrized coverage for the optional Registration Documents upload (PDF, ZIP, image) — including the real finding that ZIP uploads only render a Remove control, no View link.</span></li>
+      <li><span class="k">RCS · config</span><span>Agent selection for template creation is now its own <span class="mono">.env</span> variable (<span class="mono">RCS_TEMPLATE_AGENT_NAME</span>, default <span class="mono">jioagent</span>), kept separate from the campaign agent (<span class="mono">RCS_AGENT_NAME</span>, default <span class="mono">agentsim</span>) since the two agents expose different Template Type options.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <span class="section-num">04 — SINGLE LOGIN</span>
+    <div class="section-head">
+      <h2>One login per run, not one per test</h2>
+      <div class="sub">Every test authenticates, but the suite only ever drives the real login UI once per pytest run — regardless of how many tests or parallel workers are involved. Everyone else reuses a saved session.</div>
+    </div>
+
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-step">
+          <span class="step-title">first worker</span>
+          claims an exclusive, atomic lock file before anyone else can
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <span class="step-title">real UI login</span>
+          logs in through the actual app once, using <span class="mono">VALID_EMAIL</span> / <span class="mono">VALID_PASSWORD</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <span class="step-title">storage_state.json</span>
+          the authenticated session (cookies + local storage) is saved to disk
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <span class="step-title">every other test</span>
+          opens its browser context pre-authenticated from that file — no login screen, ever
+        </div>
+      </div>
+      <div class="flow-note"><b>Why it matters for the demo:</b> you can run the whole SMS or RCS suite, or split it across several parallel workers, and the login form only appears once at the very start — not once per test class.</div>
+    </div>
+
+    <ul class="facts">
+      <li><span class="k">where</span>Implemented in <span class="mono">utils/auth_state.py</span>, wired into every test through the <span class="mono">logged_in_page</span> and <span class="mono">module_logged_in_page</span> fixtures in <span class="mono">conftest.py</span>.</li>
+      <li><span class="k">race-safe</span>The lock is acquired with an atomic file-create (<span class="mono">O_CREAT | O_EXCL</span>), so if several <span class="mono">pytest-xdist</span> workers start at once, exactly one of them performs the real login and the rest wait for its result.</li>
+      <li><span class="k">no login storms</span>If the real login fails, a failure marker stops every other worker from immediately retrying it and hammering the login page — retries are gated behind a cooldown (TTL) instead.</li>
+      <li><span class="k">self-healing</span>A stale lock or stale failure marker (left behind by a crashed run) expires automatically, so the next run isn't permanently blocked by a previous bad state.</li>
+      <li><span class="k">config</span>Session file location is <span class="mono">AUTH_STATE_PATH</span> (default <span class="mono">reports/.auth/state.json</span>); credentials come from <span class="mono">VALID_EMAIL</span> / <span class="mono">VALID_PASSWORD</span> in <span class="mono">.env</span> — not shown here.</li>
+    </ul>
+  </section>
+
+  <section>
+    <span class="section-num">05 — DEMO RUNS</span>
+    <div class="section-head">
+      <h2>Suggested commands</h2>
+      <div class="sub">Smoke tiers are the fastest honest slice of each channel — good for a live run without eating the whole demo slot.</div>
+    </div>
+    <div class="cmd-grid">
+      <div class="cmd"><span class="tag sms">SMS</span><code>python scripts/run_tests.py -m "sms and smoke"</code></div>
+      <div class="cmd"><span class="tag rcs">RCS</span><code>python scripts/run_tests.py -m "rcs and smoke"</code></div>
+      <div class="cmd"><span class="tag sms">SMS</span><code>python scripts/run_tests.py -m "sms and template" --workers 2</code></div>
+      <div class="cmd"><span class="tag rcs">RCS</span><code>python scripts/run_tests.py -m "rcs and template" --workers 2</code></div>
+    </div>
+  </section>
+
+  <section style="margin-bottom:0;">
+    <span class="section-num">06 — ENVIRONMENT</span>
+    <div class="section-head">
+      <h2>What the demo runs against</h2>
+    </div>
+    <div class="config-box">
+      <div class="config-grid">
+        <div><span class="ck">Default environment</span><span class="cv">ENV=qa</span></div>
+        <div><span class="ck">Base URL (qa / staging)</span><span class="cv">testqa.gtsstaging.com</span></div>
+        <div><span class="ck">Headless (qa)</span><span class="cv">false</span></div>
+        <div><span class="ck">Headless (staging / CI)</span><span class="cv">true</span></div>
+        <div><span class="ck">Default workers (qa)</span><span class="cv">4</span></div>
+        <div><span class="ck">RCS campaign agent</span><span class="cv">agentsim</span></div>
+        <div><span class="ck">RCS template agent</span><span class="cv">jioagent</span></div>
+        <div><span class="ck">Login credentials</span><span class="cv">.env — not shown</span></div>
+      </div>
+      <div class="config-warn">Values loaded from <span class="mono">config/environments/qa.env</span>, with the root <span class="mono">.env</span> layered on top for anything it sets.</div>
+    </div>
+  </section>
+
+  <footer>Generated for internal demo use · cpaas_playwright_tests · counts reflect the latest collected state of the suite</footer>
+
+</div>

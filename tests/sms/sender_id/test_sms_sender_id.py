@@ -51,10 +51,10 @@ def data_file(name):
 
 
 # Real test assets for the Create Sender ID form's "Registration Documents"
-# (Optional) upload -- confirmed via a real pasted DOM (see the
+# (Optional) upload -- confirmed via real pasted DOM (see the
 # FORM_DOCUMENT_* comment block on SMSSenderIDPage). The PDF is the EXACT
 # file a real manual test already uploaded through this widget (its
-# filename in the captured DOM's rendered <li> list item matches this
+# filename in the captured DOM's rendered document row matches this
 # fixture's original name byte-for-byte) -- i.e. it's already proven to
 # pass the app's own upload validation, not just a locator guess. The ZIP
 # was supplied alongside it for the same purpose. Both are well under the
@@ -65,11 +65,14 @@ def data_file(name):
 #
 # expects_view_link (3rd tuple element): a real pytest run confirmed a
 # .zip upload renders Remove ONLY -- no "View" link (browsers can't
-# preview a zip inline). Only pdf was directly confirmed to render View
-# in the original DOM capture; image is assumed to behave like pdf (both
-# are natural-preview types) but has NOT been independently confirmed --
-# if a real run shows image also lacking View, flip this to False and
-# report back so SMSSenderIDPage's docstrings can be corrected too.
+# preview a zip inline). pdf was directly confirmed to render View in the
+# original DOM capture; image is now ALSO directly confirmed -- a
+# follow-up real DOM capture (from test_remove_registration_document_
+# before_save, which uploads whatsapp_carousel_sample.jpg) showed a
+# rendered .png document row with both a "View" link and a "Remove"
+# button. That same capture is also what caught and corrected a wrong
+# assumption about the row's own wrapper element -- see the FORM_DOCUMENT_*
+# comment block on SMSSenderIDPage for the corrected row structure.
 REGISTRATION_DOCUMENT_SAMPLES = [
     # (file_kind, file_path, expects_view_link)
     ("pdf", data_file("sms_sender_id_registration_doc_sample.pdf"), True),
@@ -339,12 +342,17 @@ class TestCreateSenderIdUIFlow:
 # CONFIRMED via a real pasted DOM on the Create Sender ID form: an optional
 # file input (wire:model="document", accept=".pdf,.zip,.jpg,.jpeg,.png,
 # .gif,.webp,image/*", "Max 5MB each"). A successful upload renders a
-# <li wire:key="new-doc-{i}"> with the filename and a "Remove" button
+# filename span (class contains "truncate") plus a "Remove" button
 # (wire:click="removeDocument({i})") -- see SMSSenderIDPage.
 # upload_registration_document()/get_uploaded_document_names()/
-# is_document_remove_button_present()/remove_document(). The "View" link
-# is NOT universal: a real pytest run confirmed .zip renders Remove only
-# (see REGISTRATION_DOCUMENT_SAMPLES' expects_view_link column and
+# is_document_remove_button_present()/remove_document(). (An earlier
+# version of this comment claimed the row was a
+# <li wire:key="new-doc-{i}">; a real pytest run proved that wrong -- see
+# the FORM_DOCUMENT_* comment block on SMSSenderIDPage for the corrected
+# row structure and how get_uploaded_document_names() now finds the
+# filename without assuming any particular wrapper element.) The "View"
+# link is NOT universal: a real pytest run confirmed .zip renders Remove
+# only (see REGISTRATION_DOCUMENT_SAMPLES' expects_view_link column and
 # is_document_view_link_present()'s docstring on SMSSenderIDPage).
 # ══════════════════════════════════════════════════════════════════════════════
 

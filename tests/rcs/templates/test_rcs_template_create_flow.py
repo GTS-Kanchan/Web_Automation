@@ -142,6 +142,7 @@ import os
 import pytest
 
 from pages.rcs.rcs_template_create_page import RcsTemplateCreatePage
+from utils.config import Config
 from utils.parallel import short_unique_tag
 
 
@@ -360,9 +361,9 @@ def test_TC013_save_navigates_or_toasts(template_create_page):
     name = _unique_name("SaveTest")
     template_create_page.fill_name(name)
     try:
-        template_create_page.select_agent("jioagent")
+        template_create_page.select_agent(Config.RCS_TEMPLATE_AGENT_NAME)
     except Exception as e:
-        pytest.skip(f"Agent 'jioagent' not available -- cannot save: {e}")
+        pytest.skip(f"Agent '{Config.RCS_TEMPLATE_AGENT_NAME}' not available -- cannot save: {e}")
     template_create_page.page.wait_for_timeout(1000)
     template_create_page.select_type("Text Message")
     template_create_page.page.wait_for_timeout(1000)
@@ -507,9 +508,9 @@ def test_TC020_full_e2e_create_and_verify_in_list(template_create_page):
     name = _unique_name("E2ETest")
     template_create_page.fill_name(name)
     try:
-        template_create_page.select_agent("jioagent")
+        template_create_page.select_agent(Config.RCS_TEMPLATE_AGENT_NAME)
     except Exception as e:
-        pytest.skip(f"Agent 'jioagent' not available -- cannot save: {e}")
+        pytest.skip(f"Agent '{Config.RCS_TEMPLATE_AGENT_NAME}' not available -- cannot save: {e}")
     template_create_page.page.wait_for_timeout(1000)
     template_create_page.select_type("Text Message")
     template_create_page.page.wait_for_timeout(1000)
@@ -596,7 +597,7 @@ def test_TC021_full_e2e_create_rich_message(template_create_page):
         extra_fill=lambda p: p.fill_rich_message_fields(),
     )
     if not result["agent_available"]:
-        pytest.skip("Agent 'jioagent' not available -- cannot save.")
+        pytest.skip(f"Agent '{Config.RCS_TEMPLATE_AGENT_NAME}' not available -- cannot save.")
     if not result["type_selectable"]:
         pytest.skip("Template Type 'Rich Message' could not be selected in "
                     "the Type dropdown -- no option text contained that "
@@ -642,7 +643,7 @@ def test_TC022_full_e2e_create_rich_card_standalone(template_create_page):
         ),
     )
     if not result["agent_available"]:
-        pytest.skip("Agent 'jioagent' not available -- cannot save.")
+        pytest.skip(f"Agent '{Config.RCS_TEMPLATE_AGENT_NAME}' not available -- cannot save.")
     if not result["type_selectable"]:
         pytest.skip("Template Type 'Rich Card Stand-alone' could not be "
                     "selected in the Type dropdown -- no option text contained "
@@ -694,7 +695,7 @@ def test_TC023_full_e2e_create_rich_card_carousel(template_create_page):
         ),
     )
     if not result["agent_available"]:
-        pytest.skip("Agent 'jioagent' not available -- cannot save.")
+        pytest.skip(f"Agent '{Config.RCS_TEMPLATE_AGENT_NAME}' not available -- cannot save.")
     if not result["type_selectable"]:
         pytest.skip("Template Type 'Rich Card Carousel' could not be "
                     "selected in the Type dropdown -- no option text contained "

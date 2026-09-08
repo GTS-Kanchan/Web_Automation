@@ -14,6 +14,12 @@ file needs its headers validated:
 Header spelling, capitalization, spacing, and order are all part of the
 specification below — do not "clean up" or reorder this list without
 confirming the change against the real Sender ID export first.
+
+UPDATED (2026-09-08): the export gained a "Rejection Reason" column between
+Status and Type — confirmed against the latest real export header row:
+Sender Id, Department, User, Status, Rejection Reason, Type, Entity Id,
+Country code, Created At, Updated At. Previously this list had no
+"Rejection Reason" entry at all.
 """
 
 EXPECTED_SMS_SENDER_ID_HEADERS = [
@@ -21,6 +27,7 @@ EXPECTED_SMS_SENDER_ID_HEADERS = [
     "Department",
     "User",
     "Status",
+    "Rejection Reason",
     "Type",
     "Entity Id",
     "Country code",

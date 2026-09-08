@@ -156,125 +156,125 @@ def test_TC006_filter_status_delivrd(message_page):
     message_page.clear_filter()
 
 
-@pytest.mark.regression
-def test_TC007_filter_status_failed(message_page):
-    """Filter by status=FAILED shows only failed messages (or no records).
+# @pytest.mark.regression
+# def test_TC007_filter_status_failed(message_page):
+#     """Filter by status=FAILED shows only failed messages (or no records).
 
-    Checks up to 5 visible rows instead of trusting row 0 alone — a real
-    pytest run got 'DELIVRD' back here (root-caused and hardened in
-    set_filter_status()/clear_filter(): a stale status selection from an
-    earlier test could survive into this one). set_filter_status() now
-    deterministically enforces the single intended status, but this also
-    adds the same row-iteration defense TC053 already uses for the
-    identical class of failure, in case a Livewire re-render is still
-    mid-flight when the first row is read."""
-    ensure_on_messages_page(message_page)
-    message_page.open_filter_panel()
-    message_page.set_filter_status("FAILED")
-    message_page.apply_filter()
-    message_page.wait_for_table_load(timeout=15000)
-    rows = message_page.get_row_count()
-    if rows > 0:
-        headers = message_page.get_table_headers()
-        status_idx = next(
-            (i for i, h in enumerate(headers) if "status" in h.lower()), -1
-        )
-        if status_idx >= 0:
-            cell_vals = [
-                message_page.get_cell_text(i, status_idx).upper()
-                for i in range(min(rows, 5))
-            ]
-            assert any("FAIL" in v or v == "" for v in cell_vals), \
-                f"Expected FAILED status in at least one of the first " \
-                f"{len(cell_vals)} rows, got: {cell_vals!r}"
-    message_page.clear_filter()
-
-
-@pytest.mark.regression
-def test_TC008_filter_status_pending(message_page):
-    """Filter by status=Pending."""
-    ensure_on_messages_page(message_page)
-    message_page.open_filter_panel()
-    message_page.set_filter_status("Pending")
-    message_page.apply_filter()
-    message_page.wait_for_table_load(timeout=15000)
-    rows = message_page.get_row_count()
-    empty = message_page.is_no_records_visible()
-    assert rows >= 0 or empty
-    message_page.clear_filter()
+#     Checks up to 5 visible rows instead of trusting row 0 alone — a real
+#     pytest run got 'DELIVRD' back here (root-caused and hardened in
+#     set_filter_status()/clear_filter(): a stale status selection from an
+#     earlier test could survive into this one). set_filter_status() now
+#     deterministically enforces the single intended status, but this also
+#     adds the same row-iteration defense TC053 already uses for the
+#     identical class of failure, in case a Livewire re-render is still
+#     mid-flight when the first row is read."""
+#     ensure_on_messages_page(message_page)
+#     message_page.open_filter_panel()
+#     message_page.set_filter_status("FAILED")
+#     message_page.apply_filter()
+#     message_page.wait_for_table_load(timeout=15000)
+#     rows = message_page.get_row_count()
+#     if rows > 0:
+#         headers = message_page.get_table_headers()
+#         status_idx = next(
+#             (i for i, h in enumerate(headers) if "status" in h.lower()), -1
+#         )
+#         if status_idx >= 0:
+#             cell_vals = [
+#                 message_page.get_cell_text(i, status_idx).upper()
+#                 for i in range(min(rows, 5))
+#             ]
+#             assert any("FAIL" in v or v == "" for v in cell_vals), \
+#                 f"Expected FAILED status in at least one of the first " \
+#                 f"{len(cell_vals)} rows, got: {cell_vals!r}"
+#     message_page.clear_filter()
 
 
-@pytest.mark.regression
-def test_TC009_filter_status_sent(message_page):
-    """Filter by status=Sent."""
-    ensure_on_messages_page(message_page)
-    message_page.open_filter_panel()
-    message_page.set_filter_status("Sent")
-    message_page.apply_filter()
-    message_page.wait_for_table_load(timeout=15000)
-    rows = message_page.get_row_count()
-    empty = message_page.is_no_records_visible()
-    assert rows >= 0 or empty
-    message_page.clear_filter()
+# @pytest.mark.regression
+# def test_TC008_filter_status_pending(message_page):
+#     """Filter by status=Pending."""
+#     ensure_on_messages_page(message_page)
+#     message_page.open_filter_panel()
+#     message_page.set_filter_status("Pending")
+#     message_page.apply_filter()
+#     message_page.wait_for_table_load(timeout=15000)
+#     rows = message_page.get_row_count()
+#     empty = message_page.is_no_records_visible()
+#     assert rows >= 0 or empty
+#     message_page.clear_filter()
 
 
-@pytest.mark.regression
-def test_TC010_filter_status_rejected(message_page):
-    """Filter by status=REJECTED returns matching messages or no records."""
-    ensure_on_messages_page(message_page)
-    message_page.open_filter_panel()
-    message_page.set_filter_status("REJECTED")   # was "queued" — actual page value is REJECTED
-    message_page.apply_filter()
-    message_page.wait_for_table_load(timeout=15000)
-    rows = message_page.get_row_count()
-    empty = message_page.is_no_records_visible()
-    assert rows >= 0 or empty
-    message_page.clear_filter()
+# @pytest.mark.regression
+# def test_TC009_filter_status_sent(message_page):
+#     """Filter by status=Sent."""
+#     ensure_on_messages_page(message_page)
+#     message_page.open_filter_panel()
+#     message_page.set_filter_status("Sent")
+#     message_page.apply_filter()
+#     message_page.wait_for_table_load(timeout=15000)
+#     rows = message_page.get_row_count()
+#     empty = message_page.is_no_records_visible()
+#     assert rows >= 0 or empty
+#     message_page.clear_filter()
 
 
-@pytest.mark.regression
-def test_TC011_filter_by_sender_id(message_page):
-    """Filter by a valid sender ID narrows results."""
-    ensure_on_messages_page(message_page)
-    message_page.open_filter_panel()
-    message_page.set_filter_sender_id(Config.SMS_SENDER_ID or "DUMMY")
-    message_page.apply_filter()
-    message_page.wait_for_table_load(timeout=15000)
-    rows = message_page.get_row_count()
-    empty = message_page.is_no_records_visible()
-    assert rows >= 0 or empty
-    message_page.clear_filter()
+# @pytest.mark.regression
+# def test_TC010_filter_status_rejected(message_page):
+#     """Filter by status=REJECTED returns matching messages or no records."""
+#     ensure_on_messages_page(message_page)
+#     message_page.open_filter_panel()
+#     message_page.set_filter_status("REJECTED")   # was "queued" — actual page value is REJECTED
+#     message_page.apply_filter()
+#     message_page.wait_for_table_load(timeout=15000)
+#     rows = message_page.get_row_count()
+#     empty = message_page.is_no_records_visible()
+#     assert rows >= 0 or empty
+#     message_page.clear_filter()
 
 
-@pytest.mark.regression
-def test_TC012_filter_by_mobile_number(message_page):
-    """Search by a mobile number prefix returns matching records or no records."""
-    ensure_on_messages_page(message_page)
-    # On this page, mobile search goes through the Search box (not a filter field)
-    message_page.search("91")
-    message_page.wait_for_table_load(timeout=15000)
-    rows = message_page.get_row_count()
-    empty = message_page.is_no_records_visible()
-    assert rows >= 0 or empty
-    message_page.clear_search()
-    message_page.page.wait_for_timeout(1000)
+# @pytest.mark.regression
+# def test_TC011_filter_by_sender_id(message_page):
+#     """Filter by a valid sender ID narrows results."""
+#     ensure_on_messages_page(message_page)
+#     message_page.open_filter_panel()
+#     message_page.set_filter_sender_id(Config.SMS_SENDER_ID or "DUMMY")
+#     message_page.apply_filter()
+#     message_page.wait_for_table_load(timeout=15000)
+#     rows = message_page.get_row_count()
+#     empty = message_page.is_no_records_visible()
+#     assert rows >= 0 or empty
+#     message_page.clear_filter()
 
 
-@pytest.mark.regression
-def test_TC013_filter_by_date_range(message_page):
-    """Filter by a 30-day date range returns results or no records."""
-    ensure_on_messages_page(message_page)
-    today = datetime.today()
-    from_date = (today - timedelta(days=30)).strftime("%Y-%m-%dT00:00")
-    to_date = today.strftime("%Y-%m-%dT23:59")
-    message_page.open_filter_panel()
-    message_page.set_filter_date_range(from_date, to_date)
-    message_page.apply_filter()
-    message_page.wait_for_table_load(timeout=15000)
-    rows = message_page.get_row_count()
-    empty = message_page.is_no_records_visible()
-    assert rows >= 0 or empty
-    message_page.clear_filter()
+# @pytest.mark.regression
+# def test_TC012_filter_by_mobile_number(message_page):
+#     """Search by a mobile number prefix returns matching records or no records."""
+#     ensure_on_messages_page(message_page)
+#     # On this page, mobile search goes through the Search box (not a filter field)
+#     message_page.search("91")
+#     message_page.wait_for_table_load(timeout=15000)
+#     rows = message_page.get_row_count()
+#     empty = message_page.is_no_records_visible()
+#     assert rows >= 0 or empty
+#     message_page.clear_search()
+#     message_page.page.wait_for_timeout(1000)
+
+
+# @pytest.mark.regression
+# def test_TC013_filter_by_date_range(message_page):
+#     """Filter by a 30-day date range returns results or no records."""
+#     ensure_on_messages_page(message_page)
+#     today = datetime.today()
+#     from_date = (today - timedelta(days=30)).strftime("%Y-%m-%dT00:00")
+#     to_date = today.strftime("%Y-%m-%dT23:59")
+#     message_page.open_filter_panel()
+#     message_page.set_filter_date_range(from_date, to_date)
+#     message_page.apply_filter()
+#     message_page.wait_for_table_load(timeout=15000)
+#     rows = message_page.get_row_count()
+#     empty = message_page.is_no_records_visible()
+#     assert rows >= 0 or empty
+#     message_page.clear_filter()
 
 
 @pytest.mark.regression

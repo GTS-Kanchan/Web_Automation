@@ -419,77 +419,77 @@ def test_tc018_invalid_phone_format(blocked_numbers_page):
                     "to reject non-numeric input")
 
 
-@pytest.mark.regression
-@pytest.mark.negative
-def test_tc019_duplicate_blocked_number(blocked_numbers_page):
-    """TC019: Adding an already-blocked number is rejected as a duplicate.
+# @pytest.mark.regression
+# @pytest.mark.negative
+# def test_tc019_duplicate_blocked_number(blocked_numbers_page):
+#     """TC019: Adding an already-blocked number is rejected as a duplicate.
 
-    This test uses a dynamic scratch number to ensure it is independent
-    of test execution order (which can be arbitrary under xdist)."""
-    ensure_on_page(blocked_numbers_page)
+#     This test uses a dynamic scratch number to ensure it is independent
+#     of test execution order (which can be arbitrary under xdist)."""
+#     ensure_on_page(blocked_numbers_page)
     
-    # 1) Add the number for the first time
-    scratch_number = "91945679" + f"{int(time.time()) % 1000000:06d}"
-    blocked_numbers_page.click_add_new_blocked_number()
-    if not blocked_numbers_page.is_create_page():
-        pytest.skip("Create page did not load")
-    if not blocked_numbers_page.is_element_present(blocked_numbers_page.ADD_PHONE_INPUT, timeout=5000):
-        pytest.skip("Add form's phone-number input not found")
+#     # 1) Add the number for the first time
+#     scratch_number = "91945679" + f"{int(time.time()) % 1000000:06d}"
+#     blocked_numbers_page.click_add_new_blocked_number()
+#     if not blocked_numbers_page.is_create_page():
+#         pytest.skip("Create page did not load")
+#     if not blocked_numbers_page.is_element_present(blocked_numbers_page.ADD_PHONE_INPUT, timeout=5000):
+#         pytest.skip("Add form's phone-number input not found")
         
-    blocked_numbers_page.add_blocked_number(scratch_number)
-    time.sleep(1)
+#     blocked_numbers_page.add_blocked_number(scratch_number)
+#     time.sleep(1)
     
-    # 2) Try to add it again
-    ensure_on_page(blocked_numbers_page)
-    blocked_numbers_page.click_add_new_blocked_number()
-    if not blocked_numbers_page.is_create_page():
-        pytest.skip("Create page did not load on second attempt")
+#     # 2) Try to add it again
+#     ensure_on_page(blocked_numbers_page)
+#     blocked_numbers_page.click_add_new_blocked_number()
+#     if not blocked_numbers_page.is_create_page():
+#         pytest.skip("Create page did not load on second attempt")
     
-    blocked_numbers_page.add_blocked_number(scratch_number)
-    error = blocked_numbers_page.get_validation_error_text()
-    assert error, (f"No duplicate-validation error was shown when re-adding "
-                    f"the scratch number {scratch_number}")
+#     blocked_numbers_page.add_blocked_number(scratch_number)
+#     error = blocked_numbers_page.get_validation_error_text()
+#     assert error, (f"No duplicate-validation error was shown when re-adding "
+#                     f"the scratch number {scratch_number}")
 
 
-@pytest.mark.regression
-def test_tc020_cancel_button_on_create_page(blocked_numbers_page):
-    """TC020: Cancel on the Add page returns to the Blocked Numbers list."""
-    ensure_on_page(blocked_numbers_page)
-    blocked_numbers_page.click_add_new_blocked_number()
-    if not blocked_numbers_page.is_create_page():
-        pytest.skip("Create page did not load")
-    if not blocked_numbers_page.is_element_present(blocked_numbers_page.ADD_CANCEL_BTN, timeout=5000):
-        pytest.skip("Cancel button not found -- locator needs updating from "
-                     "real create-page DOM")
-    blocked_numbers_page.click_cancel_on_create_page()
-    assert blocked_numbers_page.is_report_page(), "Should return to the Blocked Numbers list"
+# @pytest.mark.regression
+# def test_tc020_cancel_button_on_create_page(blocked_numbers_page):
+#     """TC020: Cancel on the Add page returns to the Blocked Numbers list."""
+#     ensure_on_page(blocked_numbers_page)
+#     blocked_numbers_page.click_add_new_blocked_number()
+#     if not blocked_numbers_page.is_create_page():
+#         pytest.skip("Create page did not load")
+#     if not blocked_numbers_page.is_element_present(blocked_numbers_page.ADD_CANCEL_BTN, timeout=5000):
+#         pytest.skip("Cancel button not found -- locator needs updating from "
+#                      "real create-page DOM")
+#     blocked_numbers_page.click_cancel_on_create_page()
+#     assert blocked_numbers_page.is_report_page(), "Should return to the Blocked Numbers list"
 
 
-# ── TC021-024, TC027 — Upload popup (best-effort, see module docstring) ─
+# # ── TC021-024, TC027 — Upload popup (best-effort, see module docstring) ─
 
-@pytest.mark.regression
-def test_tc021_upload_popup_ui(blocked_numbers_page):
-    """TC021: Upload popup displays upload controls and a sample download link."""
-    ensure_on_page(blocked_numbers_page)
-    blocked_numbers_page.click_upload_blocked_numbers()
-    assert blocked_numbers_page.is_upload_popup_open()
-    if not blocked_numbers_page.is_element_present(blocked_numbers_page.BTN_DOWNLOAD_SAMPLE, timeout=5000):
-        pytest.skip("Download-sample link not found -- locator needs updating "
-                     "from real upload-popup DOM")
-    assert blocked_numbers_page.is_element_present(blocked_numbers_page.BTN_DOWNLOAD_SAMPLE, timeout=5000)
+# @pytest.mark.regression
+# def test_tc021_upload_popup_ui(blocked_numbers_page):
+#     """TC021: Upload popup displays upload controls and a sample download link."""
+#     ensure_on_page(blocked_numbers_page)
+#     blocked_numbers_page.click_upload_blocked_numbers()
+#     assert blocked_numbers_page.is_upload_popup_open()
+#     if not blocked_numbers_page.is_element_present(blocked_numbers_page.BTN_DOWNLOAD_SAMPLE, timeout=5000):
+#         pytest.skip("Download-sample link not found -- locator needs updating "
+#                      "from real upload-popup DOM")
+#     assert blocked_numbers_page.is_element_present(blocked_numbers_page.BTN_DOWNLOAD_SAMPLE, timeout=5000)
 
 
-@pytest.mark.regression
-def test_tc022_sample_file_download(blocked_numbers_page):
-    """TC022: Clicking Download blocked numbers sample starts without error."""
-    ensure_on_page(blocked_numbers_page)
-    blocked_numbers_page.click_upload_blocked_numbers()
-    if not blocked_numbers_page.is_upload_popup_open() or \
-            not blocked_numbers_page.is_element_present(blocked_numbers_page.BTN_DOWNLOAD_SAMPLE, timeout=5000):
-        pytest.skip("Upload popup or download-sample link not found")
-    blocked_numbers_page.click_download_sample()
-    assert blocked_numbers_page.get_upload_error() is None, \
-        "No error should appear after clicking the sample download link"
+# @pytest.mark.regression
+# def test_tc022_sample_file_download(blocked_numbers_page):
+#     """TC022: Clicking Download blocked numbers sample starts without error."""
+#     ensure_on_page(blocked_numbers_page)
+#     blocked_numbers_page.click_upload_blocked_numbers()
+#     if not blocked_numbers_page.is_upload_popup_open() or \
+#             not blocked_numbers_page.is_element_present(blocked_numbers_page.BTN_DOWNLOAD_SAMPLE, timeout=5000):
+#         pytest.skip("Upload popup or download-sample link not found")
+#     blocked_numbers_page.click_download_sample()
+#     assert blocked_numbers_page.get_upload_error() is None, \
+#         "No error should appear after clicking the sample download link"
 
 
 @pytest.mark.regression

@@ -2,7 +2,7 @@ import os
 import time
 
 from pages.common.base_page import BasePage
-from utils.config import DOWNLOAD_DIR
+from utils.config import Config, DOWNLOAD_DIR
 
 
 class RcsTemplateCreatePage(BasePage):
@@ -889,9 +889,19 @@ class RcsTemplateCreatePage(BasePage):
     # ── Full e2e create+verify, shared across every Template Type ────────────
 
     def create_and_verify_template(self, name, type_text, body,
-                                     agent_hint="jioagent", list_timeout=15000,
+                                     agent_hint=None, list_timeout=15000,
                                      extra_fill=None):
-        """Shared full end-to-end recipe used by the per-type e2e tests."""
+        """Shared full end-to-end recipe used by the per-type e2e tests.
+
+        agent_hint defaults to Config.RCS_TEMPLATE_AGENT_NAME (from .env,
+        "jioagent" by default) rather than a hardcoded literal -- every
+        Template Type dropdown option this suite relies on was confirmed
+        live with that specific agent selected (see
+        RCS_TEMPLATE_AGENT_NAME's docstring in utils/config.py for why
+        this is a SEPARATE .env var from RCS_AGENT_NAME, which is
+        Campaign creation's agent). Pass an explicit agent_hint to
+        override for a one-off call without touching .env."""
+        agent_hint = agent_hint or Config.RCS_TEMPLATE_AGENT_NAME
         self.navigate()
         self.fill_name(name)
         
