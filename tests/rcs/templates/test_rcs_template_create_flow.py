@@ -431,17 +431,12 @@ def test_TC013_save_navigates_or_toasts(template_create_page):
     template_create_page.page.wait_for_timeout(1000)
     template_create_page.click_save()
 
-    # Wait for either URL change or toast
-    redirected = False
-    try:
-        template_create_page.h.wait_for_url_contains("/rcs/template", timeout=15000)
-        # Check that it's not still on /create
-        if "/create" not in template_create_page.get_current_url():
-            redirected = True
-    except Exception:
-        pass
-
-    toast_shown = template_create_page.is_success_toast_shown(timeout=5000)
+    # wait_for_save_result(): polls for a redirect or a toast together
+    # over one bounded window instead of sequential single-shot waits --
+    # a real run showed the sequential version could starve whichever
+    # signal it checked second (see the method's docstring on
+    # RcsTemplateCreatePage).
+    redirected, toast_shown = template_create_page.wait_for_save_result(timeout_ms=20000)
 
     if not (redirected or toast_shown):
         print(f"DEBUG: Current URL: {template_create_page.get_current_url()}")
@@ -578,15 +573,9 @@ def test_TC020_full_e2e_create_and_verify_in_list(template_create_page):
     template_create_page.page.wait_for_timeout(1000)
     template_create_page.click_save()
 
-    redirected = False
-    try:
-        template_create_page.h.wait_for_url_contains("/rcs/template", timeout=15000)
-        if "/create" not in template_create_page.get_current_url():
-            redirected = True
-    except Exception:
-        pass
-
-    toast_shown = template_create_page.is_success_toast_shown(timeout=5000)
+    # wait_for_save_result(): see TC013's identical comment above -- same
+    # real-run fix (polls both signals together, not sequentially).
+    redirected, toast_shown = template_create_page.wait_for_save_result(timeout_ms=20000)
     assert redirected or toast_shown, \
         "After save, expected either a redirect to /rcs/template or a success toast; " \
         f"URL: {template_create_page.get_current_url()!r}, toast: {toast_shown}"

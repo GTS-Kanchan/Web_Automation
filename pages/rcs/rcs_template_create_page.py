@@ -757,6 +757,42 @@ class RcsTemplateCreatePage(BasePage):
         self._js_click(self.SAVE_BTN, timeout=10000)
         self.page.wait_for_timeout(2000)
 
+    def wait_for_save_result(self, timeout_ms=20000):
+        """Poll for up to timeout_ms after click_save(): returns
+        (redirected, toast_shown) as soon as either becomes true.
+
+        Real-run fix (2026-09): TC013/TC020's original wait was
+        SEQUENTIAL -- wait up to 15s for the URL to change, and only
+        THEN (after that whole 15s already elapsed) check for a toast
+        with its own separate 5s timeout. Under a busy shared staging
+        backend a save that resolves via toast-only (no redirect) could
+        still fail if the toast itself took a little over 5s to
+        appear once we finally got around to checking for it, and a
+        save that WOULD have redirected in, say, 16s never got the
+        chance because wait_for_url_contains had already given up.
+        Polling both conditions together, retried, means the check
+        for whichever signal actually fires runs continuously for the
+        whole window instead of being starved by the other one's
+        sequential wait -- the same fix already proven for RCS
+        Campaign Create's `_wait_for_submit_result()`
+        (tests/rcs/campaigns/test_rcs_campaign_create_flow.py)."""
+        deadline = time.time() + (timeout_ms / 1000)
+        redirected = False
+        toast_shown = False
+        while time.time() < deadline:
+            if not redirected:
+                try:
+                    if "/create" not in self.get_current_url() and self.LIST_URL in self.get_current_url():
+                        redirected = True
+                except Exception:
+                    pass
+            if not toast_shown:
+                toast_shown = self.is_success_toast_shown(timeout=500)
+            if redirected or toast_shown:
+                break
+            self.page.wait_for_timeout(500)
+        return redirected, toast_shown
+
     # ── Toast / feedback ─────────────────────────────────────────────────────
 
     def is_success_toast_shown(self, timeout=6000):
@@ -939,16 +975,10 @@ class RcsTemplateCreatePage(BasePage):
             self.page.wait_for_timeout(1000)
             
         self.click_save()
-        
-        redirected = False
-        try:
-            self.h.wait_for_url_contains(self.LIST_URL, timeout=list_timeout)
-            if "/create" not in self.get_current_url():
-                redirected = True
-        except Exception:
-            pass
-            
-        toast_shown = self.is_success_toast_shown(timeout=5000)
+
+        # wait_for_save_result(): polls both signals together instead of
+        # sequentially -- see its docstring for why (real-run fix).
+        redirected, toast_shown = self.wait_for_save_result(timeout_ms=list_timeout)
         launched = redirected or toast_shown
         
         found_in_list = False

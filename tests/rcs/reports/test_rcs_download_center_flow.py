@@ -709,18 +709,39 @@ class TestTC12ConfirmDelete:
         # fix that a real pytest run showed was necessary on the WhatsApp
         # equivalent page (the delete's Livewire round-trip isn't always
         # finished within a short fixed sleep).
+        #
+        # Real-run fix (2026-09): even this poll wasn't enough on its own
+        # -- a run showed before=after=1 for the full 10s window with
+        # confirm_delete's own debug info confirming the native-dialog
+        # accept() path completed with no error, meaning the delete
+        # request itself was sent successfully. The most likely
+        # remaining explanation is that this row-count read is off a
+        # search-filtered view (search(disposable_report) above) whose
+        # results don't automatically re-query after an out-of-band
+        # delete lands server-side -- a live search box's `wire:model`
+        # value hasn't changed, so nothing tells Livewire to refetch.
+        # Re-issuing search() partway through (a real re-fill of the
+        # input, not a cache read) forces exactly that refetch. If the
+        # row count still hasn't dropped after this, that's real signal
+        # the delete did not actually take effect server-side, not a
+        # polling/timing gap -- see confirm_debug in the assertion below.
         deadline = time.time() + 10
+        researched = False
         after_count = download_center_page.get_row_count()
         while time.time() < deadline:
             after_count = download_center_page.get_row_count()
             if after_count < before_count or download_center_page.is_no_records_visible():
                 break
-            time.sleep(0.5)
+            if not researched and time.time() > deadline - 6:
+                download_center_page.search(disposable_report)
+                researched = True
+            download_center_page.page.wait_for_timeout(500)
         reset_filters(download_center_page)
         confirm_debug = getattr(download_center_page, "last_confirm_delete_debug", {})
         assert after_count < before_count or download_center_page.is_no_records_visible(), (
             f"Row count did not decrease after delete "
-            f"(before={before_count}, after={after_count}). "
+            f"(before={before_count}, after={after_count}, "
+            f"re-searched={researched}). "
             f"confirm_delete debug info: {confirm_debug}"
         )
 

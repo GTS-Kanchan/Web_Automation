@@ -336,13 +336,24 @@ def test_TC013_toggle_table_columns(optout_page):
     ensure_on_optout_page(optout_page)
     assert optout_page.is_column_checked("reason") is False, \
         "'reason' column should be unchecked by default"
-    optout_page.toggle_column("reason")
-    assert optout_page.is_column_checked("reason") is True
-    headers_on = optout_page.get_visible_column_headers()
-    assert any("reason" in h.lower() for h in headers_on), \
-        "Reason column header should appear after toggling on"
+    try:
+        optout_page.toggle_column("reason")
+        assert optout_page.is_column_checked("reason") is True
+        headers_on = optout_page.get_visible_column_headers()
+        assert any("reason" in h.lower() for h in headers_on), \
+            "Reason column header should appear after toggling on"
+    finally:
+        # Always restore to the default (unchecked) state, even if an
+        # assertion above failed mid-test. This column preference isn't
+        # reset by the autouse re-navigate (_reset_after_test) -- only a
+        # symmetric toggle-back undoes it -- so a failure here without
+        # this guard would leave 'reason' checked for every test that
+        # runs after this one, on this run and any future run against
+        # the same account: exactly the cross-test/cross-run
+        # contamination independence work is meant to eliminate.
+        if optout_page.is_column_checked("reason"):
+            optout_page.toggle_column("reason")
 
-    optout_page.toggle_column("reason")
     assert optout_page.is_column_checked("reason") is False
     headers_off = optout_page.get_visible_column_headers()
     assert not any("reason" in h.lower() for h in headers_off), \
@@ -360,12 +371,18 @@ def test_TC014_toggle_created_at_column(optout_page):
     ensure_on_optout_page(optout_page)
     assert optout_page.is_column_checked("created-at") is False, \
         "'created-at' column should be unchecked by default"
-    optout_page.toggle_column("created-at")
-    assert optout_page.is_column_checked("created-at") is True
-    headers_on = optout_page.get_visible_column_headers()
-    assert any("created" in h.lower() for h in headers_on)
+    try:
+        optout_page.toggle_column("created-at")
+        assert optout_page.is_column_checked("created-at") is True
+        headers_on = optout_page.get_visible_column_headers()
+        assert any("created" in h.lower() for h in headers_on)
+    finally:
+        # See TC013's identical comment above -- restore even on a
+        # mid-test failure so this preference never leaks into a later
+        # test or a later run.
+        if optout_page.is_column_checked("created-at"):
+            optout_page.toggle_column("created-at")
 
-    optout_page.toggle_column("created-at")
     assert optout_page.is_column_checked("created-at") is False
 
 
