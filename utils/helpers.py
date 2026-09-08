@@ -21,6 +21,51 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, ex
 
 from utils.config import Config
 
+# ── Navigation resilience under heavy parallel load ─────────────────────────
+# A real run at PLAYWRIGHT_WORKERS=20 showed 4 fixture-setup ERRORs and 1
+# test FAILURE, all the same shape: a plain page.goto(Config.BASE_URL) (in
+# conftest.py's _open_authenticated_context/_apply_storage_state_to_page, and
+# in BasePage.open()) hit Playwright's navigation timeout once, under the
+# CPU/network contention of 20 Chromium sessions launching/running at once
+# against the same QA server -- an infra/load blip, not a real navigation
+# failure (the same page loaded fine for every other worker in the same
+# run). goto_with_retry() below gives every "go to a URL and wait for it to
+# load" call in this suite the same treatment utils/auth_state.py already
+# gives the one real login: a generous, configurable timeout plus a bounded,
+# in-process retry -- but ONLY for PlaywrightTimeoutError specifically. Any
+# other exception (a real navigation/DNS/certificate failure) propagates
+# immediately on the first attempt; retrying that would just hide a real bug
+# behind a slower failure.
+_NAV_TIMEOUT_MS = int(os.getenv("NAV_TIMEOUT_MS", "60000"))
+_NAV_MAX_ATTEMPTS = int(os.getenv("NAV_MAX_ATTEMPTS", "2"))
+_NAV_RETRY_BACKOFF_SECONDS = float(os.getenv("NAV_RETRY_BACKOFF_SECONDS", "2"))
+
+
+def goto_with_retry(page, url, timeout=None, wait_until=None, attempts=None):
+    """page.goto(url), retried a bounded number of times on a Playwright
+    navigation TimeoutError before giving up -- see the module-level
+    comment above for why. `timeout`/`wait_until` behave exactly like the
+    matching page.goto() kwargs (timeout defaults to NAV_TIMEOUT_MS if not
+    given; wait_until is only passed through if explicitly provided, so
+    callers that relied on Playwright's own default ("load") keep getting
+    it). `attempts` overrides NAV_MAX_ATTEMPTS for this call only.
+
+    Used by conftest.py's authenticated-context setup/recovery goto() calls
+    and by BasePage.open() -- every place in this suite that navigates to a
+    URL and needs the page to have actually loaded before continuing."""
+    max_attempts = attempts or _NAV_MAX_ATTEMPTS
+    kwargs = {"timeout": timeout or _NAV_TIMEOUT_MS}
+    if wait_until is not None:
+        kwargs["wait_until"] = wait_until
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return page.goto(url, **kwargs)
+        except PlaywrightTimeoutError:
+            if attempt >= max_attempts:
+                raise
+            time.sleep(_NAV_RETRY_BACKOFF_SECONDS * attempt)
+
 
 class Helpers:
     def __init__(self, page: Page):

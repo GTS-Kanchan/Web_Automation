@@ -35,6 +35,7 @@ from utils.auth_state import (
 )
 from utils.config import Config
 from utils.error_monitor import check_page_for_errors, ERROR_SCREENSHOT_DIR
+from utils.helpers import goto_with_retry
 from utils.parallel import worker_id, worker_scoped_dir
 from pages.common.login_page import LoginPage
 
@@ -190,7 +191,12 @@ def _open_authenticated_context(browser, storage_state_path):
             accept_downloads=True,
         )
         pg = ctx.new_page()
-        pg.goto(Config.BASE_URL)
+        # goto_with_retry (utils/helpers.py): a real PLAYWRIGHT_WORKERS=20
+        # run showed this exact goto() time out under load (Playwright's
+        # plain default here has no retry) even though the same URL loaded
+        # fine for every other worker in the same run -- see that module's
+        # comment for why only a Playwright TimeoutError gets retried.
+        goto_with_retry(pg, Config.BASE_URL)
         return ctx, pg
 
     observed_mtime = state_mtime()
@@ -287,7 +293,9 @@ def _apply_storage_state_to_page(page, storage_state_path):
                 "([k, v]) => window.localStorage.setItem(k, v)",
                 [item["name"], item["value"]],
             )
-    page.goto(Config.BASE_URL)
+    # goto_with_retry: see the comment in _open_authenticated_context above
+    # -- same load-sensitive goto(), same treatment.
+    goto_with_retry(page, Config.BASE_URL)
 
 
 def _recover_if_logged_out(page):

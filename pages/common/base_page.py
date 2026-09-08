@@ -1,6 +1,6 @@
 from playwright.sync_api import Page
 
-from utils.helpers import Helpers
+from utils.helpers import Helpers, goto_with_retry
 from utils.config import Config
 
 
@@ -10,7 +10,13 @@ class BasePage:
         self.h = Helpers(page)
 
     def open(self, path=""):
-        self.page.goto(f"{Config.BASE_URL}{path}", timeout=60000, wait_until="domcontentloaded")
+        # goto_with_retry (utils/helpers.py): generous, configurable timeout
+        # + one bounded retry on a Playwright navigation TimeoutError only —
+        # a real run at PLAYWRIGHT_WORKERS=20 showed this exact goto() time
+        # out once under load even at the old flat 60000ms with no retry.
+        goto_with_retry(
+            self.page, f"{Config.BASE_URL}{path}", wait_until="domcontentloaded"
+        )
 
     def get_title(self):
         return self.page.title()
