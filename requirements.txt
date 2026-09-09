@@ -4,6 +4,7 @@ pytest-playwright==0.5.2
 pytest-html==4.1.1
 pytest-metadata==3.1.1
 pytest-xdist==3.5.0
+pytest-rerunfailures==16.6.1  # scripts/run_tests.py auto-adds --reruns (default 1; PYTEST_RERUNS overrides) — requires pytest!=8.2.2,>=8.2, satisfied by pytest==8.2.0 above
 python-dotenv==1.0.1
 Faker==24.11.0
 openpyxl==3.1.2

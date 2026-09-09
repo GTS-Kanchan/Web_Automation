@@ -522,17 +522,32 @@ def pytest_runtest_makereport(item, call):
     if report.when == "call" and report.failed:
         if pw_page:
             try:
+                # pytest-rerunfailures re-executes a failed item's "call"
+                # phase in place under the SAME nodeid, so without a
+                # distinguishing marker a retry's screenshot could land on
+                # the same filename as the initial attempt's if both land
+                # in the same wall-clock second (the timestamp below
+                # already makes that rare, but not impossible). The
+                # plugin tracks the current attempt on item.execution_count
+                # (1 = first/only attempt, 2 = first rerun, ...) -- only
+                # tag the filename when that's > 1, so a normal run with
+                # no reruns (the common case, and every run before this
+                # feature existed) keeps the exact same filename format as
+                # before.
+                attempt      = getattr(item, "execution_count", 1)
+                attempt_tag  = f"_retry{attempt - 1}" if attempt > 1 else ""
                 ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 safe     = "".join(c if c.isalnum() or c in "-_" else "_" for c in item.name)
-                path     = os.path.join(SCREENSHOT_DIR, f"{safe}_{ts}.png")
+                path     = os.path.join(SCREENSHOT_DIR, f"{safe}_{ts}{attempt_tag}.png")
                 pw_page.screenshot(path=path)
 
                 with open(path, "rb") as f:
                     b64 = base64.b64encode(f.read()).decode()
 
+                attempt_label = f" (retry {attempt - 1})" if attempt > 1 else ""
                 img_html = (
                     '<div style="margin-top:8px">'
-                    '<b>📸 Screenshot at failure:</b><br>'
+                    f'<b>📸 Screenshot at failure{attempt_label}:</b><br>'
                     f'<img src="data:image/png;base64,{b64}" '
                     'style="max-width:100%;border:1px solid #ccc;'
                     'border-radius:6px;margin-top:6px"/>'
