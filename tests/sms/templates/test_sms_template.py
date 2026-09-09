@@ -232,6 +232,46 @@ CONTENT     = CONTENT_OTP
 _created: list = []   # template names successfully created
 
 
+def _create_scratch_template(template_page, track_for_cleanup=True):
+    """Create a fresh, uniquely-named Transactional template on the spot
+    and return its name.
+
+    Factored out of TestDeleteTemplate.test_confirm_delete_removes_record's
+    original inline fallback (used when `_created` was empty) so
+    TestTemplateSearch.test_search_created_template can reuse the exact
+    same self-sufficient path instead of skipping when it runs without
+    TestCreateTemplate having run first in the same session (e.g. a
+    filtered/subset run, or `-k` selecting only this class) -- per the
+    project's "don't hide failures behind a skip when the test can just
+    create its own precondition" rule.
+
+    track_for_cleanup=True appends the new name to `_created` so
+    TestDeleteTemplate (Part 9, last in this file) sweeps it up along with
+    the other create-phase templates instead of leaving it as an orphaned
+    row -- this file already relies on `_created` as its one shared
+    creation/cleanup ledger, so this reuses that existing mechanism rather
+    than inventing a second one.
+    """
+    name = _rand_name()
+    _to_list(template_page)
+    template_page.click_create_template()
+    template_page.fill_template_name(name)
+    try:
+        template_page.select_sender_id(SENDER_IDS[0])
+    except Exception:
+        pass
+    try:
+        template_page.select_type("Transactional")
+    except Exception:
+        pass
+    template_page.fill_content(CONTENT_TRANS)
+    template_page.click_save()
+    template_page.page.wait_for_timeout(1500)
+    if track_for_cleanup:
+        _created.append(name)
+    return name
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 1 — Static validation (no browser)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -455,13 +495,18 @@ class TestTemplateSearch:
 
     @pytest.mark.regression
     def test_search_created_template(self, template_page):
-        if not _created:
-            pytest.skip("No templates created")
+        # Independent of TestCreateTemplate having run first in this
+        # session: if nothing is in `_created` yet (a filtered/subset run,
+        # `-k` targeting only this class, or run order was disturbed),
+        # create our own scratch template instead of skipping -- see
+        # _create_scratch_template()'s docstring. Otherwise, reuse the
+        # most recently created one without popping it, same as before.
+        name = _created[0] if _created else _create_scratch_template(template_page)
         _to_list(template_page)
-        template_page.search(_created[0])
+        template_page.search(name)
         template_page.page.wait_for_timeout(2000)
         assert template_page.get_row_count() > 0 or not template_page.has_no_records_message(), \
-            f"Search for '{_created[0]}' should return results"
+            f"Search for '{name}' should return results"
         template_page.clear_search()
 
     @pytest.mark.regression
@@ -799,21 +844,12 @@ class TestDeleteTemplate:
         if _created:
             name = _created.pop()
         else:
-            name = _rand_name()
-            _to_list(template_page)
-            template_page.click_create_template()
-            template_page.fill_template_name(name)
-            try:
-                template_page.select_sender_id(SENDER_IDS[0])
-            except Exception:
-                pass
-            try:
-                template_page.select_type("Transactional")
-            except Exception:
-                pass
-            template_page.fill_content(CONTENT_TRANS)
-            template_page.click_save()
-            template_page.page.wait_for_timeout(1500)
+            # _create_scratch_template() appends to `_created` by default
+            # (track_for_cleanup=True) -- pop it back off immediately so
+            # this test still owns/deletes it itself here rather than
+            # leaving it for a later class to also try to consume.
+            name = _create_scratch_template(template_page)
+            _created.remove(name)
 
         _to_list(template_page)
         template_page.search(name)

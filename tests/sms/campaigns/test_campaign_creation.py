@@ -420,21 +420,20 @@ def test_TC_C019_full_e2e_copy_paste_send_now(campaign_creation_page):
     page = campaign_creation_page
     name = go_to_create(page, "E2E")
 
-    # Sender ID
-    sender_ok = False
-    try:
-        page.select_sender_id(VALID_SENDER_ID)
-        sender_ok = True
-    except Exception:
-        pass  # skip sender if not found
-
-    # Template
-    template_ok = False
-    try:
-        page.select_template(VALID_TEMPLATE)
-        template_ok = True
-    except Exception:
-        pass
+    # Sender ID and Template are required for the Preview modal to open
+    # (see the assert below) -- previously wrapped in a bare
+    # try/except: pass with the resulting sender_ok/template_ok flags
+    # only ever used in the trailing print(), never asserted on. That
+    # silently let a real selection failure (see _wireui_select's own
+    # "not found in WireUI select" RuntimeError) fall through, and the
+    # test would then fail several steps later on the disconnected
+    # "Preview modal should open" assertion instead of on its actual
+    # root cause -- exactly the symptom reported live (preview failed
+    # to open because sender ID/template were never actually selected).
+    # Every other test in this file already calls these unguarded; this
+    # one now matches.
+    page.select_sender_id(VALID_SENDER_ID)
+    page.select_template(VALID_TEMPLATE)
 
     # Import contacts via paste
     page.click_import_contact()
@@ -453,7 +452,7 @@ def test_TC_C019_full_e2e_copy_paste_send_now(campaign_creation_page):
     assert preview_closed, "Preview modal should close after clicking Close"
 
     safe_back(page)
-    print(f"\n[E2E] name=✓  sender={sender_ok}  template={template_ok}  preview=✓")
+    print(f"\n[E2E] name={name}  sender=✓  template=✓  preview=✓")
 
 
 @pytest.mark.smoke

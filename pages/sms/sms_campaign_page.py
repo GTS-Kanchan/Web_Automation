@@ -889,7 +889,39 @@ class SMSCampaignPage(BasePage):
         ta.wait_for(state="attached", timeout=10000)
         ta.fill(numbers_text)
 
+    def _arm_file_chooser_guard(self):
+        """Safety net against a real native OS "Open" dialog popping up
+        during Import Contacts -> File Upload.
+
+        CONFIRMED live (user report, HEADLESS=false / headed run): clicking
+        the File Upload tab (below) visibly opened a real OS file picker on
+        top of the Campaign Create page, even though the very next line
+        already supplies the file programmatically via set_input_files()
+        (which never needs a chooser and never triggers one itself). Root
+        cause per Playwright's documented behavior: unless a
+        page.on("filechooser", ...) listener is registered *before* the
+        triggering click, any click that ends up activating an
+        <input type="file"> (directly, or via a wrapping label/JS handler
+        we don't control from this page object) surfaces a real,
+        Playwright-uncontrollable native dialog -- the exact same
+        "register the handler before the click, not after" requirement
+        already relied on for the native confirm() dialog in
+        rcs_download_center_page.py's click_delete_icon().
+        Registering an idempotent page-level listener here intercepts any
+        such event at the protocol level so the native dialog never
+        renders; it's a pure safety net -- the real file value still comes
+        from set_input_files() below, this only stops a stray extra
+        chooser from popping up and sitting there unattended."""
+        if getattr(self, "_file_chooser_guard_armed", False):
+            return
+        try:
+            self.page.on("filechooser", lambda fc: fc.set_files([]))
+            self._file_chooser_guard_armed = True
+        except Exception:
+            pass
+
     def upload_contact_file(self, filepath):
+        self._arm_file_chooser_guard()
         # Click File Upload tab
         try:
             tab = self.page.locator(self.FILE_UPLOAD_TAB).first
@@ -1055,6 +1087,7 @@ class SMSCampaignPage(BasePage):
 
     def import_contacts_from_csv(self, filepath, keep_duplicates=False):
         """Full import flow: open modal → File Upload tab → upload → Continue → success."""
+        self._arm_file_chooser_guard()
         self.click_import_contact()
         self.page.locator(self.FILE_INPUT).first.wait_for(state="attached", timeout=10000)
 
