@@ -73,6 +73,7 @@ def _read_names_from_xlsx(path: str) -> list:
         rows = ws.iter_rows(values_only=True)
         header = next(rows, None)
         if not header:
+            wb.close()
             return []
         header_lower = [str(h).strip().lower() if h is not None else "" for h in header]
         name_idx = None
@@ -82,11 +83,13 @@ def _read_names_from_xlsx(path: str) -> list:
                 break
         if name_idx is None:
             print(f"[UploadTest] No 'template_name' column found in header: {header}")
+            wb.close()
             return []
         names = []
         for row in rows:
             if len(row) > name_idx and row[name_idx] and str(row[name_idx]).strip():
                 names.append(str(row[name_idx]).strip())
+        wb.close()
         return names
     except Exception as exc:
         print(f"[UploadTest] Could not read xlsx names: {exc}")
@@ -646,10 +649,13 @@ class TestUploadTemplate:
             _to_list(template_page)
             new_missing = []
             for name in missing:
-                if template_page.is_template_present_in_list(name, refresh=False):
+                template_page.search(name)
+                if template_page.is_element_present(f"xpath=//td[normalize-space()='{name}']", timeout=2000) or \
+                   template_page.is_element_present(f"xpath=//td[contains(normalize-space(),'{name}')]", timeout=2000):
                     _created.append(name)
                 else:
                     new_missing.append(name)
+                template_page.clear_search()
             missing = new_missing
             if not missing:
                 break
