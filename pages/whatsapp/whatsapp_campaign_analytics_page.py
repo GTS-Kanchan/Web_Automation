@@ -255,8 +255,16 @@ class WhatsappCampaignAnalyticsPage(BasePage):
         return True
 
     def get_date_range_value(self):
+        # get_attribute("value") reads the static HTML attribute, but this
+        # field is a flatpickr input (confirmed real DOM on the sibling
+        # Usage Analytics page: class "...flatpickr-input active", readonly,
+        # no value="..." attribute present at all even though the picker
+        # visibly shows a default range) -- flatpickr sets the displayed
+        # text via the DOM .value PROPERTY (input.value = ...), which never
+        # touches the HTML attribute, so get_attribute("value") always
+        # returned None here. input_value() reads the live property instead.
         el = self.h.wait_for_element_visible(self.DATE_RANGE_PICKER)
-        return el.get_attribute("value")
+        return el.input_value()
 
     def open_columns_dropdown(self):
         if self._is_visible(self.COLUMN_CHECKBOXES, timeout=1000):
@@ -298,7 +306,15 @@ class WhatsappCampaignAnalyticsPage(BasePage):
         return el.inner_text().strip()
 
     def click_next_page(self):
-        self._js_click(self.NEXT_PAGE_BTN, timeout=10000)
+        # _js_click_first_visible, not _js_click: real pytest runs showed
+        # this timing out with "Locator.scroll_into_view_if_needed ...
+        # element is not visible" even though a live manual DOM check shows
+        # a working, unhidden Next button -- the exact signature
+        # Helpers.js_click_first_visible's docstring documents for a page
+        # rendering more than one DOM match for the same selector (e.g. a
+        # hidden desktop/mobile duplicate), where plain _js_click's `.first`
+        # can silently lock onto the permanently-hidden copy.
+        self._js_click_first_visible(self.NEXT_PAGE_BTN, timeout=10000)
         self.page.wait_for_timeout(1500)
 
     def get_page_load_time_ms(self):

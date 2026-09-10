@@ -44,7 +44,18 @@ class WhatsAppOptOutPage(BasePage):
     SORT_SENDER_BTN = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('sender_id')\")]"
     SORT_OPTED_OUT_AT_BTN = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('opted_out_at')\")]"
     CLEAR_SORT_BTN = "xpath=//button[contains(@*[name()='wire:click'],'clearSort')]"
-    CLEAR_ALL_SORTS_BTN = "xpath=//button[contains(@*[name()='wire:click'],'clearSorts')]"
+    # wire:click.prevent, not wire:click -- confirmed via real DOM after a
+    # live test_TC008_clear_applied_sorting timeout: <button
+    # wire:click.prevent="clearSorts">...Clear...</button>. Same bug, same
+    # fix as whatsapp_template_page.py's CLEAR_ALL_SORTS_BTN: XPath's
+    # name()='wire:click' only matches an attribute named exactly that
+    # string, not 'wire:click.prevent', so the old locator could never
+    # match this button. (This is NOT the same situation as RCS's
+    # rcs_optout_page.py, whose own clear_all_sorts() comment says that
+    # page has no clearSorts button at all -- WhatsApp's opt-out page does
+    # have one, confirmed here, it was just unreachable via the wrong
+    # attribute name.)
+    CLEAR_ALL_SORTS_BTN = "xpath=//button[contains(@*[name()='wire:click.prevent'],'clearSorts')]"
     APPLIED_SORT_PILL = f"xpath=//span[contains(@*[name()='wire:key'],'{TABLE_NAME}-sorting-pill-')]"
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
@@ -296,12 +307,19 @@ class WhatsAppOptOutPage(BasePage):
         self.page.wait_for_timeout(1500)
 
     def get_filter_values(self):
+        # input_value(), not get_attribute("value") -- set_sender_filter()
+        # and the opted-out-from/to date setters all assign via
+        # elm.value = ... (a live DOM PROPERTY), which never touches the
+        # static HTML value attribute. Same proven fix already used on the
+        # WhatsApp Incoming Messages page and the RCS Opt-out page's own
+        # get_filter_values() (this page's WhatsApp counterpart was the
+        # one still using the broken get_attribute("value") form).
         self.open_filters_panel()
         sender_el = self.h.wait_for_element_visible(self.FILTER_SENDER)
         from_el = self.h.wait_for_element_visible(self.FILTER_OPTED_OUT_FROM)
         to_el = self.h.wait_for_element_visible(self.FILTER_OPTED_OUT_TO)
-        return (sender_el.get_attribute("value"), from_el.get_attribute("value"),
-                to_el.get_attribute("value"))
+        return (sender_el.input_value(), from_el.input_value(),
+                to_el.input_value())
 
     def clear_all_filters(self):
         """No dedicated 'Clear Filters' button was confirmed in the supplied

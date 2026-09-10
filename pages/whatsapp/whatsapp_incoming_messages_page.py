@@ -663,6 +663,19 @@ class WhatsappIncomingMessagesPage(BasePage):
             return ""
 
     def is_previous_page_disabled(self):
+        # UNCONFIRMED / likely wrong -- PREV_PAGE_DISABLED assumes Laravel's
+        # default pagination markup (a disabled "<< Previous" <span>), but a
+        # real live check of this page's pagination showed only numbered
+        # gotoPage(N, ...) buttons (aria-label="Go to page N") -- no
+        # Previous/Next-labeled control anywhere. This was never confirmed
+        # from a real DOM capture in the first place (see this class's own
+        # docstring point 11: "no ENABLED Previous wire:click method name
+        # was ever captured"), so PREV_PAGE_DISABLED was built by pattern
+        # convention, not evidence. Left in place rather than deleted so a
+        # future capture of the real "on page 1" marker (if one exists) has
+        # somewhere to go -- do not trust this method's return value until
+        # that happens. See test_bonus_pagination_previous_disabled_on_first_page
+        # in the paired test file, which now skips instead of asserting on it.
         return self.is_element_present(self.PREV_PAGE_DISABLED, timeout=3000)
 
     def click_next_page(self):

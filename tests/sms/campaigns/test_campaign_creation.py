@@ -72,8 +72,20 @@ def future_dt(hours=2):
 
 @pytest.fixture(scope="module")
 def campaign_creation_page(module_logged_in_page):
-    """One browser session for all campaign creation tests."""
-    generate_all()
+    """One browser session for all campaign creation tests.
+
+    generate_all(include_large=False): this file's own data_file() calls
+    (see below) only ever open valid_contacts.csv, invalid_format.pdf and
+    valid_contacts.xlsx -- never large_file.xlsx/large_template.xlsx, the
+    two ~80,000/~150,000-row files generate_all() also produces. Those two
+    were real, unexplained wall-clock cost (openpyxl writing ~230,000 rows
+    to disk) landing right here, between module_logged_in_page putting the
+    browser on the post-login dashboard and open_campaign_list() below
+    navigating off it -- i.e. exactly the ~20s "sitting on the dashboard
+    doing nothing" pause reported from a real run. See generate_all()'s own
+    docstring in utils/test_data_generator.py for the full rationale and
+    confirmation that neither large file is read anywhere in this project."""
+    generate_all(include_large=False)
     camp = SMSCampaignPage(module_logged_in_page)
     camp.open_campaign_list()
     return camp
@@ -443,16 +455,25 @@ def test_TC_C019_full_e2e_copy_paste_send_now(campaign_creation_page):
     # Schedule
     page.select_send_now()
 
-    # Preview — open, confirm it's visible, then close
+    # Preview — open, confirm it's visible, then launch
     page.click_preview()
     preview_opened = page.is_preview_open()
     assert preview_opened, "Preview modal should open after filling all required fields"
-    page.click_close_preview()
-    preview_closed = not page.is_preview_open()
-    assert preview_closed, "Preview modal should close after clicking Close"
+    
+    page.page.wait_for_timeout(2000)
+    page.click_launch_campaign()
+    page.page.wait_for_timeout(1000)
+    
+    try:
+        page.confirm_sweetalert()
+    except Exception:
+        pass
+        
+    page.page.wait_for_timeout(2000)
+    success = page.is_success_toast_shown() or page.is_campaign_list_page()
+    assert success, "Launching campaign should succeed and redirect to list"
 
-    safe_back(page)
-    print(f"\n[E2E] name={name}  sender=✓  template=✓  preview=✓")
+    print(f"\n[E2E] name={name}  sender=✓  template=✓  preview=✓  launched=✓")
 
 
 @pytest.mark.smoke

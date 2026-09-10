@@ -132,6 +132,17 @@ class WhatsappDownloadCenterPage(BasePage):
     DELETE_CANCEL_BTN  = "button.swal2-cancel, .swal2-actions .swal2-cancel"
     SWAL2_CONTAINER    = ".swal2-container, .swal2-popup"
 
+    # THIRD delete-confirmation mechanism, real DOM confirmed via a live
+    # TC13 (cancel) failure: neither a native confirm() dialog nor
+    # SweetAlert2 -- a plain Alpine.js modal whose Cancel button is
+    # `<button type="button" x-on:click="reject">Cancel</button>` (no
+    # swal2-* class anywhere, so DELETE_CANCEL_BTN above can never match
+    # it). cancel_delete()/is_delete_modal_visible() below now also check
+    # this. The matching Confirm/Delete button for THIS same modal has not
+    # been captured yet -- DELETE_CONFIRM_BTN is NOT touched until real DOM
+    # for it is supplied, per this project's no-guessing-locators rule.
+    ALPINE_REJECT_BTN  = "xpath=//button[contains(@*[name()='x-on:click'],'reject')]"
+
     # Summary / View modal (Livewire showSummaryModal -- confirmed property
     # name from this page's own wire:snapshot data)
     POPUP_CONTAINER = (
@@ -867,7 +878,12 @@ class WhatsappDownloadCenterPage(BasePage):
         """
         Dismiss the delete confirmation.
         Tries the native dialog captured by click_delete_icon() first
-        (confirmed mechanism), then SweetAlert2 fallback.
+        (confirmed mechanism), then SweetAlert2, then the confirmed
+        third mechanism (see ALPINE_REJECT_BTN above) -- a real TC13 run
+        showed this method silently no-op'ing (bare except swallowing a
+        5s timeout on DELETE_CANCEL_BTN) whenever the actual modal on
+        screen is this Alpine one, leaving the confirmation open instead
+        of dismissed.
         """
         if getattr(self, "_pending_native_dialog", False):
             try:
@@ -882,6 +898,14 @@ class WhatsappDownloadCenterPage(BasePage):
             btn.wait_for(state="visible", timeout=5000)
             btn.click(force=True)
             self.page.wait_for_timeout(500)
+            return
+        except Exception:
+            pass
+        try:
+            btn = self.page.locator(self.ALPINE_REJECT_BTN).first
+            btn.wait_for(state="visible", timeout=5000)
+            btn.click(force=True)
+            self.page.wait_for_timeout(500)
         except Exception:
             pass
 
@@ -889,7 +913,8 @@ class WhatsappDownloadCenterPage(BasePage):
         """
         Return True if a delete confirmation is open.
         Checks the pending-native-dialog flag set by click_delete_icon()
-        first (confirmed mechanism), then SweetAlert2.
+        first (confirmed mechanism), then SweetAlert2, then the confirmed
+        third (Alpine) mechanism -- see ALPINE_REJECT_BTN above.
         """
         if getattr(self, "_pending_native_dialog", False):
             return True
@@ -898,6 +923,11 @@ class WhatsappDownloadCenterPage(BasePage):
             for i in range(els.count()):
                 if els.nth(i).is_visible():
                     return True
+        except Exception:
+            pass
+        try:
+            if self.page.locator(self.ALPINE_REJECT_BTN).first.is_visible():
+                return True
         except Exception:
             pass
         return False

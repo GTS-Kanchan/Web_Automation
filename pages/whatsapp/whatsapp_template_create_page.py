@@ -30,12 +30,15 @@ capture proving otherwise):
     (TC020/TC021) claims the live app only accepts lowercase letters,
     digits and underscore, and enforces a 3-512 character range. The
     upper bound (512) is directly confirmed via the maxlength attribute.
-    The lowercase/digit/underscore restriction and the 3-character lower
-    bound are SERVER-side behaviors (wire:model.live.debounce, not a
-    client regex/pattern attribute) that are not visible in a static
-    capture -- they are exercised at runtime in the test suite by typing
-    disallowed input and reading back the live post-debounce value,
-    rather than assumed from the checklist prose alone.
+    The lowercase/digit/underscore restriction is a SERVER-side behavior
+    (wire:model.live.debounce, not a client regex/pattern attribute) --
+    CONFIRMED via a real run: typing disallowed characters does NOT
+    transform/strip the live value (it stays exactly as typed), and
+    instead the app renders a real WireUI validation error label
+    (`<label class="text-sm text-negative-600 mt-2" for="name">The name
+    field format is invalid.</label>` -- same "negative-600" convention as
+    FORM_VALIDATION_ERROR below). TC020 asserts on that error message, not
+    on value normalization.
  5. Category: exactly 4 real, confirmed <input type="radio"
     name="category"> values -- id="marketing" value="MARKETING",
     id="utility" value="UTILITY", id="authentication"
@@ -557,6 +560,14 @@ class WhatsAppTemplateCreatePage(BasePage):
 
     # Template Name
     NAME_INPUT = "#name"
+    # CONFIRMED cross-file evidence: reused verbatim from
+    # pages/common/contacts_page.py's FORM_VALIDATION_ERROR (same WireUI
+    # "negative-600" convention used identically across this whole app,
+    # and already reused once before in whatsapp_campaign_create_page.py).
+    # Now directly confirmed on THIS page too, via a real rendered label
+    # after typing an invalid name: <label class="text-sm text-negative-600
+    # mt-2" for="name">The name field format is invalid.</label>.
+    FORM_VALIDATION_ERROR = "label.text-negative-600, .text-negative-600"
 
     # Category (plain radio group)
     CATEGORY_MARKETING_RADIO = "#marketing"
@@ -704,6 +715,20 @@ class WhatsAppTemplateCreatePage(BasePage):
         ).first
 
     def _open_select(self, wrapper_selector):
+        # The trigger click TOGGLES the popover (x-show="positionable.state")
+        # rather than just opening it -- confirmed by a real run of
+        # test_language_searchable_and_selectable: search_language() opens
+        # the popover and leaves it open, then select_language() (which
+        # also calls _open_select) clicked the trigger a SECOND time and
+        # closed it again, so the subsequent popover.wait_for(state=
+        # "visible") timed out on a popover that had just been toggled
+        # hidden. Make this idempotent -- only click if not already open --
+        # so callers can freely chain search_language()/select_language()
+        # (or any other combination) without tracking open/closed state
+        # themselves.
+        popover = self.page.locator(wrapper_selector).locator("[x-ref='optionsContainer']").first
+        if popover.is_visible():
+            return
         self._select_container(wrapper_selector).click()
         self.page.wait_for_timeout(300)
 
@@ -737,6 +762,17 @@ class WhatsAppTemplateCreatePage(BasePage):
         item = popover.get_by_role("listitem").filter(has_text=option_text).first
         item.wait_for(state="visible", timeout=5000)
         item.click()
+        # Selecting an option fires a Livewire wire:model.live update, which
+        # can re-render/replace nearby DOM (e.g. a newly-revealed dependent
+        # select) shortly after this click returns. Confirmed by a real run
+        # selecting sub_category="Catalog" then immediately trying to open
+        # the newly-revealed Catalog Type select: its container kept
+        # getting "detached from the DOM, retrying" until Playwright's
+        # click() gave up after 30s. Every other live-model-triggering
+        # interaction in this file (set_name, select_category, etc.)
+        # already settles with a short wait after firing -- this was the
+        # one missing it.
+        self.page.wait_for_timeout(400)
 
     def _search_in_select(self, wrapper_selector, text):
         self._open_select(wrapper_selector)
@@ -744,9 +780,26 @@ class WhatsAppTemplateCreatePage(BasePage):
         search_input.fill(text)
 
     def _get_selected_display_text(self, wrapper_selector):
-        return self.page.locator(wrapper_selector).locator(
-            "button span"
-        ).first.inner_text().strip()
+        # Alpine's client-side hydration of a WireUI select's server-set
+        # initial value (e.g. Language's Livewire snapshot state
+        # "language":"en" -> displayed "English", see module docstring
+        # point 6) can still be in flight when navigate()'s
+        # wait_for_load_state("domcontentloaded") returns -- confirmed by a
+        # real run where test_language_defaults_to_english, the first test
+        # in the file to read any WireUI select right after navigate(),
+        # read back the raw un-hydrated placeholder ("Select Language")
+        # instead of the confirmed default. Poll briefly and return once
+        # two consecutive reads agree, rather than trusting a single
+        # immediate read.
+        locator = self.page.locator(wrapper_selector).locator("button span").first
+        previous = None
+        for _ in range(6):
+            current = locator.inner_text().strip()
+            if current == previous:
+                return current
+            previous = current
+            self.page.wait_for_timeout(300)
+        return previous
 
     # ══════════════════════════════════════════════════════════════════
     # Sender ID
@@ -791,6 +844,15 @@ class WhatsAppTemplateCreatePage(BasePage):
 
     def get_name_maxlength(self):
         return self.page.locator(self.NAME_INPUT).get_attribute("maxlength")
+
+    def get_validation_errors(self):
+        try:
+            return [
+                t for t in self.page.locator(self.FORM_VALIDATION_ERROR).all_inner_texts()
+                if t.strip()
+            ]
+        except Exception:
+            return []
 
     # ══════════════════════════════════════════════════════════════════
     # Category

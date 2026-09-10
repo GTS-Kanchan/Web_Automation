@@ -390,19 +390,30 @@ def test_TC019_sender_id_search_invalid_keyword(create_page):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_TC020_template_name_character_restriction(create_page):
+    """The checklist's "only lowercase/digit/underscore" claim was
+    originally tested by asserting the LIVE VALUE got auto-normalized --
+    but a real run showed the field keeps the raw typed value unchanged
+    ('Invalid Name! With SPACE and CAPS#123') and instead renders a real
+    WireUI validation error label: <label class="text-sm text-negative-600
+    mt-2" for="name">The name field format is invalid.</label> (same
+    "negative-600" convention as FORM_VALIDATION_ERROR, now confirmed on
+    this field too). So this restriction is enforced via server-side
+    validation feedback, not client-side input transformation -- asserting
+    on the error message is what the real app actually does."""
     ensure_on_create_page(create_page)
 
     create_page.set_name("Invalid Name! With SPACE and CAPS#123")
     current_value = create_page.get_name_value()
 
-    assert current_value == current_value.lower(), (
-        f"Expected the Template Name field to reject/normalize uppercase "
-        f"characters, but the live value is {current_value!r}"
+    assert current_value == "Invalid Name! With SPACE and CAPS#123", (
+        f"Expected the Template Name field to keep the raw typed value "
+        f"(this app validates rather than silently transforms input), but "
+        f"got {current_value!r}"
     )
-    assert not any(c.isspace() or (not c.isalnum() and c != "_") for c in current_value), (
-        f"Expected the Template Name field to only retain lowercase "
-        f"letters, digits and underscore, but the live value is "
-        f"{current_value!r}"
+    errors = create_page.get_validation_errors()
+    assert any("name" in e.lower() and "invalid" in e.lower() for e in errors), (
+        f"Expected a 'name field format is invalid' validation message "
+        f"after typing disallowed characters, but got: {errors!r}"
     )
 
 

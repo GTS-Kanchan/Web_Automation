@@ -343,9 +343,26 @@ def gen_invalid_template_format():
 # Master generator
 # ══════════════════════════════════════════════════════════════════════════════
 
-def generate_all():
+def generate_all(include_large=True):
     """
     Generate every test data file.
+
+    `include_large` (default True, preserving every existing caller's
+    behavior unchanged): when False, skips gen_large_file_xlsx() (~80,000
+    rows / >5MB) and gen_large_template_xlsx() (~150,000 rows / >10MB).
+    Confirmed via a repo-wide search that large_file.xlsx/large_template.xlsx
+    are not referenced by filename anywhere in this project's tests --
+    these two generators write files nothing currently reads. They were
+    still the majority of this function's wall-clock cost (writing ~230,000
+    openpyxl rows, real disk I/O the OS/AV can stall on) -- e.g.
+    tests/sms/campaigns/test_campaign_creation.py's `campaign_creation_page`
+    fixture calls generate_all() (for valid_contacts.csv/invalid_format.pdf
+    only -- see that file's data_file() call sites) BEFORE navigating off
+    the post-login dashboard, so that cost showed up as an unexplained
+    ~20s pause sitting on the dashboard before the first real navigation.
+    Pass include_large=False from a caller that doesn't need those two
+    files rather than editing this function's default, so every other
+    caller keeps generating them exactly as before.
     Uses static, hard-coded test data -- EXCEPT sender_id_sample.csv, whose
     Sender_ID column is randomized on every call and which is written to a
     worker-scoped subdirectory rather than DATA_DIR itself (see
@@ -469,7 +486,8 @@ def generate_all():
     # column is randomized on every call instead.
     gen_sender_id_sample_csv()
     gen_invalid_format_pdf()
-    gen_large_file_xlsx()
+    if include_large:
+        gen_large_file_xlsx()
     gen_duplicate_sender_ids_csv(sid["duplicates"])
     gen_invalid_length_sender_ids_csv(sid["invalid_length"])
     gen_special_chars_sender_ids_csv(sid["invalid_chars"])
@@ -484,7 +502,8 @@ def generate_all():
     # Write Template files
     all_templates = tmpl.get("valid", []) + tmpl.get("no_vars", [])
     gen_valid_template_xlsx(all_templates)
-    gen_large_template_xlsx()
+    if include_large:
+        gen_large_template_xlsx()
     gen_invalid_template_format()
 
     print(f"\n[TestData] All files generated in: {DATA_DIR}")

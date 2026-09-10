@@ -267,7 +267,15 @@ def _create_scratch_template(template_page, track_for_cleanup=True):
         template_page.select_type("Transactional")
     except Exception:
         pass
+    try:
+        template_page.fill_dlt_id(DLT_ID)
+    except Exception:
+        pass
     template_page.fill_content(CONTENT_TRANS)
+    try:
+        template_page.fill_sample(SAMPLE_TRANS)
+    except Exception:
+        pass
     template_page.click_save()
     template_page.page.wait_for_timeout(1500)
     if track_for_cleanup:

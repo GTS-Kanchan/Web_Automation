@@ -249,6 +249,20 @@ class WhatsAppCampaignCreatePage(BasePage):
         ).first
 
     def _open_select(self, wrapper_selector):
+        # The trigger click TOGGLES the popover (x-show="positionable.state")
+        # rather than just opening it -- confirmed on the sibling Template
+        # Create page (identical WireUI select plumbing, same
+        # _open_select/_select_container pattern) by a real run where
+        # calling _open_select twice in a row (once via a search helper,
+        # once via a select-by-text helper) closed a popover that was
+        # already open, leaving a subsequent wait_for(state="visible") to
+        # time out on a popover that had just been toggled hidden. Make
+        # this idempotent -- only click if not already open -- so callers
+        # can freely chain search/select helpers without tracking
+        # open/closed state themselves.
+        popover = self.page.locator(wrapper_selector).locator("[x-ref='optionsContainer']").first
+        if popover.is_visible():
+            return
         self._select_container(wrapper_selector).click()
         self.page.wait_for_timeout(300)
 
@@ -282,6 +296,15 @@ class WhatsAppCampaignCreatePage(BasePage):
         item = popover.get_by_role("listitem").filter(has_text=option_text).first
         item.wait_for(state="visible", timeout=5000)
         item.click()
+        # Selecting an option fires a Livewire wire:model.live update, which
+        # can re-render/replace nearby DOM (e.g. a newly-revealed dependent
+        # select, such as Template becoming enabled after Sender ID is
+        # chosen) shortly after this click returns. Confirmed on the
+        # sibling Template Create page by a real run where a dependent
+        # select's container kept getting "detached from the DOM,
+        # retrying" until Playwright's click() gave up after 30s. Same
+        # settle-wait fix applied here defensively.
+        self.page.wait_for_timeout(400)
 
     def _search_in_select(self, wrapper_selector, text):
         self._open_select(wrapper_selector)
@@ -402,7 +425,18 @@ class WhatsAppCampaignCreatePage(BasePage):
         self._select_option_by_text(self.MODAL_CT_CONTACTS_WRAPPER, option_text)
 
     def click_modal_cancel(self):
+        # Mirror click_import_contacts() above: don't return until the
+        # close has actually finished. Confirmed root cause of a real
+        # cluster of "<div class='absolute inset-0 bg-gray-500 opacity-75'>
+        # ... subtree intercepts pointer events" failures on
+        # click_import_contacts()/click_test_campaign() in the very next
+        # test (TC055-TC058): this method used to click Cancel and return
+        # immediately, while the livewire-ui-modal's own close transition
+        # (and its backdrop) was still fading out -- the next test's plain
+        # .click() on a background button then landed on that still-present
+        # backdrop instead of the real button underneath it.
         self.page.locator(self.MODAL_CANCEL_BTN).click()
+        self.page.locator(self.MODAL_CONTAINER).wait_for(state="hidden", timeout=10000)
 
     def click_modal_continue(self):
         self.page.locator(self.MODAL_CONTINUE_BTN).click()

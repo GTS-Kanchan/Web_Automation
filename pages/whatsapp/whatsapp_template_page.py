@@ -255,7 +255,18 @@ class WhatsAppTemplatePage(BasePage):
         "quality": "quality",
         "created_at": "created_at",
     }
-    CLEAR_ALL_SORTS_BTN = "xpath=//button[contains(@*[name()='wire:click'],'clearSorts')]"
+    # wire:click.prevent, not wire:click -- see module docstring point 6
+    # above (this file's own confirmed DOM: 'button (wire:click.prevent=
+    # "clearSorts")'), and the identical, correctly-written locator on the
+    # two sibling pages with this same pattern: whatsapp_campaign_page.py's
+    # and whatsapp_campaign_report_page.py's CLEAR_ALL_SORTS_BTN both use
+    # name()='wire:click.prevent'. XPath's name()='wire:click' only matches
+    # an attribute named EXACTLY that string -- it does not match
+    # 'wire:click.prevent', a different attribute name -- so this locator
+    # could never match anything, confirmed by a real run timing out with
+    # zero matches in clear_all_sorts() after a sort pill was already
+    # confirmed present (test_TC013_sorting_created_at_column).
+    CLEAR_ALL_SORTS_BTN = "xpath=//button[contains(@*[name()='wire:click.prevent'],'clearSorts')]"
 
     # ── Delete confirmation dialog (WireUI confirmAction -> SweetAlert2) ────
     # SAME generic locators already confirmed on whatsapp_optout_page.py.
@@ -390,11 +401,20 @@ class WhatsAppTemplatePage(BasePage):
         self.page.wait_for_timeout(1500)
 
     def get_filter_values(self):
+        # input_value(), not get_attribute("value") -- these fields are set
+        # via _dispatch_input()'s elm.value = ... (a live DOM PROPERTY
+        # assignment), which never touches the static HTML value attribute.
+        # Same bug class confirmed broken (and fixed) on the WhatsApp
+        # Message/Campaign Report pages' get_filter_date_values() and the
+        # WhatsApp Opt-out page's get_filter_values() -- this was almost
+        # certainly why an earlier get_filter_values() call for
+        # test_TC005_invalid_date_filter never returned a usable
+        # created_from/created_to reading.
         self.open_filters_panel()
-        dept = self.h.wait_for_element_visible(self.FILTER_DEPARTMENT).get_attribute("value")
-        user = self.h.wait_for_element_visible(self.FILTER_USER).get_attribute("value")
-        from_v = self.h.wait_for_element_visible(self.FILTER_CREATED_FROM).get_attribute("value")
-        to_v = self.h.wait_for_element_visible(self.FILTER_CREATED_TO).get_attribute("value")
+        dept = self.h.wait_for_element_visible(self.FILTER_DEPARTMENT).input_value()
+        user = self.h.wait_for_element_visible(self.FILTER_USER).input_value()
+        from_v = self.h.wait_for_element_visible(self.FILTER_CREATED_FROM).input_value()
+        to_v = self.h.wait_for_element_visible(self.FILTER_CREATED_TO).input_value()
         return {"department": dept, "user": user, "created_from": from_v, "created_to": to_v}
 
     def clear_all_filters(self):

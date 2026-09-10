@@ -290,8 +290,16 @@ class WhatsappStatusAnalyticsPage(BasePage):
         return True
 
     def get_date_range_value(self):
+        # get_attribute("value") reads the static HTML attribute, but this
+        # field is a flatpickr input (confirmed real DOM: class
+        # "...flatpickr-input active", readonly, no value="..." attribute
+        # present at all even though the picker visibly shows a default
+        # range) -- flatpickr sets the displayed text via the DOM .value
+        # PROPERTY (input.value = ...), which never touches the HTML
+        # attribute, so get_attribute("value") always returned None here.
+        # input_value() reads the live property instead.
         el = self.h.wait_for_element_visible(self.DATE_RANGE_PICKER)
-        return el.get_attribute("value")
+        return el.input_value()
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
 
@@ -346,7 +354,13 @@ class WhatsappStatusAnalyticsPage(BasePage):
         return el.inner_text().strip()
 
     def click_next_page(self):
-        self._js_click(self.NEXT_PAGE_BTN, timeout=10000)
+        # _js_click_first_visible, not _js_click -- see the identical fix
+        # (and full rationale) in whatsapp_campaign_analytics_page.py's
+        # click_next_page(): a real run showed this exact call timing out
+        # with "element is not visible" despite a confirmed working Next
+        # button, the signature of _js_click's `.first` locking onto a
+        # hidden duplicate DOM match.
+        self._js_click_first_visible(self.NEXT_PAGE_BTN, timeout=10000)
         self.page.wait_for_timeout(1500)
 
     # ── Performance ──────────────────────────────────────────────────────────

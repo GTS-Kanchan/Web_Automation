@@ -366,10 +366,18 @@ class WhatsAppMessageReportPage(BasePage):
         self.set_created_to_filter(to_date, to_time)
 
     def get_filter_date_values(self):
+        # input_value(), not get_attribute("value") -- these fields are set
+        # via _set_input_value()'s elm.value = ... (a live DOM PROPERTY
+        # assignment), which never touches the static HTML value attribute.
+        # Confirmed by a real run of test_TC004_date_filter_valid_range:
+        # get_attribute("value") returned None right after
+        # set_date_range_filter() set a real date. Same proven fix already
+        # used on the WhatsApp Incoming Messages page and the RCS Opt-out
+        # page's get_filter_values().
         self.open_filters_panel()
         from_el = self._date_input_in_wrapper(self.FILTER_CREATED_FROM_WRAPPER)
         to_el = self._date_input_in_wrapper(self.FILTER_CREATED_TO_WRAPPER)
-        return from_el.get_attribute("value"), to_el.get_attribute("value")
+        return from_el.input_value(), to_el.input_value()
 
     def clear_all_filters(self):
         if self.is_element_present(self.CLEAR_ALL_FILTERS_BTN, timeout=3000):
