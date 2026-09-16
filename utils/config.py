@@ -163,6 +163,21 @@ class Config:
     # Valid segmentation custom-field names that exist on this instance (comma-separated)
     SEGMENT_FIELDS = [f.strip() for f in os.getenv("SEGMENT_FIELDS", "address,education").split(",") if f.strip()]
 
+    # ── WhatsApp Template test data ──────────────────────────────────────────
+    # Visible label (or a unique substring of it) of the Sender ID used when
+    # creating a WhatsApp template end-to-end -- e.g.
+    # "Globe Teleservices Pte. Ltd.". Matched case-insensitively as a
+    # substring against the real Sender ID options returned by the app (see
+    # WhatsAppTemplateCreatePage.fill_required_base_fields), so a shorter
+    # value like "Globe Teleservices" still matches the fuller real label.
+    # Falls back to the first available Sender ID option (with a printed
+    # warning, never silently) if no option matches -- e.g. a different
+    # environment/account where this sender isn't provisioned. Override in
+    # .env only if the target instance's confirmed WhatsApp Sender ID differs.
+    WHATSAPP_TEMPLATE_SENDER_ID = os.getenv(
+        "WHATSAPP_TEMPLATE_SENDER_ID", "Globe Teleservices Pte. Ltd."
+    )
+
     # ── RCS Campaign test data ────────────────────────────────────────────────
     # Visible name of the RCS Agent used when creating a campaign. Shared
     # across every parallel worker (one account, one agent) -- confirmed

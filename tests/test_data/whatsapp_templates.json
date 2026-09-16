@@ -1,0 +1,226 @@
+{
+  "_schema_note": "Template scenarios for the WhatsApp Template Create E2E suite (tests/whatsapp/templates/test_whatsapp_template_create_flow.py::test_e2e_template_submit). The 'components' list intentionally mirrors Meta's real WhatsApp Business Template API JSON shape (category/language/components[BODY|FOOTER|BUTTONS|CAROUSEL]) -- that shape was provided directly by the project owner as a genuine template payload example, not invented here. Fields that have no equivalent in Meta's schema but are specific to this app's own Create-page UI (catalog_type, content_id, mpm_section_title, lto_expiry_days, product_carousel_button_type, etc.) live under the separate 'gts_fields' object on each entry so the two are never confused. Every entry's 'confirmed' flag and 'notes' field record exactly what real evidence backs it -- per this project's standing rule, nothing here is a guess presented as fact. 'sub_category_selection' ('optional', the default, or 'required') preserves a real distinction from the original hand-written tests: for Custom Message/Order Details/Order Status, selecting the sub_category was always best-effort (select it if the select happens to be present, but never skip the test if it isn't); for every other sub_category the select is load-bearing to reach the fields under test, so the test skips outright if it isn't present. 'sub_category_force_select' (default false) is a separate, narrower flag confirmed necessary only for conversation_cta_url_button by directly watching a --headed run: unlike UTILITY/Custom Message (where clicking an already-selected option DESELECTS it -- a real bug worked around in ensure_sub_category_selected), CONVERSATION/CTA URL Button's single-option dropdown shows the right text by default but apparently never actually commits it to the Livewire model until a real click fires -- the opposite symptom. Setting this true forces the click even when the display text already matches.",
+  "templates": [
+    {
+      "id": "marketing_custom_message",
+      "confirmed": true,
+      "category": "MARKETING",
+      "sub_category": "Custom Message",
+      "sub_category_selection": "optional",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."}
+      ],
+      "gts_fields": {},
+      "notes": "Matches the previous test_e2e_marketing_custom_message_submit -- no sub_category-specific fields confirmed for this sub_category."
+    },
+    {
+      "id": "marketing_carousel_image_1card",
+      "confirmed": true,
+      "category": "MARKETING",
+      "sub_category": "Carousel",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."},
+        {
+          "type": "CAROUSEL",
+          "media_type": "IMAGE",
+          "button_count": "1",
+          "cards": [
+            {
+              "description": "Great deal on this item.",
+              "media_file": "whatsapp_carousel_sample.jpg",
+              "buttons": [
+                {"type": "QUICK_REPLY", "text": "View"}
+              ]
+            }
+          ]
+        }
+      ],
+      "gts_fields": {},
+      "notes": "Matches the previous test_e2e_marketing_carousel_submit -- the only Carousel configuration actually exercised against the live app: single card, Image media type (this repo's only real image test asset), one Quick Reply button. media_file is a filename resolved against tests/test_data/ by the loader."
+    },
+    {
+      "id": "marketing_carousel_video_3card",
+      "confirmed": false,
+      "skip_reason": "Real Meta WhatsApp Business Template API JSON provided directly by the project owner for a 3-card VIDEO carousel (URL + Quick Reply buttons per card). Cannot run yet: this repo has no real video test asset (only whatsapp_carousel_sample.jpg, a JPEG) and the 'header_handle' URLs in the source payload are Meta's own already-uploaded CDN media handles, not files this suite's file-upload flow can use directly. Add a real short video file under tests/test_data/ (and set media_file/media_type=VIDEO support in the loader, currently only IMAGE is wired) before enabling this entry.",
+      "category": "MARKETING",
+      "sub_category": "Carousel",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello this is carousel with video"},
+        {
+          "type": "CAROUSEL",
+          "media_type": "VIDEO",
+          "button_count": "2",
+          "cards": [
+            {
+              "description": "Add media, buttons and card desrciptions for your carousel cards",
+              "media_reference": "https://scontent.whatsapp.net/v/t61.29466-34/714736060_2242465176566325_4253595589632000283_n.jpg (Meta CDN handle -- not a usable local file)",
+              "buttons": [
+                {"type": "URL", "text": "url 1", "url": "https://qa.gtls.in/w/r?u=testqa.gtsstaging.com%2F&b=url+1&v=1&i={{1}}"},
+                {"type": "QUICK_REPLY", "text": "card 1"}
+              ]
+            },
+            {
+              "description": "https://testqa.gtsstaging.com/",
+              "media_reference": "https://scontent.whatsapp.net/v/t61.29466-34/715058183_2362376434247337_7031928978340764623_n.jpg (Meta CDN handle -- not a usable local file)",
+              "buttons": [
+                {"type": "URL", "text": "url 2", "url": "https://qa.gtls.in/w/r?u=testqa.gtsstaging.com%2Fasdfghhgfd&b=url+2&v=2&i={{1}}"},
+                {"type": "QUICK_REPLY", "text": "card 2"}
+              ]
+            },
+            {
+              "description": "https://testqa.gtsstaging.com/https://testqa.gtsstaging.com/https://testqa.gtsstaging.com/https://testqa.gtsstaging.com/",
+              "media_reference": "https://scontent.whatsapp.net/v/t61.29466-34/715500783_1185403603697917_8091197455157989382_n.jpg (Meta CDN handle -- not a usable local file)",
+              "buttons": [
+                {"type": "URL", "text": "url 3", "url": "https://qa.gtls.in/w/r?u=testqa.gtsstaging.com%2F&b=url+3&v=3&i={{1}}"},
+                {"type": "QUICK_REPLY", "text": "card 4"}
+              ]
+            }
+          ]
+        }
+      ],
+      "gts_fields": {},
+      "notes": "Reference-only entry preserving the exact real payload the project owner shared. The loader must skip 'confirmed: false' entries by default (see load_whatsapp_templates(include_unconfirmed=False))."
+    },
+    {
+      "id": "marketing_catalog",
+      "confirmed": true,
+      "category": "MARKETING",
+      "sub_category": "Catalog",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."}
+      ],
+      "gts_fields": {
+        "catalog_type": "Single-Product",
+        "content_id": "e2e_test_sku_001"
+      },
+      "notes": "Matches the previous test_e2e_marketing_catalog_submit. catalog_type/content_id are CPaaS-specific fields with no Meta template-schema equivalent (page object docstring point 28)."
+    },
+    {
+      "id": "marketing_multi_product_message",
+      "confirmed": true,
+      "category": "MARKETING",
+      "sub_category": "Multi-Product Message",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."}
+      ],
+      "gts_fields": {
+        "mpm_section_title": "Popular Bundles",
+        "mpm_product_retailer_id": "e2e_test_sku_001"
+      },
+      "notes": "Matches the previous test_e2e_marketing_multi_product_message_submit -- section 0 / product 0 only."
+    },
+    {
+      "id": "marketing_lto_url_button",
+      "confirmed": true,
+      "category": "MARKETING",
+      "sub_category": "Limited Time Offer",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."},
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {"type": "URL", "text": "Special offer", "url": "https://example.com/offer"}
+          ]
+        }
+      ],
+      "gts_fields": {
+        "lto_expiry_days": 2
+      },
+      "notes": "Matches the previous test_e2e_marketing_lto_submit. Only the URL button type is exercised (Quick Reply/Phone Number/Copy Offer Code/Flow deliberately out of scope, per original instruction). lto_expiry_days only applies once the (uncaptured) enable-expiry checkbox is confirmed present -- guarded, not guessed, by the loader/interpreter."
+    },
+    {
+      "id": "marketing_product_carousel",
+      "confirmed": true,
+      "category": "MARKETING",
+      "sub_category": "Product Card Carousel",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."}
+      ],
+      "gts_fields": {
+        "product_carousel_button_type": "URL Link",
+        "product_carousel_catalog_id": "194836987003835",
+        "product_carousel_content_id": "e2e_test_sku_001",
+        "product_carousel_button_title": "View product",
+        "product_carousel_button_url": "https://example.com/product"
+      },
+      "notes": "Card 0 only. product_carousel_button_title/url added after a real E2E run failed with no post-submit signal -- a genuine DOM capture (page object docstring point 33) showed card 0 has its own real Button Title/Button URL inputs (wire:model.live.debounce.200ms=carousel_products.0.urlbuttonstitle/urlbuttonsvalue) that were never being filled, most likely tripping silent client-side validation."
+    },
+    {
+      "id": "utility_custom_message",
+      "confirmed": true,
+      "category": "UTILITY",
+      "sub_category": "Custom Message",
+      "sub_category_selection": "optional",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."}
+      ],
+      "gts_fields": {},
+      "notes": "Matches the previous test_e2e_utility_custom_message_submit."
+    },
+    {
+      "id": "utility_order_details",
+      "confirmed": true,
+      "category": "UTILITY",
+      "sub_category": "Order Details",
+      "sub_category_selection": "optional",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."}
+      ],
+      "gts_fields": {},
+      "notes": "Matches the previous test_e2e_utility_order_details_submit -- the Order Details button block is entirely fixed/non-editable (page object docstring point 26), nothing further to fill."
+    },
+    {
+      "id": "utility_order_status",
+      "confirmed": true,
+      "category": "UTILITY",
+      "sub_category": "Order Status",
+      "sub_category_selection": "optional",
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."}
+      ],
+      "gts_fields": {},
+      "notes": "Matches the previous test_e2e_utility_order_status_submit -- confirmed to render NO additional per-sub_category fields at all (page object docstring points 30/31: no Header select, no Type-of-Action/Button-Text block, empty typeOptions)."
+    },
+    {
+      "id": "authentication_copy_code",
+      "confirmed": true,
+      "category": "AUTHENTICATION",
+      "sub_category": null,
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."}
+      ],
+      "gts_fields": {},
+      "notes": "Matches the previous test_e2e_authentication_submit. The BODY text above is a documented no-op here -- AUTHENTICATION's message content is fixed/non-editable (page object docstring point 23). Copy Code is the confirmed default OTP type; nothing else to set."
+    },
+    {
+      "id": "conversation_cta_url_button",
+      "confirmed": true,
+      "category": "CONVERSATION",
+      "sub_category": "CTA URL Button",
+      "sub_category_force_select": true,
+      "language": "en",
+      "components": [
+        {"type": "BODY", "text": "Hello, this is an automated end-to-end test message."},
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {"type": "URL", "text": "Visit us", "url": "https://example.com"}
+          ]
+        }
+      ],
+      "gts_fields": {},
+      "notes": "Matches the previous test_e2e_conversation_cta_url_button_submit. The button VALUE field (url_buttons_value.0) is confirmed broken/absent in the live DOM as of the last live run (a real 30s Locator.fill timeout, not a guess) -- the interpreter guards it with a short presence check before attempting to fill it, exactly as the original test did."
+    }
+  ]
+}

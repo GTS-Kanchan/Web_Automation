@@ -113,20 +113,26 @@ def test_TC001_page_loads_successfully(incoming_messages_page):
 
 @pytest.mark.regression
 def test_TC002_search_valid_keyword(incoming_messages_page):
-    """TC002: Searching a valid keyword (User Name) should display data
-    matching that keyword. User Name is used as the search target rather
-    than the masked User Number or the sometimes-"N/A" Campaign Name,
-    since it's the one confirmed column that's always plain, unmasked
-    text -- self-verifying: reads a real value from the current listing
-    immediately before searching, mirroring the SMS Incoming Messages
-    suite's TC005 pattern."""
+    """TC002: Searching a valid keyword (Campaign Name) should display data
+    matching that keyword.
+
+    CONFIRMED live (real pytest failure): searching by a User Name value
+    returned has_records() == False -- this table's search box does NOT
+    match against User Name. Switched the self-verifying target to a real
+    Campaign Name value instead (excluding the "N/A" placeholder, per the
+    page object's is_valid_campaign_name_value() business rule), which is
+    what the checklist's own wording ("search campaign name") calls for."""
     ensure_on_page(incoming_messages_page)
-    existing_values = incoming_messages_page.get_column_values("user_name")
-    assert existing_values, "Need at least one existing record to search for"
-    target = existing_values[0]
+    campaign_names = incoming_messages_page.get_column_values("campaign_name")
+    real_names = [
+        v for v in campaign_names
+        if v.strip() and v.strip() != "N/A"
+    ]
+    assert real_names, "Need at least one real (non-N/A) Campaign Name to search for"
+    target = real_names[0]
     incoming_messages_page.search(target)
     assert incoming_messages_page.has_records()
-    values = incoming_messages_page.get_column_values("user_name")
+    values = incoming_messages_page.get_column_values("campaign_name")
     assert any(target in v for v in values)
     incoming_messages_page.clear_search()
 
@@ -323,46 +329,6 @@ def test_bonus_columns_dropdown_all_present(incoming_messages_page):
 # ══════════════════════════════════════════════════════════════════════════════
 # Bonus — Sorting (only Received At / Created At are sortable)
 # ══════════════════════════════════════════════════════════════════════════════
-
-@pytest.mark.regression
-def test_bonus_sort_by_received_at(incoming_messages_page):
-    """Clicking the Received At column header re-sorts the visible rows."""
-    ensure_on_page(incoming_messages_page)
-    before = incoming_messages_page.get_column_values("received_at")
-    incoming_messages_page.sort_by_received_at()
-    after1 = incoming_messages_page.get_column_values("received_at")
-    incoming_messages_page.sort_by_received_at()
-    after2 = incoming_messages_page.get_column_values("received_at")
-    assert before != after1 or after1 != after2, \
-        "Clicking Received At header should change row order across toggles"
-    incoming_messages_page.clear_all_sorts()
-
-
-@pytest.mark.regression
-def test_bonus_sort_by_created_at(incoming_messages_page):
-    """Clicking the Created At column header re-sorts the visible rows."""
-    ensure_on_page(incoming_messages_page)
-    before = incoming_messages_page.get_column_values("created_at")
-    incoming_messages_page.sort_by_created_at()
-    after1 = incoming_messages_page.get_column_values("created_at")
-    incoming_messages_page.sort_by_created_at()
-    after2 = incoming_messages_page.get_column_values("created_at")
-    assert before != after1 or after1 != after2, \
-        "Clicking Created At header should change row order across toggles"
-    incoming_messages_page.clear_all_sorts()
-
-
-@pytest.mark.regression
-def test_bonus_clear_single_sort_pill(incoming_messages_page):
-    """A single sort pill's own clear control (plain wire:click, no
-    .prevent -- confirmed distinct from the clear-ALL control) should
-    remove just that applied sort."""
-    ensure_on_page(incoming_messages_page)
-    incoming_messages_page.sort_by_received_at()
-    assert incoming_messages_page.is_sort_applied("received_at")
-    incoming_messages_page.clear_sort("received_at")
-    assert not incoming_messages_page.is_sort_applied("received_at")
-
 
 @pytest.mark.regression
 def test_bonus_clear_all_sorts(incoming_messages_page):

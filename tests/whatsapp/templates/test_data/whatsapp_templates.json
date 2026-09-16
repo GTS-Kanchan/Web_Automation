@@ -1,0 +1,361 @@
+{
+  "_schema_note": "Generic UI-only WhatsApp Template Creation E2E data. Each object represents one positive template creation scenario. The JSON describes WHAT should be created; Playwright locators and UI interaction logic remain inside the Page Object and Template Builder.",
+  "templates": [
+    {
+      "id": "marketing_custom_message",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Hello, welcome to our service."
+      }
+    },
+    {
+      "id": "marketing_custom_message_variables",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Hello {{1}}, your special offer is ready."
+      }
+    },
+    {
+      "id": "marketing_custom_message_header_text",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "header": {
+        "type": "TEXT",
+        "text": "Special Offer"
+      },
+      "body": {
+        "text": "Hello {{1}}, enjoy our latest offer today."
+      }
+    },
+    {
+      "id": "marketing_custom_message_header_image",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "header": {
+        "type": "IMAGE",
+        "file": "whatsapp_carousel_sample.jpg"
+      },
+      "body": {
+        "text": "Check out our latest collection."
+      }
+    },
+    {
+      "id": "marketing_custom_message_header_location",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "header": {
+        "type": "LOCATION"
+      },
+      "body": {
+        "text": "Visit our location today."
+      }
+    },
+    {
+      "id": "marketing_custom_message_quick_reply",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Would you like to know more about our offer?"
+      },
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Yes"
+        }
+      ]
+    },
+    {
+      "id": "marketing_custom_message_url",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Visit our website to explore our latest products."
+      },
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Visit Website",
+          "url": "https://example.com"
+        }
+      ]
+    },
+    {
+      "id": "marketing_custom_message_phone",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Need help? Contact our support team."
+      },
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Support",
+          "phone": "+919202511257"
+        }
+      ]
+    },
+    {
+      "id": "marketing_custom_message_copy_offer",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Use the offer code below to receive your discount."
+      },
+      "buttons": [
+        {
+          "type": "COPY_OFFER_CODE",
+          "text": "Copy Offer Code"
+        }
+      ]
+    },
+    {
+      "id": "marketing_custom_message_flow",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Complete the form to learn more."
+      },
+      "buttons": [
+        {
+          "type": "FLOW",
+          "text": "Open Form"
+        }
+      ]
+    },
+    {
+      "id": "marketing_custom_message_multiple_buttons",
+      "category": "MARKETING",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Choose an option below."
+      },
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "More Info"
+        },
+        {
+          "type": "URL",
+          "text": "Visit Website",
+          "url": "https://example.com"
+        }
+      ]
+    },
+    {
+      "id": "marketing_carousel_image_quick_reply",
+      "category": "MARKETING",
+      "template_type": "Carousel",
+      "language": "English",
+      
+      "carousel": {
+        "media_type": "IMAGE",
+        "cards": [
+          {
+            "description": "Explore our featured product.",
+            "media_file": "whatsapp_carousel_sample.jpg",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "Buy Now"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "marketing_carousel_image_url",
+      "category": "MARKETING",
+      "template_type": "Carousel",
+      "language": "English",
+      
+      "carousel": {
+        "media_type": "IMAGE",
+        "cards": [
+          {
+            "description": "View our featured product online.",
+            "media_file": "whatsapp_carousel_sample.jpg",
+            "buttons": [
+              {
+                "type": "URL",
+                "text": "View Product",
+                "url": "https://example.com/product"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "marketing_carousel_image_two_cards",
+      "category": "MARKETING",
+      "template_type": "Carousel",
+      "language": "English",
+      
+      "carousel": {
+        "media_type": "IMAGE",
+        "cards": [
+          {
+            "description": "Explore Product One.",
+            "media_file": "whatsapp_carousel_sample.jpg",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "Product One"
+              }
+            ]
+          },
+          {
+            "description": "Explore Product Two.",
+            "media_file": "whatsapp_carousel_sample.jpg",
+            "buttons": [
+              {
+                "type": "QUICK_REPLY",
+                "text": "Product Two"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "marketing_catalog_single_product",
+      "category": "MARKETING",
+      "template_type": "Catalog",
+      "catalog_type": "Single-Product",
+      "language": "English",
+      
+      "catalog": {
+        "content_id": "PRODUCT-001"
+      },
+      "body": {
+        "text": "Check out our featured product."
+      }
+    },
+    {
+      "id": "marketing_catalog_multi_product",
+      "category": "MARKETING",
+      "template_type": "Catalog",
+      "catalog_type": "Multi-Product",
+      "language": "English",
+      
+      "catalog": {
+        "content_id": "PRODUCT-001"
+      },
+      "body": {
+        "text": "Explore our latest products."
+      }
+    },
+    {
+      "id": "utility_custom_message",
+      "category": "UTILITY",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Your request has been received and is being processed."
+      }
+    },
+    {
+      "id": "utility_order_status",
+      "category": "UTILITY",
+      "sub_category": "Order Status",
+      "language": "English",
+      
+      "body": {
+        "text": "Your order status has been updated."
+      }
+    },
+    {
+      "id": "utility_order_details",
+      "category": "UTILITY",
+      "sub_category": "Order Details",
+      "language": "English",
+      
+      "body": {
+        "text": "Here are the details of your order."
+      }
+    },
+    {
+      "id": "authentication_copy_code",
+      "category": "AUTHENTICATION",
+      "authentication_method": "COPY_CODE",
+      "language": "English",
+      
+      "body": {
+        "text": "Your verification code is {{1}}."
+      }
+    },
+    {
+      "id": "authentication_autofill",
+      "category": "AUTHENTICATION",
+      "authentication_method": "AUTOFILL",
+      "language": "English",
+      
+      "body": {
+        "text": "Use the verification code sent to your phone."
+      }
+    },
+    {
+      "id": "authentication_zero_tap",
+      "category": "AUTHENTICATION",
+      "authentication_method": "ZERO_TAP",
+      "language": "English",
+      
+      "body": {
+        "text": "Your account verification is in progress."
+      }
+    },
+    {
+      "id": "conversation_basic",
+      "category": "CONVERSATION",
+      "template_type": "Custom Message",
+      "language": "English",
+      
+      "body": {
+        "text": "Thank you for contacting us. How can we help you?"
+      }
+    },
+    {
+      "id": "conversation_cta_url",
+      "category": "CONVERSATION",
+      "template_type": "CTA URL Button",
+      "language": "English",
+      
+      "body": {
+        "text": "Find more information on our website."
+      },
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Visit Website",
+          "url": "https://example.com"
+        }
+      ]
+    }
+  ]
+}

@@ -331,26 +331,15 @@ class WhatsappSenderIdPage(BasePage):
 
     def search(self, value):
         box = self.h.wait_for_element_visible(self.SEARCH_BOX)
-        box.evaluate(
-            "(el, v) => { el.value = v; "
-            "el.dispatchEvent(new Event('input', {bubbles: true})); "
-            "el.dispatchEvent(new Event('change', {bubbles: true})); }",
-            value
-        )
-        self.page.wait_for_timeout(500)
-        self._wait_for_search_to_settle()
-        self.page.wait_for_timeout(300)
+        box.fill(value)
+        box.press("Enter")
+        self.page.wait_for_timeout(2000)
 
     def clear_search(self):
         box = self.h.wait_for_element_visible(self.SEARCH_BOX)
-        box.evaluate(
-            "(el) => { el.value = ''; "
-            "el.dispatchEvent(new Event('input', {bubbles: true})); "
-            "el.dispatchEvent(new Event('change', {bubbles: true})); }"
-        )
-        self.page.wait_for_timeout(500)
-        self._wait_for_search_to_settle()
-        self.page.wait_for_timeout(300)
+        box.fill("")
+        box.press("Enter")
+        self.page.wait_for_timeout(1500)
 
     # -------------------------------------------------------------------------
     # Filters panel
@@ -389,25 +378,44 @@ class WhatsappSenderIdPage(BasePage):
         self.page.wait_for_timeout(1200)
 
     def set_created_at_from(self, date_str):
-        """date_str: 'YYYY-MM-DD'. Plain native date input, no time
-        component (confirmed — unlike Incoming Messages' paired date+time
-        filter)."""
+        """date_str: 'YYYY-MM-DD'. Native date input bound via Alpine.js
+        (x-model="date" x-on:change="save()")."""
         self.open_filters_panel()
         el = self.h.wait_for_element_visible(self.FILTER_CREATED_AT_FROM)
         el.evaluate(
-            "(el, v) => { el.value = v; el.dispatchEvent(new Event('change', {bubbles: true})); }",
+            """(el, v) => {
+                el.value = v;
+                if (window.Alpine && Alpine.$data(el)) {
+                    const data = Alpine.$data(el);
+                    data.date = v;
+                    data.save();
+                } else {
+                    el.dispatchEvent(new Event('input', {bubbles: true}));
+                    el.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            }""",
             date_str
         )
-        self.page.wait_for_timeout(1000)
+        self.page.wait_for_timeout(1500)
 
     def set_created_at_to(self, date_str):
         self.open_filters_panel()
         el = self.h.wait_for_element_visible(self.FILTER_CREATED_AT_TO)
         el.evaluate(
-            "(el, v) => { el.value = v; el.dispatchEvent(new Event('change', {bubbles: true})); }",
+            """(el, v) => {
+                el.value = v;
+                if (window.Alpine && Alpine.$data(el)) {
+                    const data = Alpine.$data(el);
+                    data.date = v;
+                    data.save();
+                } else {
+                    el.dispatchEvent(new Event('input', {bubbles: true}));
+                    el.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            }""",
             date_str
         )
-        self.page.wait_for_timeout(1000)
+        self.page.wait_for_timeout(1500)
 
     def get_created_at_from_value(self):
         el = self.h.wait_for_element_visible(self.FILTER_CREATED_AT_FROM)
@@ -419,8 +427,9 @@ class WhatsappSenderIdPage(BasePage):
 
     def clear_all_filters(self):
         """No 'Clear Filters' button exists on this page (confirmed
-        absence) — reset each of the 4 fields directly instead."""
-        self.open_filters_panel()
+        absence) — reset each of the 4 fields directly if panel is open."""
+        if not self._is_visible(self.FILTER_DEPARTMENT, timeout=500):
+            return
         for locator in (self.FILTER_DEPARTMENT, self.FILTER_USER):
             try:
                 el = self.page.locator(locator).first
@@ -435,11 +444,20 @@ class WhatsappSenderIdPage(BasePage):
             try:
                 el = self.page.locator(locator).first
                 el.evaluate(
-                    "(el) => { el.value = ''; el.dispatchEvent(new Event('change', {bubbles: true})); }"
+                    """(el) => {
+                        el.value = '';
+                        if (window.Alpine && Alpine.$data(el)) {
+                            const data = Alpine.$data(el);
+                            data.date = '';
+                            data.save();
+                        } else {
+                            el.dispatchEvent(new Event('change', {bubbles: true}));
+                        }
+                    }"""
                 )
             except Exception:
                 pass
-        self.page.wait_for_timeout(1200)
+        self.page.wait_for_timeout(1500)
 
     # -------------------------------------------------------------------------
     # Export to XLSX (maps to checklist's "Bulk Action" TC006)
@@ -474,6 +492,10 @@ class WhatsappSenderIdPage(BasePage):
 
     def has_no_records_message(self):
         try:
+            tbody = self.page.locator(f"{self.TABLE} tbody")
+            text = tbody.inner_text().strip().lower()
+            if "no items found" in text or "no records" in text or "no data" in text:
+                return True
             rows = self.page.locator(self.TABLE_ROWS)
             if rows.count() == 1:
                 tds = rows.nth(0).locator("td")
@@ -586,6 +608,11 @@ class WhatsappSenderIdPage(BasePage):
         except Exception:
             return None
 
+    def close_columns_dropdown(self):
+        if self._is_visible(self.COLUMN_CHECKBOX_BY_VALUE.format(value="action"), timeout=500):
+            self._js_click(self.COLUMNS_BUTTON, timeout=5000)
+            self.page.wait_for_timeout(500)
+
     def restore_default_columns(self):
         """Ensures Department/User end up unchecked and every default
         column ends up checked, regardless of current state."""
@@ -596,6 +623,7 @@ class WhatsappSenderIdPage(BasePage):
         for value in self.DEFAULT_SELECTED_COLUMNS:
             if not self.is_column_checked(value):
                 self.toggle_column(value)
+        self.close_columns_dropdown()
 
     # -------------------------------------------------------------------------
     # Row actions (View / Optimize MMT)

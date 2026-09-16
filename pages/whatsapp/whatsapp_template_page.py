@@ -647,11 +647,46 @@ class WhatsAppTemplatePage(BasePage):
     # Row actions — Update Status (module docstring #7, #9)
     # ══════════════════════════════════════════════════════════════════════
 
+    UPDATE_STATUS_BTN_IN_ROW = "button[data-tooltip-target^='tooltip-update-status-']"
+
+    def get_first_row_index_with_update_status_button(self):
+        """Return the 0-based index (among visible, non-empty data rows) of
+        the first row that has the Update Status button, or None if no row
+        has one.
+
+        CONFIRMED live (real pytest failure): row 0 does not always expose
+        this button -- same class of per-row-conditional action already
+        confirmed for the View icon on the WhatsApp Campaign Report page
+        (a scheduled/not-yet-sent row has no View icon) and the row's own
+        Update Status button is likewise gated by something about that
+        row's own state (not root-caused here, per this project's "don't
+        guess why, just don't assume row 0" convention) -- so this scans
+        rows instead of hardcoding get_first_data_row()."""
+        try:
+            rows = self.page.locator(self.TABLE_ROWS)
+            count = rows.count()
+        except Exception:
+            return None
+        for i in range(count):
+            row = rows.nth(i)
+            try:
+                if not row.is_visible():
+                    continue
+                tds = row.locator("td")
+                if tds.count() == 0 or not any(t.strip() for t in tds.all_inner_texts()):
+                    continue
+                if row.locator(self.UPDATE_STATUS_BTN_IN_ROW).first.count() > 0:
+                    return i
+            except Exception:
+                continue
+        return None
+
     def click_update_status_on_first_row(self):
-        row = self.get_first_data_row()
-        if row is None:
+        idx = self.get_first_row_index_with_update_status_button()
+        if idx is None:
             return False
-        btn = row.locator("button[data-tooltip-target^='tooltip-update-status-']")
+        row = self.page.locator(self.TABLE_ROWS).nth(idx)
+        btn = row.locator(self.UPDATE_STATUS_BTN_IN_ROW)
         if btn.count() == 0:
             return False
         btn.first.scroll_into_view_if_needed()
@@ -660,10 +695,7 @@ class WhatsAppTemplatePage(BasePage):
         return True
 
     def is_update_status_first_row_present(self):
-        row = self.get_first_data_row()
-        if row is None:
-            return False
-        return row.locator("button[data-tooltip-target^='tooltip-update-status-']").count() > 0
+        return self.get_first_row_index_with_update_status_button() is not None
 
     # ══════════════════════════════════════════════════════════════════════
     # Pagination
@@ -682,7 +714,12 @@ class WhatsAppTemplatePage(BasePage):
             return None
 
     def click_next_page(self):
-        self._js_click(self.PAGINATION_NEXT_BTN, timeout=10000)
+        # CONFIRMED live failure: plain _js_click() (which binds to the
+        # first DOM match regardless of visibility) timed out here with
+        # "element is not visible" -- same duplicate-hidden-DOM-copy
+        # pattern already confirmed and fixed the same way on the
+        # WhatsApp Campaign listing page's click_next_page().
+        self._js_click_first_visible(self.PAGINATION_NEXT_BTN, timeout=10000)
         self.page.wait_for_timeout(1500)
 
     def go_to_page(self, page_number):

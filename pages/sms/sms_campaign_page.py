@@ -51,6 +51,15 @@ class SMSCampaignPage(BasePage):
         "xpath=//table//tbody//tr | //div[contains(@class,'table')]//div[contains(@class,'row')]"
     )
 
+    # Row action: "Reports" icon -- CONFIRMED from a real, pasted DOM
+    # capture: a plain <a data-tooltip-target="tooltip-reports-<id>"
+    # href="https://<host>/campaigns/messages/total/<uuid>">, navigating
+    # to the per-campaign message report page (see
+    # pages/sms/sms_campaign_message_report_page.py). Same tooltip-target
+    # naming convention already confirmed on the WhatsApp Campaign
+    # listing page's own Reports icon.
+    REPORTS_LINK_IN_ROW = "xpath=.//*[contains(@data-tooltip-target,'tooltip-reports-')]"
+
     # Filter — locators confirmed from a live DOM dump of the SMS Campaigns
     # list page's filter panel (rappasoft/laravel-livewire-tables
     # filterComponents block). Confirmed real filters (7 total): Department,
@@ -339,6 +348,31 @@ class SMSCampaignPage(BasePage):
     # method everywhere else it's used.
     def is_list_page(self):
         return self.is_campaign_list_page()
+
+    def get_first_data_row(self):
+        return self._first_visible_data_row(self.TABLE_ROWS)
+
+    def click_reports_link_on_first_row(self):
+        """Click the confirmed Reports icon (data-tooltip-target=
+        'tooltip-reports-<id>') on the first visible campaign row --
+        a real page navigation (a plain <a href>), not a Livewire
+        action. Returns False (rather than asserting) if there is no
+        data row or no Reports link on it, so callers can skip
+        gracefully instead of guessing at a fallback."""
+        row = self.get_first_data_row()
+        if row is None:
+            return False
+        try:
+            link = row.locator(self.REPORTS_LINK_IN_ROW).first
+            if link.count() == 0:
+                return False
+        except Exception:
+            return False
+        link.scroll_into_view_if_needed()
+        with self.page.expect_navigation(timeout=15000):
+            link.click(force=True)
+        self.page.wait_for_timeout(1000)
+        return True
 
     def click_create_campaign(self):
         """Navigate to create page — tries button click first, falls back to URL."""

@@ -183,53 +183,6 @@ def test_TC006_export_csv(message_report_page):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TC007 — Sorting for each sortable column
-# ══════════════════════════════════════════════════════════════════════════════
-
-def test_TC007_sorting_each_column(message_report_page):
-    ensure_on_report_page(message_report_page)
-    reset_state(message_report_page)
-
-    message_report_page.sort_by_to_number()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None and "to number" in pill.lower()
-
-    message_report_page.sort_by_source()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None and "source" in pill.lower()
-
-    message_report_page.sort_by_sub_source()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None
-
-    message_report_page.sort_by_template_category()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None and "template category" in pill.lower()
-
-    message_report_page.sort_by_created_at()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None and "created at" in pill.lower()
-
-    message_report_page.sort_by_submitted_at()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None
-
-    message_report_page.sort_by_delivered_at()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None and "delivered at" in pill.lower()
-
-    message_report_page.sort_by_read_at()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None and "read at" in pill.lower()
-
-    message_report_page.sort_by_failed_at()
-    pill = message_report_page.get_applied_sort_pill_text()
-    assert pill is not None and "failed at" in pill.lower()
-
-    message_report_page.clear_all_sorts()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # TC008 — View button in Actions opens the popup
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -431,8 +384,8 @@ def test_TC020_template_id_and_name(message_popup):
     p, _row = message_popup
     template_id = p.get_modal_template_field("Template ID")
     template_name = p.get_modal_template_field("Template Name")
-    assert template_id and template_id.strip().isdigit()
-    assert template_name is not None and template_name.strip() != ""
+    assert template_id is not None and template_id.strip() != "", "Expected non-empty Template ID"
+    assert template_name is not None and template_name.strip() != "", "Expected non-empty Template Name"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

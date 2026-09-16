@@ -181,6 +181,12 @@ class WhatsAppCampaignReportPage(BasePage):
     )
 
     # ── Row action: View (opens the shared message-detail modal) ────────────
+    # CONFIRMED live behavior: a SCHEDULED (not-yet-sent) campaign's row has
+    # NO View icon at all -- there is nothing to view for a message that
+    # hasn't gone out yet. Only a SENT campaign's row exposes this icon. The
+    # table can list scheduled and sent campaigns in any order, so callers
+    # must not assume row index 0 has it -- see click_view_on_first_row()
+    # below, which scans rows instead of hardcoding index 0.
     VIEW_ICON_IN_ROW = "xpath=.//*[contains(@data-tooltip-target,'tooltip-view-')]"
 
     # ── Pagination -- INFERRED, see class docstring caveat #10 ──────────────
@@ -511,20 +517,54 @@ class WhatsAppCampaignReportPage(BasePage):
 
     # ── Row action: View ─────────────────────────────────────────────────────
 
+    def get_first_row_index_with_view_icon(self):
+        """Return the 0-based index (among visible, non-empty data rows)
+        of the first row that has a View icon, or None if no row has
+        one. CONFIRMED live: a scheduled (not-yet-sent) campaign's row
+        has no View icon at all (see VIEW_ICON_IN_ROW docstring above),
+        and the table can list scheduled and sent campaigns in any
+        order -- so callers that need to cross-check a row's OWN column
+        values against the popup that click_view_on_first_row() opens
+        must use THIS index (not assume index 0) when reading those
+        column values, since the two must refer to the same row."""
+        try:
+            rows = self.page.locator(self.TABLE_ROWS)
+            count = rows.count()
+        except Exception:
+            return None
+        for i in range(count):
+            row = rows.nth(i)
+            try:
+                if not row.is_visible():
+                    continue
+                tds = row.locator("td")
+                if tds.count() == 0 or not any(t.strip() for t in tds.all_inner_texts()):
+                    continue
+                if row.locator(self.VIEW_ICON_IN_ROW).first.count() > 0:
+                    return i
+            except Exception:
+                continue
+        return None
+
     def click_view_on_first_row(self):
-        row = self.get_first_data_row()
-        if row is None:
+        """Click the View icon on the first row that actually HAS one --
+        NOT necessarily row index 0 (see get_first_row_index_with_view_icon()
+        docstring for why). Returns False (never raises) if no row in
+        the table has a View icon at all."""
+        idx = self.get_first_row_index_with_view_icon()
+        if idx is None:
             return False
         try:
+            row = self.page.locator(self.TABLE_ROWS).nth(idx)
             btn = row.locator(self.VIEW_ICON_IN_ROW).first
             if btn.count() == 0:
                 return False
+            btn.scroll_into_view_if_needed()
+            btn.click(force=True)
+            self.page.wait_for_timeout(1500)
+            return True
         except Exception:
             return False
-        btn.scroll_into_view_if_needed()
-        btn.click(force=True)
-        self.page.wait_for_timeout(1500)
-        return True
 
     def is_modal_open(self):
         try:

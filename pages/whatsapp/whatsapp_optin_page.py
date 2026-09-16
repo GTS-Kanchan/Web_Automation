@@ -219,7 +219,17 @@ class WhatsappOptInPage(BasePage):
     # source text) and via the identical, already-automated mechanism on
     # whatsapp_optout_page.py. ─────────────────────────────────────────────
     DELETE_ICON_IN_ROW = "xpath=.//*[contains(@data-tooltip-target,'tooltip-delete-')]"
-    DELETE_CONFIRM_TITLE = ".swal2-title"
+    # CONFIRMED live: this dialog is a WireUI Alpine confirm component (its
+    # $wireui.confirmAction() call), NOT SweetAlert2 -- the real captured
+    # markup is `<h3 x-ref="title">Are you sure to delete this item ?</h3>`
+    # inside the dialog, with accept/reject buttons at
+    # `[x-ref='accept']`/`[x-ref='reject']` (their own buttons carry
+    # `x-on:click="accept"`/`"reject"` and plain text "Confirm"/"Cancel" --
+    # already matched by CONFIRM_DELETE_BTN/CANCEL_DELETE_BTN's existing
+    # normalize-space() fallback branches below, which is why only the
+    # title lookup was failing). A swal2-title fallback is kept in case a
+    # different flow on this page ever does route through SweetAlert2.
+    DELETE_CONFIRM_TITLE = "xpath=//h3[@x-ref='title'] | //*[contains(@class,'swal2-title')]"
     CONFIRM_DELETE_BTN = (
         "xpath=//button[contains(@class,'swal2-confirm')] "
         "| //div[contains(@class,'swal2-actions')]//button[not(contains(@class,'swal2-cancel')) "
@@ -466,12 +476,19 @@ class WhatsappOptInPage(BasePage):
         self.page.wait_for_timeout(1500)
 
     def get_filter_values(self):
+        # input_value(), not get_attribute("value") -- these fields are set
+        # via set_sender_filter()/set_date_filter()'s elm.value = ... (a
+        # live DOM PROPERTY assignment), which never touches the static
+        # HTML value attribute. Confirmed by a real run of
+        # test_filters_set_and_clear: get_attribute("value") returned None
+        # right after set_sender_filter("Globe") set a real value. Same
+        # proven fix already used on the WhatsApp Campaign Report and
+        # Messages Report pages' get_filter_date_values().
         self.open_filters_panel()
         sender_el = self.h.wait_for_element_visible(self.FILTER_SENDER)
         from_el = self.h.wait_for_element_visible(self.FILTER_OPTED_IN_FROM)
         to_el = self.h.wait_for_element_visible(self.FILTER_OPTED_IN_TO)
-        return (sender_el.get_attribute("value"), from_el.get_attribute("value"),
-                to_el.get_attribute("value"))
+        return sender_el.input_value(), from_el.input_value(), to_el.input_value()
 
     def clear_all_filters(self):
         """No dedicated 'Clear Filters' button was confirmed in the

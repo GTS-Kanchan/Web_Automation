@@ -468,17 +468,26 @@ class WhatsAppCampaignPage(BasePage):
         return el.inner_text().strip()
 
     def click_next_page(self):
-        self._js_click(self.NEXT_PAGE_BTN, timeout=10000)
+        # CONFIRMED live failure: plain _js_click() (which binds to the
+        # first DOM match regardless of visibility) times out here with
+        # "element is not visible" even though a working Next control is
+        # genuinely on screen -- this table renders a second, permanently
+        # hidden DOM copy of the pagination control (the same
+        # desktop/mobile-breakpoint duplication _js_click_first_visible()
+        # already exists to handle elsewhere in this project), and .first
+        # was locking onto the hidden one. Use the visibility-aware click.
+        self._js_click_first_visible(self.NEXT_PAGE_BTN, timeout=10000)
         self.page.wait_for_timeout(1500)
 
     def is_prev_page_enabled(self):
         try:
-            return self.page.locator(self.PREV_PAGE_BTN).first.count() > 0
+            matches = self.page.locator(self.PREV_PAGE_BTN)
+            return any(matches.nth(i).is_visible() for i in range(matches.count()))
         except Exception:
             return False
 
     def click_prev_page(self):
-        self._js_click(self.PREV_PAGE_BTN, timeout=10000)
+        self._js_click_first_visible(self.PREV_PAGE_BTN, timeout=10000)
         self.page.wait_for_timeout(1500)
 
     # ── Logout ───────────────────────────────────────────────────────────────

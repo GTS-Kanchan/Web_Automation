@@ -141,6 +141,14 @@ capture proving otherwise):
     skip below because the JIRA CPAAS-3220 single-product validation
     behavior and the multi-product auto-fetch behavior remain
     unconfirmed; only the select-and-preview mechanics above are solid.
+    CONFIRMED (point 28 below resolves the earlier open question): there
+    is NO separate Catalog ID field anywhere in this sub_category's
+    flow, including after a Sender ID/WABA account is selected -- the
+    person building this suite checked the real live app directly and
+    found none. The `catalog_id` key seen in the wire:snapshot (point
+    16's original capture) has no corresponding rendered input at any
+    point observed; Content Id (product_retailer_id, point 28) is the
+    only per-sub_category field that exists.
 
 17. Marketing sub_category = Carousel reveals a Carousel sub-form,
     confirmed via a genuine capture with sub_category=carousel active:
@@ -352,10 +360,12 @@ capture proving otherwise):
       - A "Buttons text" section with exactly one visible field in this
         capture: wire:model.live.debounce.200ms="auth_copy_code_button_text",
         placeholder "Copy Code", and a confirmed `disabled` attribute
-        present on the element in this "Copy Code" OTP-type capture (not
-        yet confirmed whether it un-disables for the AutoFill/Zero-Tap
-        OTP types -- that would need its own fresh capture, not assumed
-        here).
+        present on the element in this "Copy Code" OTP-type capture.
+        UPDATE (real --headed run, test_TC037_to_TC041_authentication_
+        category_form): this field stays PRESENT and DISABLED for the
+        AutoFill and Zero-Tap OTP types too -- it never un-disables for
+        any of the 3 OTP types. This is now a hard assertion in that
+        test, not an open question.
       - The Preview panel IS populated for real in this capture: a chat
         bubble showing the literal body text, plus a separate
         button-preview card showing "Copy code" (mdi-content-copy icon).
@@ -364,11 +374,15 @@ capture proving otherwise):
         properties in the snapshot, but no corresponding visible input
         element for either was found in this capture -- they are NOT
         built as editable locators here, only noted as existing.
-    TC037-TC041 is still left as a documented skip below because the
-    Autofill/Zero-Tap OTP-type sub-behaviors (e.g. whether the button
-    text field un-disables, App Setup/package name fields mentioned in
-    the original checklist) were not captured; only the Copy-Code-default
-    state above is solid.
+    TC037-TC041 is now a real test (see
+    test_TC037_to_TC041_authentication_category_form) asserting the
+    Buttons-text-field-stays-disabled behavior above for all 3 OTP
+    types. It also CONFIRMED (same real run) that no "App Setup"/
+    "Package" text renders anywhere on the page for category=
+    AUTHENTICATION in this environment -- the original checklist's App
+    Setup/package name fields do not exist here (at least not as visible
+    text under those exact labels), kept as a live (non-hard-fail) check
+    in that test in case a future app change adds either field.
 
 24. Category = CONVERSATION, sub_category = cta_url_button reveals a
     populated state, confirmed via a genuine capture (memo.id
@@ -486,16 +500,117 @@ capture proving otherwise):
         <div class="mt-2 rounded-md shadow-lg">...</div> wrapper shape
         already used for Authentication's button preview in point 23),
         not just present in the underlying snapshot data.
-    CAUTION: despite the sub_category select's option list (point 25)
-    confirming "Order Status" (order_status) is a real, independently
-    selectable value, NO genuine capture of order_status's own rendered
-    form has ever been obtained -- TWO separate capture attempts
-    explicitly intended to select it both produced this exact
-    order_details state instead (proven via the matching checksums
-    above, not merely visual similarity). No order_status-specific
-    locators, methods, or tests are built anywhere in this suite; a
-    third, genuinely order_status-selected capture would be needed
-    before that gap can be closed.
+    CAUTION (RESOLVED by point 30 below): despite the sub_category
+    select's option list (point 25) confirming "Order Status"
+    (order_status) is a real, independently selectable value, the first
+    TWO separate capture attempts explicitly intended to select it both
+    produced this exact order_details state instead (proven via the
+    matching checksums above, not merely visual similarity). A THIRD
+    capture attempt (point 30) finally landed on the real order_status
+    state -- see there for what's actually confirmed.
+
+30. Category = UTILITY, sub_category = Order Status (order_status): a
+    genuine capture (programmatically confirmed via the snapshot's own
+    "data.sub_category":"order_status" and the sub_category select's
+    displayed text "Order Status" -- unlike the two prior attempts, this
+    one did NOT land back on order_details) confirms order_status is a
+    DISTINCT state from order_details, not the same form:
+      - typeOptions is EMPTY ([]) -- narrower than order_details' single
+        [Image] value.
+      - showOrderButton:false and order_items:[] (empty) -- the fixed,
+        non-editable "Type of Action"/"Button Text" single-button block
+        that renders for order_details (point 26) does NOT render here;
+        no "Type of Action" or "Review and Pay" markup appears anywhere
+        in this capture. So order_status and order_details are
+        confirmed to have DIFFERENT rendered forms, not the same one --
+        order_status shows no order-button block at all in this
+        capture.
+    No further order_status-specific fields were found in this capture
+    (the rest of the form matches the shared UTILITY baseline). No new
+    locators are added for a UI element that isn't there; this simply
+    documents that order_status renders with no additional per-
+    sub_category fields, unlike order_details.
+    CORRECTION (see point 31 below): this point originally also claimed
+    headerOptions narrows to [Media] for order_status, by analogy with
+    order_details. A second, independent genuine order_status capture
+    (same confirmed category/sub_category/label match) showed
+    headerOptions containing all four values (None/Text/Media/Location)
+    in its underlying snapshot data instead of [Media]-only -- an
+    internal conflict between two genuine captures. Point 31 resolves
+    this via direct user confirmation of live app behavior: the Header
+    field does not render AT ALL for order_status, so headerOptions'
+    computed value (whatever it is) is moot -- there is no Header select
+    to read options from in this sub_category.
+
+31. Category = UTILITY, sub_category = Order Status (order_status),
+    Header field: CONFIRMED via direct user inspection of the live app
+    ("in order status there is no header type in order status") that no
+    Header type select renders at all for this sub_category -- resolving
+    the point 30 headerOptions conflict above. is_header_select_present()
+    must return False for sub_category=order_status; no header options
+    should be read/asserted for this state.
+
+32. Category = CONVERSATION, sub_category = cta_url_button:
+    CONFIRMED (genuine capture, conversation_enabled:true in the
+    wire:snapshot data): showHeader:true, showFooter:true, headerOptions
+    = exactly [Text, Media] (no None, no Location); the Footer Text
+    field's DOM (#footer_text, wire:model.live.debounce.200ms=
+    "footer_text", maxlength 60) is confirmed and already covered by
+    FOOTER_INPUT/get_footer_text_value()/set_footer_text() above; the
+    single URL button row (url_button_type.0 disabled/readonly showing
+    "URL", url_buttons_title.0/url_buttons_value.0 populated) and the
+    "Add button" menu's URL item correctly disabled once one URL button
+    exists are confirmed and already covered by the point 24 locators.
+
+    ****UNCONFIRMED GUESS, NOT REAL EVIDENCE****: no rendered HTML
+    toggle/checkbox/switch element for the conversation_enabled field
+    itself has ever appeared in any capture -- only its boolean `true`
+    value inside the wire:snapshot JSON. Despite the project's standing
+    "never fabricate a locator" rule, CONVERSATION_ENABLED_TOGGLE_GUESSED
+    ("#conversation_enabled") and toggle_conversation_enabled()/
+    is_conversation_enabled_toggle_present() below were added AS AN
+    EXPLICIT, LABELED GUESS at the user's direct request ("write the all
+    with guess th locator in pending"), modeled on this codebase's
+    dominant convention that an input's id matches its Livewire model
+    name (e.g. #footer_text for footer_text). This guess is UNVERIFIED:
+    it may not match the real element's id, tag, or wire:model binding,
+    or the real control may not be a plain checkbox at all (WireUI ships
+    custom toggle components too, like the async wireui_select pattern
+    documented for Header/sub_category above). The corresponding test
+    (test_TC029_conversation_enabled_toggle_guessed, in
+    test_whatsapp_template_create_flow.py) is marked
+    pytest.mark.xfail(strict=False, reason="guessed locator pending real
+    DOM confirmation") rather than left to pass or fail silently. Replace
+    this locator and remove this warning the moment a real DOM paste of
+    the toggle control is provided.
+
+33. Category = MARKETING, sub_category = Product Card Carousel, card 0's
+    per-card fields: CONFIRMED via a genuine DOM capture that each card
+    is NOT limited to the catalogid/productretailerid pair already
+    covered by point 28's siblings -- it also has its own real Button
+    Title / Button URL inputs, both plain <input type="text"> with a
+    wire:model.live.debounce.200ms binding and no id attribute (same
+    attribute-selector pattern as catalogid/productretailerid):
+      wire:model.live.debounce.200ms="carousel_products.{i}.urlbuttonstitle"
+        placeholder="Button Title"
+      wire:model.live.debounce.200ms="carousel_products.{i}.urlbuttonsvalue"
+        placeholder="Button URL"
+    The capture also confirms a "Load Catalogs for This Card" button
+    (wire:click="fetchCatalogsForCard({i})") that must be clicked before
+    the "Select Catalog" dropdown enables (it renders disabled with a
+    single "Load catalogs first" option until then) -- this suite does
+    NOT use that dropdown path, sticking to the confirmed-working manual
+    Catalog ID / Content ID text inputs from point 28, so
+    fetchCatalogsForCard is not wired up here. Root cause of a real E2E
+    failure (test_e2e_template_submit[marketing_product_carousel]: Save
+    produced no recognized post-submit signal within 15s): Button Title/
+    Button URL were never filled, most likely tripping silent client-
+    side validation the same way CONVERSATION/cta_url_button's missing
+    URL button did. is_carousel_product_button_title_input_present() /
+    set_carousel_product_button_title() and
+    is_carousel_product_button_url_input_present() /
+    set_carousel_product_button_url() (both card_index-parametrized) now
+    cover these two fields.
 
 27. Real E2E (fill-and-submit-to-success) coverage, added for one
     confirmed category/sub_category combination at a time, reuses every
@@ -532,6 +647,43 @@ capture proving otherwise):
         supplying real binary test data through an already-confirmed
         file-input locator, not guessing a locator.
 
+28. Marketing sub_category = Catalog (catalog_message): a real,
+    separately-pasted DOM capture confirms the sole per-sub_category
+    field noted in point 16 ("Content Id") is a PLAIN input with
+    id="product_retailer_id" (NOT indexed like the Multi-Product
+    Message section's mpm_sections.{i}.product_items.{j}.
+    product_retailer_id field, point 20 -- confirmed via two full-page
+    captures, one per catalog_type value, that this exact id renders
+    identically for both Single-Product and Multi-Product), with
+    wire:model.live.debounce.200ms="product_retailer_id", placeholder
+    "Item SKU number. ex. 2lc20305pt". Test value: "2 days" is NOT
+    relevant here (that's the LTO field below) -- this field takes a
+    real SKU-shaped string. CONFIRMED: this is the ONLY per-sub_category
+    field for Catalog -- there is no separate Catalog ID field anywhere
+    in this flow (checked directly against the real live app; see the
+    correction added to point 16 above).
+
+29. Marketing sub_category = Limited Time Offer (lto): a real, directly
+    pasted DOM capture confirms the expiry-days input revealed once the
+    "enable_lto_expiry" checkbox is ticked:
+    <input type="number" placeholder="Max 30 days" min="1"
+    wire:model.live.debounce.200ms="lto_expiry_days" id="lto_expiry_days"
+    name="lto_expiry_days">. This is a plain HTML number input (not a
+    WireUI select), confirming the field is measured in DAYS (not
+    minutes, despite earlier casual phrasing) -- min="1", placeholder
+    implies a 30-day cap. Recorded test value for this field, per
+    explicit instruction: 2 (days).
+    UPDATE: the "enable_lto_expiry" checkbox itself IS now confirmed via
+    a second real, directly pasted DOM capture: <input type="checkbox"
+    wire:model.live.debounce.200ms="enable_lto_expiry"
+    id="enable_lto_expiry" name="enable_lto_expiry">. LTO_ENABLE_EXPIRY_
+    CHECKBOX / is_lto_enable_expiry_checkbox_present() /
+    is_lto_enable_expiry_checked() / check_lto_enable_expiry() are built
+    from this real capture -- test_lto_expiry_days_input_when_present
+    now ticks it (only if not already checked) before checking for the
+    expiry-days input, rather than only exercising the input when it
+    happens to already be visible.
+
 No cross-page inheritance/mixins per this project's established
 convention (confirmed via `grep -rn "^class .*Page(" pages/ | grep -v
 "BasePage"` returning zero matches) -- the small "open a WireUI select /
@@ -545,6 +697,7 @@ import re
 import time
 
 from pages.common.base_page import BasePage
+from utils.config import Config
 
 
 class WhatsAppTemplateCreatePage(BasePage):
@@ -596,6 +749,17 @@ class WhatsAppTemplateCreatePage(BasePage):
     # Footer Text
     FOOTER_INPUT = "#footer_text"
 
+    # conversation_enabled toggle -- ****UNCONFIRMED GUESS, PENDING REAL DOM
+    # EVIDENCE**** (see module docstring point 32). No rendered toggle/
+    # checkbox markup for this field has ever been seen in a real capture --
+    # only the boolean `true` value inside the wire:snapshot JSON for
+    # category=CONVERSATION. This selector is a guess based on this
+    # project's dominant naming convention elsewhere (input id == the
+    # Livewire model name, e.g. #footer_text above), NOT on observed HTML.
+    # Do not trust this locator; confirm/replace it from a real DOM paste
+    # before relying on it, and remove this warning once confirmed.
+    CONVERSATION_ENABLED_TOGGLE_GUESSED = "#conversation_enabled"
+
     # Marketing sub_category (WireUI searchable single-select, only
     # rendered when category=MARKETING -- see module docstring point 15)
     SUB_CATEGORY_WRAPPER = "[form-wrapper='sub_category']"
@@ -603,6 +767,21 @@ class WhatsAppTemplateCreatePage(BasePage):
     # sub_category=catalog_message reveals this select (module docstring
     # point 16)
     CATALOG_TYPE_WRAPPER = "[form-wrapper='catalog_type']"
+
+    # sub_category=catalog_message's sole per-sub_category field (module
+    # docstring point 28) -- plain, un-indexed id, confirmed identical
+    # across both catalog_type values.
+    CATALOG_CONTENT_ID_INPUT = "#product_retailer_id"
+
+    # sub_category=lto's expiry-days input (module docstring point 29).
+    LTO_EXPIRY_DAYS_INPUT = "#lto_expiry_days"
+
+    # sub_category=lto's "enable_lto_expiry" checkbox that reveals the
+    # expiry-days input above -- CONFIRMED via a real pasted DOM capture
+    # (module docstring point 29 update): <input type="checkbox"
+    # wire:model.live.debounce.200ms="enable_lto_expiry"
+    # id="enable_lto_expiry" name="enable_lto_expiry">.
+    LTO_ENABLE_EXPIRY_CHECKBOX = "#enable_lto_expiry"
 
     # sub_category=carousel reveals this sub-form (module docstring
     # point 17)
@@ -739,16 +918,41 @@ class WhatsAppTemplateCreatePage(BasePage):
     def _decoded_options(self, wrapper_selector):
         """Decode the real option list from the WireUI select's own
         base64 JSON blob (x-ref="json") -- confirmed genuine data
-        embedded by the framework itself, not a guess."""
-        try:
-            raw = self.page.locator(wrapper_selector).locator("[x-ref='json']").first.inner_text()
-            match = re.search(r"atob\('([^']+)'\)", raw)
-            if not match:
-                return []
-            decoded = base64.b64decode(match.group(1)).decode("utf-8")
-            return json.loads(decoded)
-        except Exception:
-            return []
+        embedded by the framework itself, not a guess.
+
+        BUG FIX (real evidence): a live run of
+        test_sub_category_select_appears_for_marketing_and_is_selectable
+        called select_category("MARKETING") and then immediately read
+        this blob, but got back {'CTA URL Button'} -- a CONVERSATION-
+        category sub_category label, not any of Marketing's 8 -- even
+        though the module-scoped fixture had never visited CONVERSATION
+        earlier in file order. The only test in this file that visits
+        every category (including CONVERSATION last) is the parametrized
+        category loop just above it in the same file/fixture, sharing
+        the SAME module-scoped page. That proves this blob can still
+        hold the PREVIOUS category's stale x-ref="json" content for some
+        real, non-trivial window after select_category()'s wait returns
+        -- i.e. a stale read is a transient state, not permanent. Retry
+        reading and re-decoding this blob for up to ~3s rather than
+        trusting a single immediate read; this does not change WHICH
+        option list is correct, only guards against reading it mid-
+        transition."""
+        last_result = []
+        for _ in range(10):
+            try:
+                raw = self.page.locator(wrapper_selector).locator("[x-ref='json']").first.inner_text()
+                match = re.search(r"atob\('([^']+)'\)", raw)
+                if not match:
+                    return []
+                decoded = base64.b64decode(match.group(1)).decode("utf-8")
+                result = json.loads(decoded)
+            except Exception:
+                result = []
+            if result == last_result and result:
+                return result
+            last_result = result
+            self.page.wait_for_timeout(300)
+        return last_result
 
     def _select_option_by_text(self, wrapper_selector, option_text):
         """Click a real, hydrated <li role="listitem"> inside the given
@@ -757,6 +961,25 @@ class WhatsAppTemplateCreatePage(BasePage):
         the generic implicit ARIA role of any <li>, not a guessed
         app-specific class."""
         self._open_select(wrapper_selector)
+        # BUG FIX (real evidence): test_language_searchable_and_selectable
+        # calls search_language("Hindi") then select_language("Hindi"),
+        # then tries to restore the default with select_language("English")
+        # -- which timed out on a real run waiting for the "English"
+        # listitem to become visible. Root cause: the search box's value
+        # from the earlier search_language("Hindi") call was never cleared,
+        # so the popover was still filtered down to Hindi-only results when
+        # this second, unrelated select_language("English") call went
+        # looking for "English" -- it was never going to be visible under
+        # that stale filter. Clear any leftover search text before matching
+        # by option_text so this method always searches/matches against the
+        # FULL option list, regardless of what a previous, unrelated search
+        # call left behind. A no-op when there was no prior search (fill("")
+        # on an already-empty search box), and this select may not even
+        # have a search box at all (count() guards that).
+        search_input = self.page.locator(wrapper_selector).locator("input[type='search']").first
+        if search_input.count() > 0 and search_input.input_value() != "":
+            search_input.fill("")
+            self.page.wait_for_timeout(400)
         popover = self.page.locator(wrapper_selector).locator("[x-ref='optionsContainer']").first
         popover.wait_for(state="visible", timeout=5000)
         item = popover.get_by_role("listitem").filter(has_text=option_text).first
@@ -788,14 +1011,54 @@ class WhatsAppTemplateCreatePage(BasePage):
         # real run where test_language_defaults_to_english, the first test
         # in the file to read any WireUI select right after navigate(),
         # read back the raw un-hydrated placeholder ("Select Language")
-        # instead of the confirmed default. Poll briefly and return once
-        # two consecutive reads agree, rather than trusting a single
-        # immediate read.
-        locator = self.page.locator(wrapper_selector).locator("button span").first
+        # instead of the confirmed default.
+        #
+        # BUG FIX (real evidence): the original version returned as soon as
+        # two CONSECUTIVE reads agreed -- but live runs showed multiple
+        # selects (Sender ID, Language x2, Catalog Type, sub_category)
+        # returning their un-hydrated placeholder text ("Select Sender ID",
+        # "Select Language", "Select Catalog Type", "Select Template Type")
+        # even AFTER select_*()/set_*() had already run and waited. Two
+        # consecutive reads of a placeholder that just hasn't updated YET
+        # look identical to two consecutive reads of a value that's
+        # genuinely settled -- the old logic couldn't tell them apart and
+        # returned the placeholder early. All observed placeholder strings
+        # share one confirmed pattern: they start with "Select ". Use that
+        # as a real, evidence-based signal to keep polling (up to ~9s
+        # total, well past the ~0.7s the old logic allowed) rather than
+        # declaring victory on a stale placeholder. This does not assume
+        # what the real value IS, only that a value starting with "Select "
+        # is not yet the final one.
+        #
+        # BUG FIX #2 (real evidence, from a full DOM paste of the Sender ID
+        # button while a real value WAS selected and visibly correct in the
+        # UI): the button actually contains TWO sibling <span> elements --
+        #   1) the placeholder span: x-show="isEmpty()", static text e.g.
+        #      "Select Sender ID", hidden (display:none) once a value is
+        #      selected.
+        #   2) the real value span: x-show="!config.multiselect &&
+        #      isNotEmpty()", only shown once something is selected,
+        #      containing the actual selected label.
+        # ".first" always lands on the placeholder span (it's first in DOM
+        # order) REGARDLESS of selection state. Per the HTML spec,
+        # Element.innerText on an element that "is not being rendered"
+        # (display:none) falls back to returning its raw textContent
+        # instead of "" -- so `.first.inner_text()` returned the literal
+        # placeholder string "Select Sender ID"/"Select Template Type"/etc.
+        # forever, even seconds after a real, confirmed-correct selection,
+        # which is exactly what produced the "still showing the placeholder"
+        # assertion failures on test_TC017_sender_id_selectable and
+        # test_utility_order_status_distinct_from_order_details. Target the
+        # real value span specifically (by its x-html binding, which is
+        # shared across every WireUI select of this kind in this app) so we
+        # never read the placeholder span at all.
+        locator = self.page.locator(wrapper_selector).locator(
+            "button span[x-html='getSelectedDisplayText()']"
+        ).first
         previous = None
-        for _ in range(6):
+        for _ in range(30):
             current = locator.inner_text().strip()
-            if current == previous:
+            if current == previous and not current.startswith("Select "):
                 return current
             previous = current
             self.page.wait_for_timeout(300)
@@ -816,6 +1079,42 @@ class WhatsAppTemplateCreatePage(BasePage):
 
     def select_sender_id(self, option_text):
         self._select_option_by_text(self.SENDER_ID_WRAPPER, option_text)
+
+    def select_sender_id_by_search(self, option_text):
+        """Selects a SPECIFIC Sender ID option by first typing into the
+        search box, then clicking the matching listitem among the
+        FILTERED results.
+
+        Unlike select_sender_id() (== _select_option_by_text(), which
+        deliberately CLEARS any search text first and matches only
+        against whatever is already rendered -- a fix for a stale-filter
+        bug on the Language select, see _select_option_by_text's
+        comments), this is needed here because a real --headed
+        screenshot showed the Sender ID popover's initially-rendered
+        list contains only a short subset of the real senders (WhatsApp
+        Simulator Testing / test old gts / testbulk / Testbulk / Testing
+        Number / Cerf Telin) -- "Globe Teleservices Pte. Ltd." (a real,
+        confirmed sender from this same environment, see the module's
+        Sender ID display-text bug notes) was NOT among them, even
+        though get_sender_id_options() decodes the full real sender list
+        from the same x-ref='json' blob every other select in this file
+        relies on. test_TC018_sender_id_search_valid_keyword already
+        confirms search_sender_id() genuinely filters the rendered
+        popover down to real matching listitems -- reuse that same
+        confirmed mechanism here instead of assuming the target is
+        already rendered, which is what left select_sender_id() waiting
+        on a listitem that was never going to appear."""
+        search_term = option_text.split(" ")[0]
+        self.search_sender_id(search_term)
+        self.page.wait_for_timeout(600)
+        popover = self.page.locator(self.SENDER_ID_WRAPPER).locator(
+            "[x-ref='optionsContainer']"
+        ).first
+        popover.wait_for(state="visible", timeout=5000)
+        item = popover.get_by_role("listitem").filter(has_text=option_text).first
+        item.wait_for(state="visible", timeout=5000)
+        item.click()
+        self.page.wait_for_timeout(400)
 
     def get_selected_sender_id_text(self):
         return self._get_selected_display_text(self.SENDER_ID_WRAPPER)
@@ -868,7 +1167,15 @@ class WhatsAppTemplateCreatePage(BasePage):
     def select_category(self, category):
         locator = self._CATEGORY_RADIOS[category]
         self.page.locator(locator).check(force=True)
-        self.page.wait_for_timeout(400)
+        # Was 400ms; real evidence (see _decoded_options' bug-fix comment
+        # above) showed dependent selects' option blobs still holding the
+        # PREVIOUS category's data well past 400ms on this live staging
+        # server. Widened as a real synchronization fix, not a guess about
+        # app behavior -- callers that read a dependent select's options/
+        # text right after this now also have _decoded_options'/
+        # _get_selected_display_text's own retry loops as a second line of
+        # defense.
+        self.page.wait_for_timeout(900)
 
     def get_selected_category(self):
         for category, locator in self._CATEGORY_RADIOS.items():
@@ -891,6 +1198,20 @@ class WhatsAppTemplateCreatePage(BasePage):
 
     def select_language(self, option_text):
         self._select_option_by_text(self.LANGUAGE_WRAPPER, option_text)
+
+    def ensure_language_selected(self, option_text, force=False):
+        """Same guard as ensure_sub_category_selected(), applied to the
+        identical shared WireUI select mechanism: Language defaults to
+        "English" (confirmed by test_language_defaults_to_english), so a
+        generic JSON-driven flow that always calls select_language() would
+        very often be re-clicking an already-selected option -- which is
+        confirmed elsewhere in this file to TOGGLE IT OFF rather than being
+        a no-op. Only click when the target isn't already selected."""
+        current = self.get_selected_language_text()
+        if current == option_text and not force:
+            self.page.wait_for_timeout(600)
+            return
+        self.select_language(option_text)
 
     def get_selected_language_text(self):
         return self._get_selected_display_text(self.LANGUAGE_WRAPPER)
@@ -922,6 +1243,29 @@ class WhatsAppTemplateCreatePage(BasePage):
 
     def is_header_select_present(self):
         return self.is_element_present(self.HEADER_WRAPPER, timeout=5000)
+
+    def select_header_type(self, option_text):
+        """Selects a Header type option by its real, visible text -- same
+        confirmed mechanism as every other WireUI select in this file
+        (Sender ID, Language, sub_category, Catalog Type, Carousel Media
+        Type). NOTE: unlike those, this app's real Header option labels
+        (e.g. whether it's "Image"/"Media"/"Text"/"None"/"Location" or
+        something else) have never been directly confirmed -- see the
+        module docstring's still-open note on headerOptions. If
+        option_text doesn't match any real rendered option, this raises a
+        clear error naming the ACTUAL available labels (from
+        get_header_options()) rather than silently doing nothing or
+        guessing -- so a real run against the live app produces real
+        evidence instead of a false pass."""
+        real_options = [o.get("label") for o in self.get_header_options()]
+        if option_text not in real_options:
+            raise AssertionError(
+                f"Header type {option_text!r} is not among the real "
+                f"options this app currently renders: {real_options!r}. "
+                f"Not guessing -- update the caller with a real, "
+                f"confirmed label."
+            )
+        self._select_option_by_text(self.HEADER_WRAPPER, option_text)
 
     # ══════════════════════════════════════════════════════════════════
     # Body (EasyMDE/CodeMirror -- see module docstring point 9). This
@@ -986,6 +1330,35 @@ class WhatsAppTemplateCreatePage(BasePage):
         return self.page.locator(self.FOOTER_INPUT).get_attribute("maxlength")
 
     # ══════════════════════════════════════════════════════════════════
+    # conversation_enabled toggle -- ****UNCONFIRMED GUESS****
+    # (see module docstring point 32). Do not trust these until the
+    # real toggle DOM is captured and this locator/these methods are
+    # corrected accordingly.
+    # ══════════════════════════════════════════════════════════════════
+
+    def is_conversation_enabled_toggle_present(self):
+        """UNCONFIRMED GUESS (point 32) -- likely returns False against
+        the real app if the guessed selector doesn't match anything."""
+        return self.is_element_present(
+            self.CONVERSATION_ENABLED_TOGGLE_GUESSED, timeout=5000
+        )
+
+    def toggle_conversation_enabled(self):
+        """UNCONFIRMED GUESS (point 32). Assumes a plain checkbox-style
+        control; the real control may be a different element entirely."""
+        self.page.locator(self.CONVERSATION_ENABLED_TOGGLE_GUESSED).click(
+            force=True
+        )
+        self.page.wait_for_timeout(400)
+
+    def is_conversation_enabled(self):
+        """UNCONFIRMED GUESS (point 32). Assumes is_checked() is the
+        right way to read this control's state."""
+        return self.page.locator(
+            self.CONVERSATION_ENABLED_TOGGLE_GUESSED
+        ).is_checked()
+
+    # ══════════════════════════════════════════════════════════════════
     # Marketing sub_category (see module docstring point 15). Same
     # generic WireUI select helpers as Sender ID/Language.
     # ══════════════════════════════════════════════════════════════════
@@ -1001,6 +1374,62 @@ class WhatsAppTemplateCreatePage(BasePage):
 
     def get_selected_sub_category_text(self):
         return self._get_selected_display_text(self.SUB_CATEGORY_WRAPPER)
+
+    def ensure_sub_category_selected(self, option_text, force=False):
+        """Selects sub_category only if it isn't ALREADY option_text
+        (unless force=True -- see below).
+
+        BUG FIX (real evidence): a live run of
+        test_utility_custom_message_add_button_copy_offer_code_disabled
+        showed that selecting category=UTILITY leaves sub_category
+        already defaulted to "Custom Message" -- and the test still
+        unconditionally called select_sub_category("Custom Message")
+        anyway. Per the user's direct observation of the live app, this
+        WireUI select TOGGLES an already-selected option OFF when its
+        listitem is clicked again (it's not idempotent the way a normal
+        <select> would be) -- re-clicking "Custom Message" while it was
+        already selected deselected it, which left the "Add button"
+        mechanism in a disabled/unclickable state and caused
+        open_lto_add_button_menu()'s plain .click() to hang for the full
+        default 30s Playwright timeout waiting for an element that had
+        gone non-actionable. Use this method instead of a bare
+        select_sub_category() call anywhere the target option might
+        already be the default -- it reads the real current selection
+        first and only clicks if a change is actually needed.
+
+        When no click is needed (the common case -- category selection
+        just defaulted sub_category to option_text), real runs still
+        showed this can be reached too early: the sub_category value
+        itself and its OWN deeper conditional sub-forms (e.g. the "Add
+        button" section for Custom Message, the URL button fields for
+        CTA URL Button) come from the same Livewire render cycle but
+        don't necessarily finish painting at the same moment -- a
+        no-click return here immediately followed by a presence check
+        for that nested UI produced a false "not present" in two
+        independent tests/combinations. A short settle wait covers that
+        even when no click fires.
+
+        force=True (real evidence, directly observed by the user running
+        --headed): CONVERSATION/CTA URL Button is a DIFFERENT real
+        behavior from UTILITY/Custom Message, not the same rule applied
+        twice. Its Template Type dropdown has only a single real option,
+        and its displayed default text is apparently just a rendering
+        default that was never actually committed to the underlying
+        Livewire model -- a real click is genuinely required to bind it
+        (this is very plausibly also *why* the URL button title/value
+        fields were coming up empty: if sub_category itself was never
+        truly committed, its dependent URL-button sub-form may never
+        have been properly initialized either). This is the opposite
+        symptom from UTILITY, where clicking an already-selected option
+        actively DESELECTED it. Pass force=True only for a
+        confirmed-by-observation case like this one -- it is not a
+        general-purpose override, and defaulting to False keeps the
+        UTILITY fix intact."""
+        current = self.get_selected_sub_category_text()
+        if current == option_text and not force:
+            self.page.wait_for_timeout(600)
+            return
+        self.select_sub_category(option_text)
 
     # ══════════════════════════════════════════════════════════════════
     # sub_category=catalog_message: Catalog Type select (module
@@ -1018,6 +1447,64 @@ class WhatsAppTemplateCreatePage(BasePage):
 
     def get_selected_catalog_type_text(self):
         return self._get_selected_display_text(self.CATALOG_TYPE_WRAPPER)
+
+    # ══════════════════════════════════════════════════════════════════
+    # sub_category=catalog_message: Content Id field (module docstring
+    # point 28) -- confirmed identical for both catalog_type values.
+    # ══════════════════════════════════════════════════════════════════
+
+    def is_catalog_content_id_input_present(self):
+        return self.is_element_present(self.CATALOG_CONTENT_ID_INPUT, timeout=5000)
+
+    def set_catalog_content_id(self, value):
+        loc = self.page.locator(self.CATALOG_CONTENT_ID_INPUT)
+        loc.fill("")
+        if value:
+            loc.fill(value)
+        loc.blur()
+        self.page.wait_for_timeout(400)
+
+    def get_catalog_content_id_value(self):
+        return self.page.locator(self.CATALOG_CONTENT_ID_INPUT).input_value()
+
+    # ══════════════════════════════════════════════════════════════════
+    # sub_category=lto: "enable_lto_expiry" checkbox (module docstring
+    # point 29 update -- CONFIRMED via a real pasted DOM capture) and the
+    # expiry-days input it reveals. Callers should still guard with
+    # is_lto_expiry_days_input_present() after ticking the checkbox
+    # rather than assume the input appears instantly (same Livewire
+    # render-settle pattern as every other conditional field on this
+    # page).
+    # ══════════════════════════════════════════════════════════════════
+
+    def is_lto_enable_expiry_checkbox_present(self):
+        return self.is_element_present(self.LTO_ENABLE_EXPIRY_CHECKBOX, timeout=5000)
+
+    def is_lto_enable_expiry_checked(self):
+        return self.page.locator(self.LTO_ENABLE_EXPIRY_CHECKBOX).is_checked()
+
+    def check_lto_enable_expiry(self):
+        loc = self.page.locator(self.LTO_ENABLE_EXPIRY_CHECKBOX)
+        if not loc.is_checked():
+            loc.check(force=True)
+            self.page.wait_for_timeout(600)
+
+    def is_lto_expiry_days_input_present(self):
+        return self.is_element_present(self.LTO_EXPIRY_DAYS_INPUT, timeout=5000)
+
+    def set_lto_expiry_days(self, days):
+        loc = self.page.locator(self.LTO_EXPIRY_DAYS_INPUT)
+        loc.fill("")
+        if days is not None:
+            loc.fill(str(days))
+        loc.blur()
+        self.page.wait_for_timeout(400)
+
+    def get_lto_expiry_days_value(self):
+        return self.page.locator(self.LTO_EXPIRY_DAYS_INPUT).input_value()
+
+    def get_lto_expiry_days_min(self):
+        return self.page.locator(self.LTO_EXPIRY_DAYS_INPUT).get_attribute("min")
 
     # ══════════════════════════════════════════════════════════════════
     # sub_category=carousel: Carousel sub-form (module docstring point
@@ -1255,11 +1742,29 @@ class WhatsAppTemplateCreatePage(BasePage):
     # combinations, not exclusive to any one of them.
     # ══════════════════════════════════════════════════════════════════
 
-    def is_lto_add_button_trigger_present(self):
-        return self.is_element_present(self.LTO_ADD_BUTTON_TRIGGER, timeout=5000)
+    def is_lto_add_button_trigger_present(self, timeout=5000):
+        return self.is_element_present(self.LTO_ADD_BUTTON_TRIGGER, timeout=timeout)
 
     def open_lto_add_button_menu(self):
-        self.page.locator(self.LTO_ADD_BUTTON_TRIGGER).click()
+        # Bounded to 10s with a clear message instead of Playwright's
+        # default 30s wait -- real evidence (a live run) showed this
+        # click hanging for the full 30s when a preceding
+        # select_sub_category() call had left the trigger present in the
+        # DOM but non-actionable (see ensure_sub_category_selected()'s
+        # docstring for the root cause that was actually happening here).
+        # A fast, labeled failure is far more useful than a 30s generic
+        # Playwright TimeoutError when this trigger is unexpectedly
+        # unclickable for any reason.
+        try:
+            self.page.locator(self.LTO_ADD_BUTTON_TRIGGER).click(timeout=10000)
+        except Exception as exc:
+            raise AssertionError(
+                "The 'Add button' trigger was present in the DOM but did "
+                "not become clickable within 10s -- it may be disabled/"
+                "covered/detached due to unexpected sub_category select "
+                "state (see ensure_sub_category_selected()). Original "
+                f"error: {exc}"
+            ) from exc
         self.page.wait_for_timeout(300)
 
     def select_lto_add_button_type(self, label):
@@ -1322,6 +1827,86 @@ class WhatsAppTemplateCreatePage(BasePage):
             loc.fill(text)
         loc.blur()
         self.page.wait_for_timeout(400)
+
+    def is_carousel_product_button_title_input_present(self, card_index=0):
+        return self.is_element_present(
+            f"[wire\\:model\\.live\\.debounce\\.200ms='carousel_products.{card_index}.urlbuttonstitle']",
+            timeout=8000,
+        )
+
+    def set_carousel_product_button_title(self, text, card_index=0):
+        """Confirmed real DOM (genuine capture): <input type="text"
+        wire:model.live.debounce.200ms="carousel_products.{i}.urlbuttonstitle"
+        placeholder="Button Title">, no id attribute -- same wire:model
+        attribute-selector pattern as catalogid/productretailerid above.
+
+        BUG FIX (real evidence): a live run showed this field still
+        EMPTY (with the app's own "Button title is required for each
+        product card." validation message visible) after this method
+        supposedly filled it -- a plain .fill() was not sticking, the
+        same failure shape already seen once before on the Schedule-
+        Later date input (which needed a JS-dispatched event instead of
+        a bare .fill()). Root cause not yet pinned down (the card's DOM
+        may still be settling from the preceding Catalog ID/Content ID
+        debounce round-trip when this runs), so this now verifies the
+        value actually landed via input_value() and retries a few times
+        rather than silently trusting a single .fill() call -- and
+        raises a clear, loud error if it still doesn't stick, instead of
+        letting the test proceed to Save with an empty required field."""
+        selector = (
+            f"[wire\\:model\\.live\\.debounce\\.200ms="
+            f"'carousel_products.{card_index}.urlbuttonstitle']"
+        )
+        self._fill_and_verify(selector, text, field_label="Button Title")
+
+    def is_carousel_product_button_url_input_present(self, card_index=0):
+        return self.is_element_present(
+            f"[wire\\:model\\.live\\.debounce\\.200ms='carousel_products.{card_index}.urlbuttonsvalue']",
+            timeout=8000,
+        )
+
+    def set_carousel_product_button_url(self, text, card_index=0):
+        """Confirmed real DOM (genuine capture): <input type="text"
+        wire:model.live.debounce.200ms="carousel_products.{i}.urlbuttonsvalue"
+        placeholder="Button URL">, no id attribute. See
+        set_carousel_product_button_title()'s docstring for why this
+        verifies-and-retries instead of trusting a single .fill()."""
+        selector = (
+            f"[wire\\:model\\.live\\.debounce\\.200ms="
+            f"'carousel_products.{card_index}.urlbuttonsvalue']"
+        )
+        self._fill_and_verify(selector, text, field_label="Button URL")
+
+    def _fill_and_verify(self, selector, text, field_label, attempts=4):
+        """Fills selector with text, reads the value back, and retries
+        (re-clicking/re-filling) up to `attempts` times if it doesn't
+        stick -- covers both a slow-to-settle re-render (the retry's
+        extra wait gives it time) and a plain .fill() not registering
+        with the framework's own binding (this at least surfaces that
+        clearly instead of silently submitting an empty required field).
+        Raises AssertionError naming the real observed value if every
+        attempt fails, rather than proceeding silently."""
+        loc = self.page.locator(selector)
+        last_seen = None
+        for attempt in range(attempts):
+            loc.click()
+            loc.fill("")
+            if text:
+                loc.fill(text)
+            loc.blur()
+            self.page.wait_for_timeout(500 + attempt * 300)
+            last_seen = loc.input_value()
+            if last_seen == (text or ""):
+                return
+        raise AssertionError(
+            f"{field_label} did not retain the value {text!r} after "
+            f"{attempts} fill attempts -- real observed value is "
+            f"{last_seen!r}. A plain .fill() may not be registering with "
+            f"this field's framework binding (see "
+            f"set_carousel_product_button_title()'s docstring); needs a "
+            f"fresh DOM capture of this field mid-interaction to confirm "
+            f"the real mechanism."
+        )
 
     def click_add_product_card(self):
         self.page.locator(self.ADD_PRODUCT_CARD_BTN).click()
@@ -1450,14 +2035,42 @@ class WhatsAppTemplateCreatePage(BasePage):
         (English / none selected / blank) -- Header is skipped
         everywhere in this E2E suite specifically to avoid a media-
         upload dependency for sub_categories where it isn't otherwise
-        confirmed mandatory. Returns the actual name used."""
+        confirmed mandatory. Returns the actual name used.
+
+        Sender ID: driven by Config.WHATSAPP_TEMPLATE_SENDER_ID (env var
+        WHATSAPP_TEMPLATE_SENDER_ID, default "Globe Teleservices Pte.
+        Ltd." -- see utils/config.py and .env/.env.example), matched
+        case-insensitively as a substring against the real Sender ID
+        options rather than hardcoded, so switching instance/account only
+        means changing .env, not this file (per explicit user request:
+        "select sender id config from .env make it dynamic"). Falls back
+        to the first available option (with a printed warning, never
+        silently) only if no option matches -- e.g. a different
+        environment/account where the configured sender isn't
+        provisioned."""
         senders = self.get_sender_id_options()
         if not senders:
             raise AssertionError(
                 "No real Sender ID options available -- cannot perform a "
                 "real E2E submit without one"
             )
-        label = senders[0].get("label")
+        configured = (Config.WHATSAPP_TEMPLATE_SENDER_ID or "").strip().lower()
+        label = None
+        if configured:
+            for sender in senders:
+                candidate = sender.get("label") or ""
+                if configured in candidate.lower():
+                    label = candidate
+                    break
+        if not label:
+            label = senders[0].get("label")
+            print(
+                f"[fill_required_base_fields] WARNING: no Sender ID option "
+                f"matching Config.WHATSAPP_TEMPLATE_SENDER_ID "
+                f"({Config.WHATSAPP_TEMPLATE_SENDER_ID!r}) found among "
+                f"{[s.get('label') for s in senders]!r} -- falling back to "
+                f"the first option ({label!r})"
+            )
         self.select_sender_id(label)
         name = name or self.generate_unique_template_name()
         self.set_name(name)

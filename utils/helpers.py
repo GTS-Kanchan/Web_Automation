@@ -65,6 +65,15 @@ def goto_with_retry(page, url, timeout=None, wait_until=None, attempts=None):
             if attempt >= max_attempts:
                 raise
             time.sleep(_NAV_RETRY_BACKOFF_SECONDS * attempt)
+        except Exception as e:
+            # ERR_ABORTED happens when a pending Livewire/network request from
+            # a prior test interrupts this navigation. Retry once with a short
+            # wait; if it keeps aborting, let it surface as a real error.
+            if "ERR_ABORTED" in str(e) and attempt < max_attempts:
+                page.wait_for_timeout(1500)
+                time.sleep(_NAV_RETRY_BACKOFF_SECONDS * attempt)
+            else:
+                raise
 
 
 class Helpers:

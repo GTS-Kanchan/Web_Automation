@@ -7,6 +7,15 @@ TC012-TC014, all marked PASS — TC008-TC011 are simply ABSENT from the
 supplied checklist, not blank rows, so those numbers are intentionally
 skipped here rather than fabricated) for the page the checklist calls
 "WhatsApp Numbers" / "sender id page", paired with a full live DOM dump.
+
+  - TC012 ("Sorting for each sortable column") was REMOVED: a real pytest
+    run failed on the very first check (sort_by_app_name() then asserting
+    "app name" in the applied-sort pill) with the pill instead reading
+    "Created At: Z-A\nRemove sort option" -- i.e. the sort actually
+    applied/reported was Created At (descending), not App Name. The exact
+    mechanism (stale pill read, a locator picking up the wrong sort
+    control, etc.) was not root-caused; removed per user instruction
+    rather than guessed at.
 See pages/whatsapp/whatsapp_sender_id_page.py's module docstring for the
 complete list of confirmed DOM specifics driving every locator used here,
 in particular two corrections/clarifications versus the checklist's own
@@ -76,6 +85,10 @@ def ensure_on_sender_id_page(p: WhatsappSenderIdPage):
 
 
 def reset_state(p: WhatsappSenderIdPage):
+    try:
+        p.close_modal()
+    except Exception:
+        pass
     try:
         p.clear_search()
     except Exception:
@@ -170,9 +183,9 @@ def test_TC005_invalid_date_range_shows_no_data(sender_id_page):
     ensure_on_sender_id_page(sender_id_page)
     reset_state(sender_id_page)
 
-    sender_id_page.set_created_at_from("2030-01-01")
+    sender_id_page.set_created_at_from("2026-09-01")
     sender_id_page.set_created_at_to("2020-01-01")
-    sender_id_page.page.wait_for_timeout(1200)
+    sender_id_page.page.wait_for_timeout(1500)
 
     assert sender_id_page.has_no_records_message() or sender_id_page.get_row_count() == 0
 
@@ -211,7 +224,8 @@ def test_TC006_export_to_xlsx_confirm(sender_id_page):
         pytest.skip("Export confirm dialog did not render — cannot safely "
                      "proceed without guessing an alternate mechanism.")
     sender_id_page.confirm_export()
-    ensure_on_sender_id_page(sender_id_page)
+    sender_id_page.navigate()
+    sender_id_page.wait_for_table_load(timeout=10000)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -238,38 +252,6 @@ def test_bonus_optimize_mmt_action_opens_modal(sender_id_page):
     assert sender_id_page.is_modal_open()
     sender_id_page.close_modal()
     ensure_on_sender_id_page(sender_id_page)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TC012 — Sorting for each sortable column
-# ══════════════════════════════════════════════════════════════════════════════
-
-def test_TC012_sorting_each_column(sender_id_page):
-    """Only App Name / WABA Number / Status / Created At are sortable
-    (confirmed) — Quality/Message Limit/MM Lite APIs have no sortBy
-    button at all."""
-    ensure_on_sender_id_page(sender_id_page)
-    reset_state(sender_id_page)
-
-    sender_id_page.sort_by_app_name()
-    pill = sender_id_page.get_applied_sort_pill_text()
-    assert pill is not None and "app name" in pill.lower()
-
-    sender_id_page.sort_by_waba_number()
-    pill = sender_id_page.get_applied_sort_pill_text()
-    assert pill is not None and "waba number" in pill.lower()
-
-    sender_id_page.sort_by_status()
-    pill = sender_id_page.get_applied_sort_pill_text()
-    assert pill is not None and "status" in pill.lower()
-
-    sender_id_page.sort_by_created_at()
-    pill = sender_id_page.get_applied_sort_pill_text()
-    assert pill is not None and "created at" in pill.lower()
-
-    sender_id_page.clear_all_sorts()
-    sender_id_page.page.wait_for_timeout(1000)
-    assert sender_id_page.get_applied_sort_pill_text() is None
 
 
 # ══════════════════════════════════════════════════════════════════════════════

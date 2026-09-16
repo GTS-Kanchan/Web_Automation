@@ -462,11 +462,17 @@ def pytest_runtest_makereport(item, call):
     # window for pure API tests that never wanted one. Guarding on
     # fixturenames keeps this fallback working exactly as before for
     # tests that genuinely use page/logged_in_page, while making it a
-    # true no-op for everything else.
+    # true no-op for everything else. "module_logged_in_page" added
+    # alongside the other two: a real gap this surfaced -- a test that
+    # requests the shared module-scoped page directly (rather than via a
+    # module-scoped page-object fixture, whose funcargs value already
+    # has a `.page` attribute and is caught by Pass 2 above) produced NO
+    # failure screenshot at all, since none of the three passes above
+    # recognized it under any of its usual shapes.
     if pw_page is None:
         req = getattr(item, "_request", None)
         if req is not None:
-            for fname in ("page", "logged_in_page"):
+            for fname in ("page", "logged_in_page", "module_logged_in_page"):
                 if fname not in req.fixturenames:
                     continue
                 try:

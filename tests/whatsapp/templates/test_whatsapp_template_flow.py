@@ -41,7 +41,10 @@ Test Design Notes:
     confirmed updateStatus(<id>) control. The resulting status VALUE is
     NOT asserted (its exact state-transition semantics were never
     confirmed) -- only that the control is present and clickable without
-    the page erroring out.
+    the page erroring out. CONFIRMED (user-reported real behavior): this
+    button only renders on a row whose template is newly created / still
+    Pending, so it scans for the first row that actually has it (not row
+    0) and SKIPS (not fails) when no row currently qualifies.
   - TC006 ("Bulk Action") maps to the one real matching control -- a
     page-level "Export to XLSX" confirm-modal flow (wire:click=
     "exportAll"), independent of any filter selection (page object module
@@ -52,10 +55,11 @@ Test Design Notes:
     pill's exact wording ("Created at: Z-A" is the one wording this
     session actually captured); the other six only assert that A pill
     appears, to avoid asserting an unconfirmed label format.
-  - TC014 (pagination): this environment currently has ~1027 real
-    template rows across ~103 pages, so forward pagination is exercised
-    for real; the page is re-navigated back to page 1 afterwards so any
-    later test run starts from a clean state.
+  - TC014 (pagination) was REMOVED: even after fixing click_next_page()'s
+    confirmed hidden-duplicate-DOM-copy bug, a real pytest run still found
+    is_previous_page_disabled() reporting True (Previous still disabled)
+    immediately after moving to page 2 -- the exact mechanism was not
+    root-caused; removed per user instruction rather than guessed at.
 
 Run:
     pytest tests/whatsapp/templates/test_whatsapp_template_flow.py -v
@@ -261,11 +265,18 @@ def test_TC009_delete_button_in_actions(template_page):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_TC011_update_template_status_button(template_page):
+    """CONFIRMED (user-reported real behavior): the Update Status button
+    only renders on a row whose template is newly created / still in
+    Pending status -- it is legitimately ABSENT from every row whenever no
+    template currently happens to be pending, which is not a bug. Skip
+    rather than fail when the current data has no such row, instead of
+    asserting the button must always be present somewhere."""
     ensure_on_template_page(template_page)
     reset_state(template_page)
-    assert template_page.is_update_status_first_row_present(), (
-        "Update Status button should be present on the first row"
-    )
+    if not template_page.is_update_status_first_row_present():
+        pytest.skip("No template row is currently Pending/newly-created -- "
+                     "the Update Status button is only rendered for those, "
+                     "so none is available to click right now.")
     assert template_page.click_update_status_on_first_row()
     template_page.page.wait_for_timeout(1500)
     # Resulting status value intentionally not asserted — see module docstring.
@@ -306,19 +317,3 @@ def test_TC013_clear_all_sorts(template_page):
     assert template_page.get_applied_sort_pill_text() is None
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TC014 — Pagination (run last — navigates forward through real pages)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def test_TC014_pagination(template_page):
-    ensure_on_template_page(template_page)
-    reset_state(template_page)
-    assert template_page.is_previous_page_disabled(), "Previous should be disabled on page 1"
-    assert template_page.is_next_page_enabled(), "Next should be enabled with ~103 real pages"
-    template_page.click_next_page()
-    assert not template_page.is_previous_page_disabled(), (
-        "Previous should become enabled after moving to page 2"
-    )
-    # Reset back to page 1 so any later test run starts from a clean state.
-    template_page.navigate()
-    template_page.wait_for_table_load()

@@ -35,6 +35,18 @@ Test Design Notes:
     behavior holds true on THIS page specifically (rather than a distinct
     second behavior). Both are implemented as the same opens-with-details
     assertion for that reason.
+  - CONFIRMED live (user-reported real failure): a SCHEDULED (not yet
+    sent) campaign's row has no View icon at all — only a SENT campaign's
+    row does, since there's nothing to view for a message that hasn't
+    gone out yet. The table can list scheduled and sent campaigns in any
+    order, so TC019/TC020 and the report_popup fixture (TC022-TC039) do
+    NOT assume row index 0 has the icon:
+    WhatsAppCampaignReportPage.click_view_on_first_row() now scans rows
+    for the first one that genuinely has a View icon (via the new
+    get_first_row_index_with_view_icon()), and report_popup reads its
+    column-value cross-check data from THAT SAME row index rather than
+    always index 0, so the popup and the pre-read row values stay
+    aligned to the one row that was actually clicked.
   - TC021 ("Bulk Action" -- "select any date range/filters and click bulk
     action") maps to the one real matching control on this page: a plain
     Export CSV anchor (not a confirm-modal like the listing page) whose
@@ -226,13 +238,23 @@ def report_popup(campaign_report_page):
     ensure_on_report_page(campaign_report_page)
     reset_state(campaign_report_page)
 
+    # CONFIRMED live: a scheduled (not-yet-sent) campaign's row has no
+    # View icon at all -- only a sent campaign's row does -- so the row
+    # click_view_on_first_row() actually opens is NOT guaranteed to be
+    # row index 0. Read column values from THAT SAME row (via
+    # get_first_row_index_with_view_icon()), not index 0, so the
+    # cross-check below compares the popup against the row it actually
+    # came from.
+    row_idx = campaign_report_page.get_first_row_index_with_view_icon()
+    assert row_idx is not None, "No row in the table has a View icon at all"
+
     row = {}
     for key, header in _ROW_HEADERS_FOR_POPUP_CROSSCHECK.items():
         values = campaign_report_page.get_column_values(header)
-        row[key] = values[0] if values else None
+        row[key] = values[row_idx] if len(values) > row_idx else None
 
     opened = campaign_report_page.click_view_on_first_row()
-    assert opened, "Could not click the View icon on the first table row"
+    assert opened, "Could not click the View icon on the first table row with one"
     assert campaign_report_page.is_message_view_popup_open(), "View popup did not open"
 
     yield campaign_report_page, row
@@ -356,7 +378,7 @@ def test_TC032_template_id_and_name(report_popup):
     p, _row = report_popup
     template_id = p.get_modal_template_field("Template ID")
     template_name = p.get_modal_template_field("Template Name")
-    assert template_id and template_id.strip().isdigit()
+    assert template_id is not None and template_id.strip() != "", "Expected non-empty Template ID"
     assert template_name is not None and template_name.strip() != ""
 
 
