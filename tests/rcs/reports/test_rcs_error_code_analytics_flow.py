@@ -15,6 +15,7 @@ import re
 import pytest
 
 from constants.rcs_error_code_analytics_headers import EXPECTED_RCS_ERROR_CODE_ANALYTICS_HEADERS
+from constants.rcs_error_code_analytics_ui_headers import EXPECTED_RCS_ERROR_CODE_ANALYTICS_UI_HEADERS
 from pages.rcs.rcs_error_code_analytics_page import RcsErrorCodeAnalyticsPage
 from utils.file_validator import (
     EmptyFileError,
@@ -518,3 +519,26 @@ def test_error_code_analytics_percentage_share_values(error_code_analytics_page)
     if not values:
         pytest.skip("No rows to validate")
     assert all(v.strip() != "" for v in values)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the RCS Error Code Report page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/rcs_error_code_analytics_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(error_code_analytics_page):
+    """All confirmed default on-screen table column headers for the RCS Error Code Report
+    page are present. Full-list check (every header in
+    EXPECTED_RCS_ERROR_CODE_ANALYTICS_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    error_code_analytics_page.navigate_to_report()
+    headers = error_code_analytics_page.get_visible_column_headers()
+    for col in EXPECTED_RCS_ERROR_CODE_ANALYTICS_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

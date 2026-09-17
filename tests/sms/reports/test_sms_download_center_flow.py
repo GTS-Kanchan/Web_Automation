@@ -32,6 +32,7 @@ import pytest
 from pages.sms.sms_download_center_page import SMSDownloadCenterPage
 from pages.sms.sms_report_create_page import SMSReportCreatePage
 from constants.sms_download_headers import EXPECTED_SMS_DOWNLOAD_HEADERS
+from constants.sms_download_center_ui_headers import EXPECTED_SMS_DOWNLOAD_CENTER_UI_HEADERS
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -840,3 +841,27 @@ class TestTC21Report30Days:
     def test_tc21_cleanup(self, download_center_page):
         """Final cleanup -- ensure filters are reset after all date-range tests."""
         reset_filters(download_center_page)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Download Center page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_download_center_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(download_center_page):
+    """All confirmed default on-screen table column headers for the SMS Download Center
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_DOWNLOAD_CENTER_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    download_center_page.navigate()
+    download_center_page.wait_for_table_load(timeout=15000)
+    headers = download_center_page.get_table_headers()
+    for col in EXPECTED_SMS_DOWNLOAD_CENTER_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

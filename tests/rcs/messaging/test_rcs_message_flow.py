@@ -40,6 +40,7 @@ import re
 import pytest
 
 from constants.rcs_message_headers import EXPECTED_RCS_MESSAGE_HEADERS
+from constants.rcs_message_ui_headers import EXPECTED_RCS_MESSAGE_UI_HEADERS
 from pages.rcs.rcs_message_page import RcsMessagePage
 from utils.file_validator import (
     EmptyFileError,
@@ -394,3 +395,26 @@ def test_TC16_filter_by_source(message_page):
     assert message_page.is_messages_page(), "Page broke after applying source filter"
     assert message_page.get_row_count() >= 0 or message_page.is_no_records_visible()
     reset_filters(message_page)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the RCS Messages page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/rcs_message_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(message_page):
+    """All confirmed default on-screen table column headers for the RCS Messages
+    page are present. Full-list check (every header in
+    EXPECTED_RCS_MESSAGE_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    message_page.navigate()
+    headers = message_page.get_table_headers()
+    for col in EXPECTED_RCS_MESSAGE_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

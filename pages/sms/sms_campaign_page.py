@@ -50,6 +50,11 @@ class SMSCampaignPage(BasePage):
     TABLE_ROWS          = (
         "xpath=//table//tbody//tr | //div[contains(@class,'table')]//div[contains(@class,'row')]"
     )
+    # Header cells -- reuses the same "xpath=//table//th" locator already
+    # confirmed working in this exact file by get_visible_column_count()
+    # below. No `#table-{TABLE_NAME}`-style id was ever confirmed for this
+    # page, so this stays with the plain xpath rather than guessing one.
+    TABLE_HEADERS       = "xpath=//table//th"
 
     # Row action: "Reports" icon -- CONFIRMED from a real, pasted DOM
     # capture: a plain <a data-tooltip-target="tooltip-reports-<id>"
@@ -666,6 +671,14 @@ class SMSCampaignPage(BasePage):
             if h.is_visible() and h.inner_text().strip():
                 count += 1
         return count
+
+    def get_visible_column_headers(self):
+        """Return the visible table header label texts, following the same
+        `_get_headers_safe(self.TABLE_HEADERS)` convention used by every
+        other SMS list/report page object. Added alongside the pre-existing
+        get_visible_column_count() above, which already confirmed
+        "xpath=//table//th" as a working locator on this page."""
+        return self._get_headers_safe(self.TABLE_HEADERS)
 
     def set_per_page(self, value):
         try:

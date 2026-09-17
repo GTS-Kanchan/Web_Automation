@@ -22,6 +22,7 @@ import os
 import pytest
 
 from constants.sms_sender_report_headers import EXPECTED_SMS_SENDER_REPORT_HEADERS
+from constants.sms_sender_report_ui_headers import EXPECTED_SMS_SENDER_REPORT_UI_HEADERS
 from pages.sms.sms_sender_report_page import SmsSenderReportPage
 from utils.file_validator import (
     EmptyFileError,
@@ -446,3 +447,26 @@ def test_sender_report_TC27_records_count_displayed(sender_report_page):
     ensure_on_report_page(sender_report_page)
     text = sender_report_page.get_pagination_results_text()
     assert "showing" in text.lower() and "of" in text.lower()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Sender Report page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_sender_report_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(sender_report_page):
+    """All confirmed default on-screen table column headers for the SMS Sender Report
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_SENDER_REPORT_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    ensure_on_report_page(sender_report_page)
+    headers = sender_report_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_SENDER_REPORT_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

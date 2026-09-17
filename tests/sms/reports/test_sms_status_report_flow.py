@@ -38,6 +38,7 @@ import os
 import pytest
 
 from constants.sms_status_report_headers import EXPECTED_SMS_STATUS_REPORT_HEADERS
+from constants.sms_status_report_ui_headers import EXPECTED_SMS_STATUS_REPORT_UI_HEADERS
 from pages.sms.sms_status_report_page import SmsStatusReportPage
 from utils.file_validator import (
     EmptyFileError,
@@ -421,3 +422,26 @@ def test_tc28_page_load_performance(status_report_page):
     load_time = status_report_page.get_page_load_time_ms()
     assert load_time is not None
     assert load_time < 8000
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Status Report page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_status_report_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(status_report_page):
+    """All confirmed default on-screen table column headers for the SMS Status Report
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_STATUS_REPORT_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    ensure_on_report_page(status_report_page)
+    headers = status_report_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_STATUS_REPORT_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

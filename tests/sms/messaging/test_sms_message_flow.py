@@ -37,6 +37,7 @@ from datetime import datetime, timedelta
 from pages.sms.sms_message_page import SMSMessagePage
 from utils.config import Config
 from constants.sms_message_headers import EXPECTED_SMS_MESSAGE_HEADERS
+from constants.sms_message_ui_headers import EXPECTED_SMS_MESSAGE_UI_HEADERS
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -989,3 +990,28 @@ def test_TC054_popup_close_button_works(message_page):
 
     still_open = message_page.h.is_element_present(message_page.POPUP_CONTAINER, timeout=3000)
     assert not still_open, "Popup still visible after clicking Close"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Messages page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_message_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(message_page):
+    """All confirmed default on-screen table column headers for the SMS Messages
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_MESSAGE_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    ensure_on_messages_page(message_page)
+    message_page.navigate()
+    message_page.wait_for_table_load(timeout=15000)
+    headers = message_page.get_table_headers()
+    for col in EXPECTED_SMS_MESSAGE_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

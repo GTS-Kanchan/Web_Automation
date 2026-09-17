@@ -41,6 +41,7 @@ import pytest
 
 from pages.common.login_page import LoginPage
 from pages.sms.sms_error_codes_page import SmsErrorCodesPage
+from constants.sms_error_codes_ui_headers import EXPECTED_SMS_ERROR_CODES_UI_HEADERS
 from utils.config import Config
 
 
@@ -423,3 +424,26 @@ def test_sec030_error_code_data_accuracy(error_codes_page):
     descs = error_codes_page.get_column_values("description")
     assert "DELIVRD" in names and "000" in codes and "Delivered" in descs
     error_codes_page.clear_search()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Error Codes page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_error_codes_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(error_codes_page):
+    """All confirmed default on-screen table column headers for the SMS Error Codes
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_ERROR_CODES_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    ensure_on_page(error_codes_page)
+    headers = error_codes_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_ERROR_CODES_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

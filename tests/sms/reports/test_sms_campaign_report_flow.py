@@ -26,6 +26,7 @@ import time
 import pytest
 
 from constants.sms_campaign_report_headers import EXPECTED_SMS_CAMPAIGN_REPORT_HEADERS
+from constants.sms_campaign_report_ui_headers import EXPECTED_SMS_CAMPAIGN_REPORT_UI_HEADERS
 from pages.sms.sms_campaign_report_page import SmsCampaignReportPage
 from utils.file_validator import (
     EmptyFileError,
@@ -546,3 +547,26 @@ def test_campaign_report_TC33_modal_surcharge(campaign_report_page):
     if not values:
         pytest.skip("No status rows to validate")
     assert all(v.strip() != "" for v in values)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Campaign Report page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_campaign_report_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(campaign_report_page):
+    """All confirmed default on-screen table column headers for the SMS Campaign Report
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_CAMPAIGN_REPORT_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    ensure_on_report_page(campaign_report_page)
+    headers = campaign_report_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_CAMPAIGN_REPORT_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

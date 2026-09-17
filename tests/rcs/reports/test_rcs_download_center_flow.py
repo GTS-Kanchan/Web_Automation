@@ -86,6 +86,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from constants.rcs_download_center_headers import EXPECTED_RCS_DOWNLOAD_CENTER_HEADERS
+from constants.rcs_download_center_ui_headers import EXPECTED_RCS_DOWNLOAD_CENTER_UI_HEADERS
 from pages.rcs.rcs_download_center_page import RcsDownloadCenterPage
 from pages.rcs.rcs_report_create_page import RcsReportCreatePage
 from utils.file_validator import (
@@ -1038,3 +1039,25 @@ class TestBonusColumnsPanel:
         missing = [v for v in confirmed_values if not download_center_page.is_column_checkbox_present(v)]
         assert not missing, f"Column checkboxes missing from panel: {missing}"
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the RCS Download Center page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/rcs_download_center_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(download_center_page):
+    """All confirmed default on-screen table column headers for the RCS Download Center
+    page are present. Full-list check (every header in
+    EXPECTED_RCS_DOWNLOAD_CENTER_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    download_center_page.navigate()
+    headers = download_center_page.get_table_headers()
+    for col in EXPECTED_RCS_DOWNLOAD_CENTER_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

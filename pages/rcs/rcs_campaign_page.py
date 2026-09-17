@@ -14,6 +14,12 @@ class RCSCampaignPage(BasePage):
     CAMPAIGN_LIST_URL   = "/rcs/campaign"
     CAMPAIGN_CREATE_URL = "/rcs/campaign/create"
 
+    # Header cells -- "table thead th" mirrors the exact querySelector('table')
+    # + "thead th, thead td" scan already confirmed working on this page by
+    # get_status_for_campaign_name()'s "Confirmed via live testing" docstring
+    # below. No `#table-{TABLE_NAME}`-style id was ever confirmed here.
+    TABLE_HEADERS = "table thead th"
+
     # ── List page ──────────────────────────────────────────────────────────────
     BTN_CREATE          = (
         "xpath=//a[contains(@href,'create')] | //button[contains(.,'Create')]"
@@ -106,6 +112,12 @@ class RCSCampaignPage(BasePage):
         self.open(self.CAMPAIGN_LIST_URL)
         self.wait_for_spinner_to_disappear()
         self.page.wait_for_timeout(1000)
+
+    def get_visible_column_headers(self):
+        """Return the visible table header label texts, following the same
+        `_get_headers_safe(self.TABLE_HEADERS)` convention used by every
+        other list/report page object in this suite."""
+        return self._get_headers_safe(self.TABLE_HEADERS)
 
     def wait_for_spinner_to_disappear(self):
         """Wait for any loading spinner to disappear."""

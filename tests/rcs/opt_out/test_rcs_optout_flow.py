@@ -68,6 +68,7 @@ from datetime import date, timedelta
 import pytest
 
 from constants.rcs_optout_headers import EXPECTED_RCS_OPTOUT_HEADERS
+from constants.rcs_optout_ui_headers import EXPECTED_RCS_OPTOUT_UI_HEADERS
 from pages.rcs.rcs_optout_page import RcsOptOutPage
 from utils.parallel import short_unique_digits
 from utils.test_data_generator import DATA_DIR
@@ -710,3 +711,26 @@ def test_TC027_export_csv_verifies_header(optout_page):
 
     print(f"Header validation PASS: {actual_headers}")
     assert optout_page.is_optout_page()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the RCS Optout Numbers page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/rcs_optout_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(optout_page):
+    """All confirmed default on-screen table column headers for the RCS Optout Numbers
+    page are present. Full-list check (every header in
+    EXPECTED_RCS_OPTOUT_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    optout_page.navigate()
+    headers = optout_page.get_visible_column_headers()
+    for col in EXPECTED_RCS_OPTOUT_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

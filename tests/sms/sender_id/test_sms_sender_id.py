@@ -28,6 +28,7 @@ from utils.test_data_generator import (
     sender_id_sample_csv_path,
 )
 from constants.sms_sender_id_headers import EXPECTED_SMS_SENDER_ID_HEADERS
+from constants.sms_sender_id_ui_headers import EXPECTED_SMS_SENDER_ID_UI_HEADERS
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -1133,3 +1134,26 @@ class TestColumnVisibility:
         sender_id_page.page.wait_for_timeout(1500)
         headers = sender_id_page.get_visible_column_headers()
         assert len(headers) >= 1, "At least one column should be visible after refresh"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Sender ID page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_sender_id_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(sender_id_page):
+    """All confirmed default on-screen table column headers for the SMS Sender ID
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_SENDER_ID_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    _to_list(sender_id_page)
+    headers = sender_id_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_SENDER_ID_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

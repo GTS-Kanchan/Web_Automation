@@ -37,6 +37,7 @@ import time
 import pytest
 
 from constants.sms_blocked_numbers_headers import EXPECTED_SMS_BLOCKED_NUMBERS_HEADERS
+from constants.sms_blocked_numbers_ui_headers import EXPECTED_SMS_BLOCKED_NUMBERS_UI_HEADERS
 from pages.sms.sms_blocked_numbers_page import SmsBlockedNumbersPage
 from utils.file_validator import (
     EmptyFileError,
@@ -611,3 +612,26 @@ def test_tc032_page_performance(blocked_numbers_page):
     load_time = blocked_numbers_page.get_page_load_time_ms()
     if load_time is not None:
         assert load_time < 20000, f"Page load took {load_time}ms (>20000ms)"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Blocked Number page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_blocked_numbers_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(blocked_numbers_page):
+    """All confirmed default on-screen table column headers for the SMS Blocked Number
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_BLOCKED_NUMBERS_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    ensure_on_page(blocked_numbers_page)
+    headers = blocked_numbers_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_BLOCKED_NUMBERS_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

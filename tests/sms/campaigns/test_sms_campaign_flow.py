@@ -20,6 +20,7 @@ import pytest
 from datetime import datetime, timedelta
 
 from pages.sms.sms_campaign_page import SMSCampaignPage
+from constants.sms_campaign_ui_headers import EXPECTED_SMS_CAMPAIGN_UI_HEADERS
 from utils.config import Config
 from utils.test_data_generator import generate_all, DATA_DIR
 from utils.parallel import unique_name
@@ -931,3 +932,38 @@ def test_TC051_cancel_campaign_creation(campaign_page):
     campaign_page.click_cancel()
     ensure_list(campaign_page)
     assert campaign_page.is_list_page(), "Should be back on the campaign list after Cancel"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Campaigns page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_campaign_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(campaign_page):
+    """All confirmed default on-screen table column headers for the SMS Campaigns
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_CAMPAIGN_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention.
+
+    KNOWN FAILING (confirmed real app gap, not a test/locator bug): a real
+    --headed run against the live list page rendered only 8 headers --
+    ACTION, CAMPAIGN NAME, SOURCE, SENDER ID, TEMPLATE NAME, STATUS,
+    CREATED AT, SCHEDULED AT -- with "Total Units" missing. The project
+    owner explicitly confirmed "Total Units" IS supposed to be a default
+    column (not a toggle-on/hidden one), so this failure is expected to
+    persist until the app itself renders that column by default. Do not
+    "fix" this by removing Total Units from the expected list or by
+    loosening the assertion without a fresh instruction confirming the
+    app has changed.
+    """
+    ensure_list(campaign_page)
+    headers = campaign_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_CAMPAIGN_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

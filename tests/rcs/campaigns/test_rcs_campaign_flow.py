@@ -12,6 +12,7 @@ import os
 import pytest
 
 from constants.rcs_campaign_headers import EXPECTED_RCS_CAMPAIGN_HEADERS
+from constants.rcs_campaign_ui_headers import EXPECTED_RCS_CAMPAIGN_UI_HEADERS
 from pages.rcs.rcs_campaign_page import RCSCampaignPage
 from utils.config import Config
 from utils.file_validator import (
@@ -205,3 +206,26 @@ def test_TC009_filter_created_date_range_and_export_verifies_header(campaign_pag
     date_ok = campaign_page.set_created_date_range(from_date, to_date)
     print(f"[TC009] Created date range applied: {date_ok}")
     _export_and_validate_header(campaign_page, "TC009")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the RCS Campaigns page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/rcs_campaign_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(campaign_page):
+    """All confirmed default on-screen table column headers for the RCS Campaigns
+    page are present. Full-list check (every header in
+    EXPECTED_RCS_CAMPAIGN_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    campaign_page.load_campaign_list()
+    headers = campaign_page.get_visible_column_headers()
+    for col in EXPECTED_RCS_CAMPAIGN_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

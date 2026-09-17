@@ -31,6 +31,7 @@ import os
 import pytest
 
 from constants.sms_latency_report_headers import EXPECTED_SMS_LATENCY_REPORT_HEADERS
+from constants.sms_latency_report_ui_headers import EXPECTED_SMS_LATENCY_REPORT_UI_HEADERS
 from pages.sms.sms_latency_report_page import SmsLatencyReportPage
 from utils.file_validator import (
     EmptyFileError,
@@ -423,3 +424,26 @@ def test_tc26_report_loading_performance(latency_report_page):
     load_time = latency_report_page.get_page_load_time_ms()
     assert load_time is not None
     assert load_time < 8000
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Latency page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_latency_report_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(latency_report_page):
+    """All confirmed default on-screen table column headers for the SMS Latency
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_LATENCY_REPORT_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    ensure_on_report_page(latency_report_page)
+    headers = latency_report_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_LATENCY_REPORT_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

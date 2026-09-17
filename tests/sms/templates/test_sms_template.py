@@ -26,6 +26,7 @@ from pages.sms.sms_template_page import SMSTemplatePage
 from utils.config import Config
 from utils.test_data_generator import DATA_DIR, generate_all
 from constants.sms_template_headers import EXPECTED_SMS_TEMPLATE_HEADERS
+from constants.sms_template_ui_headers import EXPECTED_SMS_TEMPLATE_UI_HEADERS
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -889,3 +890,26 @@ class TestDeleteTemplate:
         assert template_page.has_no_records_message() or template_page.get_row_count() == 0, \
             f"Scratch template '{name}' should no longer appear after confirming delete"
         template_page.clear_search()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Template page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_template_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(template_page):
+    """All confirmed default on-screen table column headers for the SMS Template
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_TEMPLATE_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    _to_list(template_page)
+    headers = template_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_TEMPLATE_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

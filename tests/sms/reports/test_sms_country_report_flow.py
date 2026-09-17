@@ -24,6 +24,7 @@ import time
 import pytest
 
 from constants.sms_country_report_headers import EXPECTED_SMS_COUNTRY_REPORT_HEADERS
+from constants.sms_country_report_ui_headers import EXPECTED_SMS_COUNTRY_REPORT_UI_HEADERS
 from pages.sms.sms_country_report_page import SmsCountryReportPage
 from utils.file_validator import (
     EmptyFileError,
@@ -526,3 +527,26 @@ def test_country_report_TC33_load_performance(country_report_page):
     if load_ms is None or load_ms <= 0:
         pytest.skip("Browser performance timing API unavailable")
     assert load_ms < 8000, f"Page load took {load_ms}ms"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the SMS Country Code page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/sms_country_report_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(country_report_page):
+    """All confirmed default on-screen table column headers for the SMS Country Code
+    page are present. Full-list check (every header in
+    EXPECTED_SMS_COUNTRY_REPORT_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    ensure_on_report_page(country_report_page)
+    headers = country_report_page.get_visible_column_headers()
+    for col in EXPECTED_SMS_COUNTRY_REPORT_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"

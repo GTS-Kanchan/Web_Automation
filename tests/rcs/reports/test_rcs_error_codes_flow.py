@@ -29,6 +29,7 @@ Run:
     pytest tests/test_rcs_error_codes_flow.py -v
 """
 import pytest
+from constants.rcs_error_codes_ui_headers import EXPECTED_RCS_ERROR_CODES_UI_HEADERS
 
 from pages.common.login_page import LoginPage
 from pages.rcs.rcs_error_codes_page import RcsErrorCodesPage
@@ -447,3 +448,26 @@ def test_rec030_error_code_data_accuracy(rcs_error_codes_page):
     empty_codes = [c for c in codes if not c]
     assert not empty_names, f"Some Name cells are empty: {empty_names!r}"
     assert not empty_codes, f"Some Code cells are empty: {empty_codes!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UI default table headers -- full-list verification
+#
+# Source: explicit statement of real, current app behavior given directly by
+# the project owner (the RCS Error Code page's default on-screen table columns),
+# not a guess and not the CSV/Excel export header list above (which is a
+# separate, already-existing concept). See
+# constants/rcs_error_codes_ui_headers.py for the full header list and provenance note.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.smoke
+def test_ui_default_table_headers_full(rcs_error_codes_page):
+    """All confirmed default on-screen table column headers for the RCS Error Code
+    page are present. Full-list check (every header in
+    EXPECTED_RCS_ERROR_CODES_UI_HEADERS), following this suite's established
+    case-insensitive substring-per-header convention."""
+    rcs_error_codes_page.navigate_to_report()
+    headers = rcs_error_codes_page.get_visible_column_headers()
+    for col in EXPECTED_RCS_ERROR_CODES_UI_HEADERS:
+        assert any(col.lower() in h.lower() for h in headers), \
+            f"Column '{col}' not found in headers: {headers}"
