@@ -32,6 +32,7 @@ def test_send_json_real_sample_payload(api_client, test_data, record_property):
     payload = test_data["sms_json"]["real_sample_payload"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -58,6 +59,7 @@ def test_send_json_minimal_valid_payload(api_client, test_data, record_property)
     payload = test_data["sms_json"]["minimal_valid_payload"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -78,6 +80,7 @@ def test_send_json_minimal_valid_payload(api_client, test_data, record_property)
 def test_send_json_response_time_within_timeout(api_client, test_data, env_config, record_property):
     payload = test_data["sms_json"]["minimal_valid_payload"]
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
     assert response.elapsed.total_seconds() < env_config.timeout_seconds
 
 
@@ -88,6 +91,7 @@ def test_send_json_missing_root(api_client, test_data, record_property):
     payload = test_data["sms_json"]["missing_root_payload"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -102,6 +106,7 @@ def test_send_json_missing_data_array(api_client, test_data, record_property):
     payload = test_data["sms_json"]["missing_data_payload"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -116,6 +121,7 @@ def test_send_json_empty_data_array(api_client, test_data, record_property):
     payload = test_data["sms_json"]["empty_data_array_payload"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -132,6 +138,7 @@ def test_send_json_root_missing_from(api_client, test_data, record_property):
     payload = test_data["sms_json"]["root_missing_from"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -147,6 +154,7 @@ def test_send_json_root_missing_text(api_client, test_data, record_property):
     payload = test_data["sms_json"]["root_missing_text"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -162,6 +170,7 @@ def test_send_json_root_missing_to(api_client, test_data, record_property):
     payload = test_data["sms_json"]["root_missing_to"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -177,6 +186,7 @@ def test_send_json_entry_with_invalid_override_number(api_client, test_data, rec
     payload = test_data["sms_json"]["entry_invalid_number"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "(200, 422)")
     record_property("Actual", str(response.status_code))
@@ -192,6 +202,7 @@ def test_send_json_entry_with_invalid_type_value(api_client, test_data, record_p
     payload = test_data["sms_json"]["entry_with_invalid_type_value"]
 
     response = api_client.send_json(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -217,6 +228,7 @@ def test_send_json_unicode_text_entry(api_client, test_data, record_property):
     }
 
     response = api_client.send_json(minimal_unicode_payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -233,6 +245,7 @@ def test_send_json_unauthorized_without_token(api_client, test_data, record_prop
     bad_headers["Authorization"] = "Bearer invalid-token-for-testing"
 
     response = api_client.send_json(payload, headers=bad_headers)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -251,6 +264,7 @@ def test_send_json_missing_authorization_header_entirely(api_client, test_data, 
     }
 
     response = api_client.send_json(payload, headers=headers_without_auth)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -274,6 +288,7 @@ def test_send_json_malformed_json_body(api_client, record_property):
             "Authorization": f"Bearer {api_client.env.auth_token}",
         },
     )
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 422")
     record_property("Actual", str(response.status_code))

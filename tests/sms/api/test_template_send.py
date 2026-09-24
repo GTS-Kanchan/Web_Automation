@@ -29,6 +29,7 @@ def test_send_template_valid_payload_returns_success(api_client, test_data, env_
     payload = test_data["template_send"]["valid_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -50,6 +51,7 @@ def test_send_template_valid_payload_returns_success(api_client, test_data, env_
 def test_send_template_response_time_within_timeout(api_client, test_data, env_config, record_property):
     payload = test_data["template_send"]["valid_payload"]
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
     assert response.elapsed.total_seconds() < env_config.timeout_seconds
 
 
@@ -58,6 +60,7 @@ def test_send_template_missing_id(api_client, test_data, record_property):
     payload = test_data["template_send"]["missing_id_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -72,6 +75,7 @@ def test_send_template_missing_to(api_client, test_data, record_property):
     payload = test_data["template_send"]["missing_to_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -86,6 +90,7 @@ def test_send_template_empty_to_array(api_client, test_data, record_property):
     payload = test_data["template_send"]["empty_to_array_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -102,6 +107,7 @@ def test_send_template_missing_params(api_client, test_data, record_property):
     payload = test_data["template_send"]["missing_params_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -117,6 +123,7 @@ def test_send_template_empty_params_object(api_client, test_data, record_propert
     payload = test_data["template_send"]["empty_params_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "(200, 422)")
     record_property("Actual", str(response.status_code))
@@ -132,6 +139,7 @@ def test_send_template_nonexistent_template_id(api_client, test_data, record_pro
     payload = test_data["template_send"]["nonexistent_template_id_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "(404, 422)")
     record_property("Actual", str(response.status_code))
@@ -146,6 +154,7 @@ def test_send_template_non_numeric_id(api_client, test_data, record_property):
     payload = test_data["template_send"]["non_numeric_id_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -160,6 +169,7 @@ def test_send_template_invalid_number(api_client, test_data, record_property):
     payload = test_data["template_send"]["invalid_number_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -174,6 +184,7 @@ def test_send_template_multiple_recipients(api_client, test_data, env_config, re
     payload = test_data["template_send"]["multiple_recipients_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -190,6 +201,7 @@ def test_send_template_extra_unexpected_param(api_client, test_data, record_prop
     payload = test_data["template_send"]["extra_unexpected_param_payload"]
 
     response = api_client.send_template(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "(200, 422)")
     record_property("Actual", str(response.status_code))
@@ -207,6 +219,7 @@ def test_send_template_unauthorized_without_token(api_client, test_data, record_
     bad_headers["Authorization"] = "Bearer invalid-token-for-testing"
 
     response = api_client.send_template(payload, headers=bad_headers)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -225,6 +238,7 @@ def test_send_template_missing_authorization_header_entirely(api_client, test_da
     }
 
     response = api_client.send_template(payload, headers=headers_without_auth)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -248,6 +262,7 @@ def test_send_template_malformed_json_body(api_client, record_property):
             "Authorization": f"Bearer {api_client.env.auth_token}",
         },
     )
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 422")
     record_property("Actual", str(response.status_code))

@@ -20,6 +20,7 @@ Report features (unchanged from the Selenium suite):
 
 import os
 import base64
+import html
 import json
 import platform
 import datetime
@@ -409,6 +410,67 @@ def pytest_configure(config):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# JSON -> syntax-highlighted HTML, for the "Response" extras block below
+# ══════════════════════════════════════════════════════════════════════════════
+
+_JSON_KEY_COLOR     = "#0f766e"   # teal
+_JSON_STRING_COLOR  = "#b45309"   # amber
+_JSON_LITERAL_COLOR = "#7c3aed"   # violet (numbers / true / false / null)
+_JSON_PUNCT_COLOR   = "#64748b"   # slate (braces / brackets / commas)
+
+
+def _json_to_html(value, indent=0):
+    """Render a parsed JSON value as indented, colour-coded HTML.
+
+    Walks the actual Python object (not the dumped text), so every string
+    is coloured/escaped as a single atomic unit -- a phone number, UUID or
+    timestamp INSIDE a string can never be mistaken for a separate numeric
+    literal the way a regex pass over already-formatted text can (that
+    exact bug was caught before this shipped: a regex-based version here
+    reached inside quoted values and mis-coloured digits like the "4131"
+    inside a message_id UUID, or the digits of a phone number)."""
+    pad = "  " * indent
+    pad_in = "  " * (indent + 1)
+    punct = lambda s: f'<span style="color:{_JSON_PUNCT_COLOR}">{s}</span>'
+
+    if isinstance(value, dict):
+        if not value:
+            return punct("{}")
+        items = []
+        for k, v in value.items():
+            key_html = (
+                f'<span style="color:{_JSON_KEY_COLOR}">'
+                f'&quot;{html.escape(str(k))}&quot;</span>'
+            )
+            items.append(f"{pad_in}{key_html}{punct(':')} {_json_to_html(v, indent + 1)}")
+        body = punct(",") + "\n"
+        body = body.join(items)
+        return punct("{") + "\n" + body + "\n" + pad + punct("}")
+
+    if isinstance(value, list):
+        if not value:
+            return punct("[]")
+        items = [f"{pad_in}{_json_to_html(v, indent + 1)}" for v in value]
+        body = (punct(",") + "\n").join(items)
+        return punct("[") + "\n" + body + "\n" + pad + punct("]")
+
+    if isinstance(value, str):
+        return (
+            f'<span style="color:{_JSON_STRING_COLOR}">'
+            f'&quot;{html.escape(value)}&quot;</span>'
+        )
+
+    if isinstance(value, bool):
+        return f'<span style="color:{_JSON_LITERAL_COLOR}">{"true" if value else "false"}</span>'
+
+    if value is None:
+        return f'<span style="color:{_JSON_LITERAL_COLOR}">null</span>'
+
+    # int / float
+    return f'<span style="color:{_JSON_LITERAL_COLOR}">{value}</span>'
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Screenshot on failure + marker/duration tagging
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -424,6 +486,58 @@ def pytest_runtest_makereport(item, call):
             marker = m
             break
     report._marker = marker
+
+    # ── Surface record_property("Response", ...) in the HTML report ───────────
+    # record_property() values land in JUnit XML / item.user_properties, but
+    # pytest-html's per-test "Log" section only shows captured stdout/logging
+    # -- it never renders user_properties, so a passing SMS API test (see
+    # tests/sms/api/*.py, which all call record_property("Response",
+    # response.text) right after every api_client call) showed nothing
+    # ("No log output captured.") even though the property was recorded.
+    # report.extras (via pytest_html.extras.html(...)) is this suite's
+    # already-established, confirmed-working mechanism for visible per-test
+    # content -- it's exactly how the failure-screenshot block below renders
+    # -- so mirror that here instead of relying on record_property's own
+    # (non-existent) HTML rendering. Runs on every outcome (pass/fail/skip),
+    # not just report.when == "call" failures, since the goal is specifically
+    # to make a PASSING test's response visible too.
+    if report.when == "call":
+        try:
+            response_text = None
+            for pname, pval in getattr(item, "user_properties", []):
+                if pname == "Response":
+                    response_text = pval
+                    break
+            if response_text is not None:
+                # Pretty-print + colour if it parses as JSON (the common
+                # case for this suite's APIs); fall back to the raw text,
+                # HTML-escaped but otherwise untouched, for a non-JSON
+                # body so nothing is ever silently dropped.
+                try:
+                    parsed = json.loads(response_text)
+                    body_html = _json_to_html(parsed)
+                    label = "Response (JSON):"
+                except (TypeError, ValueError):
+                    body_html = html.escape(str(response_text))
+                    label = "Response:"
+
+                resp_html = (
+                    '<div style="margin-top:8px;padding:10px;background:#f8fafc;'
+                    'border:1px solid #cbd5e1;border-radius:6px">'
+                    f'<b>{label}</b>'
+                    '<pre style="white-space:pre-wrap;word-break:break-word;'
+                    'margin:6px 0 0;font-size:12px;line-height:1.5">' + body_html + '</pre>'
+                    '</div>'
+                )
+                extras = getattr(report, "extras", [])
+                try:
+                    from pytest_html import extras as html_extras
+                    extras.append(html_extras.html(resp_html))
+                    report.extras = extras
+                except ImportError:
+                    pass
+        except Exception:
+            pass
 
     # Grab the Playwright Page — works whether the test asked for the raw
     # `page` fixture directly, or a page-object fixture (login_page,

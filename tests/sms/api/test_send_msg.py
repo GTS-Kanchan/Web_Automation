@@ -33,6 +33,7 @@ def test_send_msg_valid_query_params_returns_success(api_client, test_data, env_
     query = test_data["send_msg"]["valid_query_params"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -49,6 +50,7 @@ def test_send_msg_valid_query_params_returns_success(api_client, test_data, env_
 def test_send_msg_response_time_within_timeout(api_client, test_data, env_config, record_property):
     query = test_data["send_msg"]["valid_query_params"]
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
     assert response.elapsed.total_seconds() < env_config.timeout_seconds
 
 
@@ -57,6 +59,7 @@ def test_send_msg_missing_campaign_id(api_client, test_data, record_property):
     query = test_data["send_msg"]["missing_campaign_id"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -71,6 +74,7 @@ def test_send_msg_missing_phone(api_client, test_data, record_property):
     query = test_data["send_msg"]["missing_phone"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -87,6 +91,7 @@ def test_send_msg_missing_params(api_client, test_data, record_property):
     query = test_data["send_msg"]["missing_params"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 422")
     record_property("Actual", str(response.status_code))
@@ -102,6 +107,7 @@ def test_send_msg_empty_params_array(api_client, test_data, record_property):
     query = test_data["send_msg"]["empty_params_array"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 422")
     record_property("Actual", str(response.status_code))
@@ -116,6 +122,7 @@ def test_send_msg_invalid_phone_format(api_client, test_data, record_property):
     query = test_data["send_msg"]["invalid_phone_format"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -130,6 +137,7 @@ def test_send_msg_non_numeric_phone(api_client, test_data, record_property):
     query = test_data["send_msg"]["non_numeric_phone"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -145,6 +153,7 @@ def test_send_msg_nonexistent_campaign_id(api_client, test_data, record_property
     query = test_data["send_msg"]["nonexistent_campaign_id"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 404, 422")
     record_property("Actual", str(response.status_code))
@@ -161,6 +170,7 @@ def test_send_msg_malformed_campaign_id_format(api_client, test_data, record_pro
     query = test_data["send_msg"]["malformed_campaign_id_format"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 404, 422")
     record_property("Actual", str(response.status_code))
@@ -177,6 +187,7 @@ def test_send_msg_extra_unexpected_query_param(api_client, test_data, record_pro
     query = test_data["send_msg"]["extra_unexpected_query_param"]
 
     response = api_client.send_msg(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 422")
     record_property("Actual", str(response.status_code))
@@ -193,6 +204,7 @@ def test_send_msg_unauthorized_without_token(api_client, test_data, env_config, 
     bad_headers = {"Authorization": "Bearer invalid-token-for-testing"}
 
     response = api_client.send_msg(query, headers=bad_headers)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -207,6 +219,7 @@ def test_send_msg_missing_authorization_header_entirely(api_client, test_data, e
     query = test_data["send_msg"]["valid_query_params"]
 
     response = api_client.send_msg(query, headers={})
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -236,6 +249,7 @@ def test_send_msg_malformed_params_json_in_query_string(api_client, test_data, r
     response = api_client.send_msg(
         query, headers={"Authorization": f"Bearer {api_client.env.auth_token}"}
     )
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 422")
     record_property("Actual", str(response.status_code))

@@ -24,6 +24,7 @@ def test_send_sms_valid_payload_returns_success(api_client, test_data, record_pr
     payload = test_data["sms_send"]["valid_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -52,6 +53,7 @@ def test_send_sms_valid_payload_returns_success(api_client, test_data, record_pr
 def test_send_sms_response_time_within_timeout(api_client, test_data, env_config, record_property):
     payload = test_data["sms_send"]["valid_payload"]
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
     assert response.elapsed.total_seconds() < env_config.timeout_seconds
 
 
@@ -60,6 +62,7 @@ def test_send_sms_missing_from_field_returns_400(api_client, test_data, record_p
     payload = test_data["sms_send"]["missing_from_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     # Live API returns 422 for this validation error (docs implied 400,
     # but 422 Unprocessable Entity is the actual behavior).
@@ -81,6 +84,7 @@ def test_send_sms_unauthorized_without_token(api_client, test_data, record_prope
     bad_headers["Authorization"] = "Bearer invalid-token-for-testing"
 
     response = api_client.send_sms(payload, headers=bad_headers)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -96,6 +100,7 @@ def test_send_sms_invalid_number_returns_422(api_client, test_data, record_prope
     payload = test_data["sms_send"]["invalid_number_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     if response.status_code == 200:
         body = response.json()
@@ -129,6 +134,7 @@ def test_send_sms_more_than_50_numbers_behavior(api_client, test_data, record_pr
     payload["to"] = [f"9170020885{str(i).zfill(2)}" for i in range(51)]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     if response.status_code == 200:
         body = response.json()
@@ -155,6 +161,7 @@ def test_send_sms_accepts_valid_type_values(api_client, test_data, msg_type, rec
     payload["type"] = msg_type
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -174,6 +181,7 @@ def test_send_sms_gts_adapter_style_payload(api_client, test_data, record_proper
     payload = test_data["sms_send"]["valid_payload_gts_adapter"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -192,6 +200,7 @@ def test_send_sms_missing_to_field(api_client, test_data, record_property):
     payload = test_data["sms_send"]["missing_to_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -208,6 +217,7 @@ def test_send_sms_missing_text_field(api_client, test_data, record_property):
     payload = test_data["sms_send"]["missing_text_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -224,6 +234,7 @@ def test_send_sms_empty_text_field(api_client, test_data, record_property):
     payload = test_data["sms_send"]["empty_text_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -238,6 +249,7 @@ def test_send_sms_empty_to_array(api_client, test_data, record_property):
     payload = test_data["sms_send"]["empty_to_array_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -252,6 +264,7 @@ def test_send_sms_invalid_number_with_letters(api_client, test_data, record_prop
     payload = test_data["sms_send"]["invalid_number_with_letters_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     if response.status_code == 200:
         body = response.json()
@@ -277,6 +290,7 @@ def test_send_sms_mixed_valid_invalid_numbers(api_client, test_data, record_prop
     payload = test_data["sms_send"]["mixed_valid_invalid_numbers_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     if response.status_code == 200:
         body = response.json()
@@ -301,6 +315,7 @@ def test_send_sms_duplicate_numbers_in_to(api_client, test_data, record_property
     payload = test_data["sms_send"]["duplicate_numbers_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -323,6 +338,7 @@ def test_send_sms_invalid_type_value(api_client, test_data, record_property):
     payload = test_data["sms_send"]["invalid_type_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -337,6 +353,7 @@ def test_send_sms_unicode_text_message(api_client, test_data, record_property):
     payload = test_data["sms_send"]["unicode_text_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -358,6 +375,7 @@ def test_send_sms_long_text_reports_multiple_units(api_client, test_data, record
     assert len(payload["text"]) > 160, "Test fixture text must exceed 160 chars"
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -381,6 +399,7 @@ def test_send_sms_indian_number_missing_entity_id(api_client, test_data, record_
     payload = test_data["sms_send"]["missing_entity_id_indian_sender_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     # Documents actual enforcement: doc says it's mandatory, but real
     # enforcement may vary by sender registration on the account.
@@ -398,6 +417,7 @@ def test_send_sms_invalid_product_value(api_client, test_data, record_property):
     payload = test_data["sms_send"]["invalid_product_value_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     # Documents actual enforcement of the product enum
     # ("Transactional", "Promotional", "OTP", "Other").
@@ -418,6 +438,7 @@ def test_send_sms_extra_unexpected_field_ignored_or_rejected(api_client, test_da
     payload = test_data["sms_send"]["extra_unexpected_field_payload"]
 
     response = api_client.send_sms(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "(200, 422)")
     record_property("Actual", str(response.status_code))
@@ -445,6 +466,7 @@ def test_send_sms_malformed_json_body(api_client, record_property):
             "Authorization": f"Bearer {api_client.env.auth_token}",
         },
     )
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 422")
     record_property("Actual", str(response.status_code))
@@ -464,6 +486,7 @@ def test_send_sms_missing_authorization_header_entirely(api_client, test_data, r
     }
 
     response = api_client.send_sms(payload, headers=headers_without_auth)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))

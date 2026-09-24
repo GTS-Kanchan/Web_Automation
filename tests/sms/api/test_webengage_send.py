@@ -19,6 +19,7 @@ def test_send_webengage_valid_payload_returns_success(api_client, test_data, rec
     payload = test_data["webengage_send"]["valid_payload"]
 
     response = api_client.send_webengage(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -34,6 +35,7 @@ def test_send_webengage_valid_payload_returns_success(api_client, test_data, rec
 def test_send_webengage_response_time_within_timeout(api_client, test_data, env_config, record_property):
     payload = test_data["webengage_send"]["valid_payload"]
     response = api_client.send_webengage(payload)
+    record_property("Response", response.text)
     assert response.elapsed.total_seconds() < env_config.timeout_seconds
 
 
@@ -42,6 +44,7 @@ def test_send_webengage_missing_sms_data(api_client, test_data, record_property)
     payload = test_data["webengage_send"]["missing_sms_data"]
 
     response = api_client.send_webengage(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "400")
     record_property("Actual", str(response.status_code))
@@ -56,6 +59,7 @@ def test_send_webengage_missing_to_number(api_client, test_data, record_property
     payload = test_data["webengage_send"]["missing_to_number"]
 
     response = api_client.send_webengage(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "400")
     record_property("Actual", str(response.status_code))
@@ -70,6 +74,7 @@ def test_send_webengage_missing_from_number(api_client, test_data, record_proper
     payload = test_data["webengage_send"]["missing_from_number"]
 
     response = api_client.send_webengage(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "400")
     record_property("Actual", str(response.status_code))
@@ -84,6 +89,7 @@ def test_send_webengage_missing_body(api_client, test_data, record_property):
     payload = test_data["webengage_send"]["missing_body"]
 
     response = api_client.send_webengage(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "400")
     record_property("Actual", str(response.status_code))
@@ -103,6 +109,7 @@ def test_send_webengage_unauthorized_without_token(api_client, test_data, record
     }
 
     response = api_client.send_webengage(payload, headers=bad_headers)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))

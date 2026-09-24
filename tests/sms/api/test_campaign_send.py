@@ -22,6 +22,7 @@ def test_send_campaign_valid_payload_returns_success(api_client, test_data, env_
     payload = test_data["campaign_send"]["valid_payload"]
 
     response = api_client.send_campaign(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -44,6 +45,7 @@ def test_send_campaign_missing_id_returns_error(api_client, test_data, record_pr
     payload = test_data["campaign_send"]["missing_id_payload"]
 
     response = api_client.send_campaign(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -58,6 +60,7 @@ def test_send_campaign_missing_to_returns_error(api_client, test_data, record_pr
     payload = test_data["campaign_send"]["missing_to_payload"]
 
     response = api_client.send_campaign(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -74,6 +77,7 @@ def test_send_campaign_unauthorized_without_token(api_client, test_data, record_
     bad_headers["Authorization"] = "Bearer invalid-token-for-testing"
 
     response = api_client.send_campaign(payload, headers=bad_headers)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -92,6 +96,7 @@ def test_send_campaign_missing_authorization_header_entirely(api_client, test_da
     }
 
     response = api_client.send_campaign(payload, headers=headers_without_auth)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -106,6 +111,7 @@ def test_send_campaign_missing_params(api_client, test_data, record_property):
     payload = test_data["campaign_send"]["missing_params_payload"]
 
     response = api_client.send_campaign(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -120,6 +126,7 @@ def test_send_campaign_empty_params(api_client, test_data, record_property):
     payload = test_data["campaign_send"]["empty_params_payload"]
 
     response = api_client.send_campaign(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -136,6 +143,7 @@ def test_send_campaign_invalid_id_format(api_client, test_data, record_property)
     payload = test_data["campaign_send"]["invalid_id_format_payload"]
 
     response = api_client.send_campaign(payload)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -159,6 +167,7 @@ def test_send_campaign_malformed_json_body(api_client, record_property):
             "Authorization": f"Bearer {api_client.env.auth_token}",
         },
     )
+    record_property("Response", response.text)
 
     record_property("Expected", "400, 422")
     record_property("Actual", str(response.status_code))

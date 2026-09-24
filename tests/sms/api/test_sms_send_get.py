@@ -20,6 +20,7 @@ def test_send_sms_get_valid_query_params_returns_success(api_client, test_data, 
     query = test_data["sms_send_get"]["valid_query_params"]
 
     response = api_client.send_sms_get(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "200")
     record_property("Actual", str(response.status_code))
@@ -45,6 +46,7 @@ def test_send_sms_get_valid_query_params_returns_success(api_client, test_data, 
 def test_send_sms_get_response_time_within_timeout(api_client, test_data, env_config, record_property):
     query = test_data["sms_send_get"]["valid_query_params"]
     response = api_client.send_sms_get(query)
+    record_property("Response", response.text)
     assert response.elapsed.total_seconds() < env_config.timeout_seconds
 
 
@@ -53,6 +55,7 @@ def test_send_sms_get_missing_to_param(api_client, test_data, record_property):
     query = test_data["sms_send_get"]["missing_to_param"]
 
     response = api_client.send_sms_get(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -67,6 +70,7 @@ def test_send_sms_get_missing_from_param(api_client, test_data, record_property)
     query = test_data["sms_send_get"]["missing_from_param"]
 
     response = api_client.send_sms_get(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -81,6 +85,7 @@ def test_send_sms_get_missing_text_param(api_client, test_data, record_property)
     query = test_data["sms_send_get"]["missing_text_param"]
 
     response = api_client.send_sms_get(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "422")
     record_property("Actual", str(response.status_code))
@@ -96,6 +101,7 @@ def test_send_sms_get_unauthorized_without_token(api_client, test_data, record_p
     query = test_data["sms_send_get"]["invalid_token_param"]
 
     response = api_client.send_sms_get(query)
+    record_property("Response", response.text)
 
     record_property("Expected", "401")
     record_property("Actual", str(response.status_code))
@@ -112,6 +118,7 @@ def test_send_sms_get_missing_domain_header(api_client, test_data, record_proper
     headers = {"domain": None}
 
     response = api_client.send_sms_get(query, headers=headers)
+    record_property("Response", response.text)
 
     # Note: Depending on server implementation, missing domain might be 401, 400 or handled normally.
     # Asserting it doesn't fail catastrophically (500).
