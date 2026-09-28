@@ -114,6 +114,22 @@ class SMSMessagePage(BasePage):
         " | //button[normalize-space()='Export CSV']"
     )
 
+    # CONFIRMED from a real pasted DOM: clicking Export now first shows a
+    # SweetAlert2 confirmation ("Export CSV" / "Only the latest 5 Lakh
+    # records can be downloaded for the selected filters.") with THREE
+    # buttons -- swal2-confirm labeled "Download", swal2-deny labeled
+    # "Deny", and a swal2-cancel that's present but display:none (not a
+    # real option here). Same swal2-confirm convention already confirmed
+    # working elsewhere in this project (e.g.
+    # SmsBlockedNumbersPage.CONFIRM_DELETE_BTN,
+    # SMSDownloadCenterPage.DELETE_CONFIRM_BTN) -- excludes swal2-deny/
+    # swal2-cancel explicitly so this never accidentally clicks "Deny".
+    EXPORT_CONFIRM_BTN = (
+        "xpath=//button[contains(@class,'swal2-confirm')] "
+        "| //div[contains(@class,'swal2-actions')]//button[not(contains(@class,'swal2-cancel')) "
+        "and not(contains(@class,'swal2-deny'))]"
+    )
+
     # ── Column visibility ─────────────────────────────────────────────────────
     BTN_COLUMNS = "xpath=//button[contains(normalize-space(),'Columns') or contains(normalize-space(),'Column')]"
     COLUMN_LABELS = (
@@ -174,6 +190,29 @@ class SMSMessagePage(BasePage):
     POPUP_TIMELINE = (
         "xpath=//*[@id='modal-container' or @role='dialog']"
         "//*[contains(@class,'timeline') or @data-field='timeline']"
+    )
+
+    # Timeline date/date-time fields inside the popup -- CONFIRMED from a
+    # real pasted DOM: each is a "<span>Label:</span><span>value</span>"
+    # pair inside the "Timeline" card, e.g.
+    #   <span>Received At:</span><span>28-09-2026 14:54:12</span>
+    #   <span>Submitted At:</span><span>28-09-2026 20:24:00</span>
+    #   <span>DLR Received At:</span><span>28-09-2026 20:24:00</span>
+    # Exact normalize-space() match on the label (not contains()) is
+    # required here: "DLR Received At:" contains "Received At:" as a
+    # substring, so a contains()-based lookup for "Received At:" would
+    # ambiguously match both labels.
+    POPUP_RECEIVED_AT_VALUE = (
+        "xpath=(//*[@id='modal-container' or @role='dialog']"
+        "//span[normalize-space()='Received At:']/following-sibling::span)[1]"
+    )
+    POPUP_SUBMITTED_AT_VALUE = (
+        "xpath=(//*[@id='modal-container' or @role='dialog']"
+        "//span[normalize-space()='Submitted At:']/following-sibling::span)[1]"
+    )
+    POPUP_DLR_RECEIVED_AT_VALUE = (
+        "xpath=(//*[@id='modal-container' or @role='dialog']"
+        "//span[normalize-space()='DLR Received At:']/following-sibling::span)[1]"
     )
 
     # Source column badges in the table
@@ -602,6 +641,20 @@ class SMSMessagePage(BasePage):
             link.scroll_into_view_if_needed()
             with self.page.expect_download(timeout=timeout_ms) as dl_info:
                 link.click()
+                # CONFIRMED from a real pasted DOM: the app now shows a
+                # SweetAlert2 "Export CSV" confirmation dialog ("Only the
+                # latest 5 Lakh records can be downloaded for the selected
+                # filters.") before the download actually starts. Click its
+                # "Download" (swal2-confirm) button when it appears; if no
+                # dialog shows up within 5s, the original click already
+                # triggered the download directly (older/smaller-export
+                # behavior), so proceed without raising.
+                try:
+                    confirm_btn = self.page.locator(self.EXPORT_CONFIRM_BTN).first
+                    confirm_btn.wait_for(state="visible", timeout=5000)
+                    confirm_btn.click()
+                except PlaywrightTimeoutError:
+                    pass
             download = dl_info.value
             elapsed = round(time.time() - start, 2)
             filename = download.suggested_filename or f"sms_message_export_{int(time.time())}.csv"
@@ -972,6 +1025,30 @@ class SMSMessagePage(BasePage):
             return self.page.locator(self.POPUP_TIMELINE).first.inner_text().strip()
         except Exception:
             return self._popup_text_by_label(["Timeline", "History", "Events", "DLR"])
+
+    def get_popup_received_at(self):
+        """Timeline 'Received At' date-time value shown in the Message Details popup."""
+        try:
+            return self.page.locator(self.POPUP_RECEIVED_AT_VALUE).first.inner_text().strip()
+        except Exception:
+            return ""
+
+    def get_popup_submitted_at(self):
+        """Timeline 'Submitted At' date-time value shown in the Message Details popup."""
+        try:
+            return self.page.locator(self.POPUP_SUBMITTED_AT_VALUE).first.inner_text().strip()
+        except Exception:
+            return ""
+
+    def get_popup_dlr_received_at(self):
+        """Timeline 'DLR Received At' date-time value shown in the Message Details popup.
+        Blank ('—' or empty) when no DLR has been received yet (e.g. Status
+        Sent/Rejected) -- same real app behavior already exempted in
+        test_sms_campaign_message_report_flow.py's TC13/TC14/TC15."""
+        try:
+            return self.page.locator(self.POPUP_DLR_RECEIVED_AT_VALUE).first.inner_text().strip()
+        except Exception:
+            return ""
 
     def get_popup_error_code(self):
         return self._popup_text_by_label(["Error Code", "Err Code"])

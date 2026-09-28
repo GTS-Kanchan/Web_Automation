@@ -43,7 +43,20 @@ from utils.file_validator import (
     FileNotDownloadedError,
     HeaderValidationError,
     UnsupportedFileTypeError,
+    read_file_rows,
     validate_file_headers,
+)
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateComparisonError,
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_date_columns,
+    detect_ui_date_columns,
+    read_export_datetime_values,
+    validate_date_values_format,
+    validate_ui_export_dates,
 )
 
 
@@ -1015,3 +1028,139 @@ def test_ui_default_table_headers_full(message_page):
     for col in EXPECTED_SMS_MESSAGE_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TC055 — Date/Date-Time Verification: UI vs Export (shared reusable
+#         utility -- utils/datetime_verification.py, config in
+#         utils/date_module_config.py -- no per-module validation logic
+#         duplicated here)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_TC055_date_datetime_verification_ui_vs_export(message_page):
+    """TC055: for every real SMS Messages date/date-time column (Received
+    At, Submitted At, DLR Received At -- confirmed via
+    constants/sms_message_headers.py / sms_message_ui_headers.py, not
+    hardcoded here), validate the currently-visible UI table's values and
+    the exported file's values are each correctly formatted
+    (dd-mm-yyyy / dd-mm-yyyy hh:mm:ss) and that every visible UI value has
+    a corresponding value in the export (see
+    utils/datetime_verification.py's module docstring for why this is a
+    multiset "UI subset-of-export" comparison rather than an assumed
+    row-for-row positional match).
+
+    Narrows to "today" first, same as TC020B, to keep both the UI table
+    and the export small/fast."""
+    ensure_on_messages_page(message_page)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    message_page.open_filter_panel()
+    message_page.set_filter_date_range(today, today)
+    message_page.apply_filter()
+    message_page.wait_for_table_load(timeout=15000)
+
+    config = DATE_MODULE_CONFIG["sms_messages"]
+    # Raw (blank-preserving) headers, not get_table_headers()'s filtered
+    # list -- get_cell_text() indexes into the full <td> list, and a
+    # blank-filtered header list silently misaligns column indices the
+    # moment any earlier column's header (e.g. an icon-only "Action"
+    # column) renders empty text. See BasePage.get_raw_headers()'s
+    # docstring for the confirmed real bug this avoids.
+    ui_headers = message_page.get_raw_headers(message_page.TABLE_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the SMS Messages UI table right now.")
+
+    row_count = message_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No SMS Messages rows visible for today -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=message_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+    print(f"[SMS Messages] UI date columns detected: {ui_date_columns} ({row_count} row(s))")
+
+    result = message_page.export()
+    if result["file_path"] == "background_job_triggered.csv":
+        pytest.skip("Export did not produce a direct download within the wait window (background job).")
+
+    _headers, rows = read_file_rows(result["file_path"])
+    if not rows:
+        pytest.skip("Export produced 0 data rows for today -- nothing to compare against.")
+
+    export_date_columns = detect_date_columns(list(rows[0].keys()), config["export_date_columns"])
+    export_values_by_column = read_export_datetime_values(rows, export_date_columns)
+    print(f"[SMS Messages] Export date columns detected: {export_date_columns} ({len(rows)} row(s))")
+
+    try:
+        validate_ui_export_dates(
+            "SMS Messages", ui_values_by_column, export_values_by_column,
+            field_kinds=config["field_kinds"],
+        )
+    except (DateFormatValidationError, DateComparisonError) as exc:
+        pytest.fail(str(exc))
+
+    for column in ui_date_columns:
+        if column in export_values_by_column:
+            print(f"[SMS Messages] {column}: UI vs Export Date/Date-Time Verification PASS")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TC056  Message Details Popup -- Date/Date-Time Verification (Timeline)
+# CONFIRMED via a real pasted DOM: the popup's "Timeline" card shows
+# Received At / Submitted At / DLR Received At, each "dd-mm-yyyy hh:mm:ss"
+# (e.g. "28-09-2026 14:54:12"), same fields/format as the SMS Messages
+# table columns (see DATE_MODULE_CONFIG["sms_messages"]). UI-only format
+# check (no export correspondence for a detail popup) using the same
+# reusable utils/datetime_verification.py used everywhere else in this
+# suite.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Statuses for which the real app has no DLR yet (blank/"—" DLR Received
+# At is expected, not a bug) -- same real-app behavior already confirmed
+# and exempted for the table/export in
+# test_sms_campaign_message_report_flow.py's TC13/TC14/TC15.
+_POPUP_DLR_NOT_YET_RECEIVED_STATUSES = {"sent", "rejected"}
+
+
+@pytest.mark.regression
+def test_TC056_popup_date_datetime_verification(popup_open):
+    """TC056: Message Details popup Timeline date/date-time fields
+    (Received At, Submitted At, DLR Received At) are each a real,
+    correctly formatted dd-mm-yyyy hh:mm:ss value.
+
+    DLR Received At is allowed to be blank/"—" when the popup's Status is
+    Sent or Rejected (no DLR received yet is real, expected app behavior,
+    not a bug) -- same exemption already applied to the table/export
+    verification elsewhere in this suite."""
+    page = popup_open
+
+    status = (page.get_popup_status() or "").strip().lower()
+    fields = {
+        "Received At": page.get_popup_received_at(),
+        "Submitted At": page.get_popup_submitted_at(),
+        "DLR Received At": page.get_popup_dlr_received_at(),
+    }
+
+    for column, value in fields.items():
+        if column == "DLR Received At" and status in _POPUP_DLR_NOT_YET_RECEIVED_STATUSES:
+            if not value or value.strip() in {"", "\u2014"}:
+                print(f"[Message Details Popup] {column}: blank/'\u2014' exempt "
+                      f"(Status={status!r}) -- no DLR received yet, PASS")
+                continue
+        if not value:
+            # A genuinely empty popup field is a separate concern (see
+            # TC042/TC044/TC050/TC051's own non-empty assertions) -- this
+            # test only validates the FORMAT of values that are present.
+            continue
+        try:
+            validate_date_values_format("Message Details Popup", column, [value], field_kind="date-time")
+        except DateFormatValidationError as exc:
+            pytest.fail(str(exc))
+        print(f"[Message Details Popup] {column}: Date/Date-Time Format Verification PASS ({value!r})")
+

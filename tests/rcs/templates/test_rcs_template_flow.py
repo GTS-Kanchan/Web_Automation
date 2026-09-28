@@ -44,11 +44,23 @@ import pytest
 
 from constants.rcs_template_list_headers import EXPECTED_RCS_TEMPLATE_LIST_HEADERS
 from pages.rcs.rcs_template_create_page import RcsTemplateCreatePage
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateComparisonError,
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_date_columns,
+    detect_ui_date_columns,
+    read_export_datetime_values,
+    validate_ui_export_dates,
+)
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
     HeaderValidationError,
     UnsupportedFileTypeError,
+    read_file_rows,
     validate_file_headers,
 )
 
@@ -124,3 +136,63 @@ def test_TC002_export_csv_verifies_header(template_list_page):
         pytest.fail(str(exc))
 
     print(f"Header validation PASS: {actual_headers}")
+
+
+# ═════════════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- RCS Templates (shared reusable utility --
+# utils/datetime_verification.py, config in utils/date_module_config.py).
+# CONFIRMED via a real pasted DOM of /rcs/template: "Created At"/
+# "Updated At" both render dd-mm-yyyy hh:mm:ss with seconds
+# (e.g. "28-09-2026 15:44:33"). Strict format only, no relaxation.
+# ═════════════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(template_list_page):
+    """For every real RCS Templates date/date-time column ("Created At",
+    "Updated At" -- confirmed via a real pasted DOM of /rcs/template and
+    constants/rcs_template_list_headers.py, not hardcoded here), validates
+    every populated on-screen value is a real dd-mm-yyyy/dd-mm-yyyy
+    hh:mm:ss value, validates the export's own values the same way, and
+    compares UI vs export per column. "Last Used At" is UI-only (no
+    export column of that name) and is intentionally excluded, same
+    convention as every other module's UI-only columns."""
+    template_list_page.navigate_to_list()
+
+    config = DATE_MODULE_CONFIG["rcs_templates"]
+    ui_headers = template_list_page.get_raw_headers(template_list_page.TABLE_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the RCS Templates UI table right now.")
+
+    row_count = template_list_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No RCS Template rows visible -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=template_list_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+
+    result = template_list_page.click_export_csv()
+    if not result:
+        pytest.skip("RCS Templates export did not produce a downloaded file -- UI-only verification stands.")
+
+    _headers, rows = read_file_rows(result["file_path"])
+    if not rows:
+        pytest.skip("RCS Templates export produced 0 data rows -- nothing to compare against.")
+
+    export_date_columns = detect_date_columns(list(rows[0].keys()), config["export_date_columns"])
+    export_values_by_column = read_export_datetime_values(rows, export_date_columns)
+
+    try:
+        validate_ui_export_dates(
+            "RCS Templates", ui_values_by_column, export_values_by_column,
+            field_kinds=config["field_kinds"],
+        )
+    except (DateFormatValidationError, DateComparisonError) as exc:
+        pytest.fail(str(exc))
+    print(f"[RCS Templates] Date/Date-Time Verification PASS ({row_count} UI row(s))")
+

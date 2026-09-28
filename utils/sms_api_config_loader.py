@@ -45,6 +45,8 @@ class EnvironmentConfig:
     send_msg_url: str
     sms_json_url: str
     webengage_send_url: str
+    dlr_url: str
+    dlr_verify_url: str
     auth_token: str
     campaign_id: str
     template_id: str
@@ -112,6 +114,21 @@ def load_environment_config(cli_env: str | None = None) -> EnvironmentConfig:
 
     base_url = env["base_url"].rstrip("/")
 
+    # DLR service lives on its own host:port, separate from base_url (see
+    # the comment on dlr_base_url in environments.yaml). Not every
+    # environment block is guaranteed to define it yet, so this stays
+    # optional rather than raising KeyError for environments that haven't
+    # been given a DLR host.
+    dlr_url = ""
+    if env.get("dlr_base_url") and env.get("dlr_path"):
+        dlr_url = env["dlr_base_url"].rstrip("/") + env["dlr_path"]
+
+    # Bulk DLR verification endpoint (POST .../api/v1/dlr/verify) -- same
+    # optionality reasoning as dlr_url above.
+    dlr_verify_url = ""
+    if env.get("dlr_base_url") and env.get("dlr_verify_path"):
+        dlr_verify_url = env["dlr_base_url"].rstrip("/") + env["dlr_verify_path"]
+
     return EnvironmentConfig(
         name=env_name,
         base_url=base_url,
@@ -121,6 +138,8 @@ def load_environment_config(cli_env: str | None = None) -> EnvironmentConfig:
         send_msg_url=base_url + env["send_msg_path"],
         sms_json_url=base_url + env["sms_json_path"],
         webengage_send_url=base_url + env["webengage_send_path"],
+        dlr_url=dlr_url,
+        dlr_verify_url=dlr_verify_url,
         auth_token=auth_token,
         campaign_id=env.get("campaign_id", ""),
         template_id=env.get("template_id", ""),

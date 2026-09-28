@@ -32,7 +32,19 @@ from utils.file_validator import (
     FileNotDownloadedError,
     HeaderValidationError,
     UnsupportedFileTypeError,
+    read_file_rows,
     validate_file_headers,
+)
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateComparisonError,
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_date_columns,
+    detect_ui_date_columns,
+    read_export_datetime_values,
+    validate_ui_export_dates,
 )
 
 
@@ -913,3 +925,71 @@ def test_ui_default_table_headers_full(template_page):
     for col in EXPECTED_SMS_TEMPLATE_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Templates UI vs Export (shared reusable
+#         utility -- utils/datetime_verification.py, config in
+#         utils/date_module_config.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(template_page):
+    """For the real Template date/date-time column ("Created at" --
+    confirmed via constants/sms_template_ui_headers.py /
+    sms_template_headers.py; this project has confirmed there is no
+    "Updated at" column for Templates, unlike Sender IDs, so only one
+    column is checked here, not two), validate the currently-visible UI
+    table's values and the exported file's values are each correctly
+    formatted, and every visible UI value has a corresponding value in
+    the export."""
+    _to_list(template_page)
+
+    config = DATE_MODULE_CONFIG["templates"]
+    # Raw (blank-preserving) headers -- CONFIRMED real bug: Templates'
+    # icon-only "Action" header renders blank text, so the filtered
+    # get_visible_column_headers() list silently misaligned every later
+    # column index by one -- "Created At" ended up reading the Product
+    # cell ('Promotional'/'OTP'/'Transactional'). See
+    # BasePage.get_raw_headers()'s docstring.
+    ui_headers = template_page.get_raw_headers(template_page.COLUMN_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the Templates UI table right now.")
+
+    row_count = template_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No Template rows visible -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=template_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+    print(f"[Templates] UI date columns detected: {ui_date_columns} ({row_count} row(s))")
+
+    result = template_page.export_to_xlsx()
+    if result is None or result.get("file_path") == "background_job_triggered.csv":
+        pytest.skip("Export did not produce a direct download within the wait window (background job).")
+
+    _headers, rows = read_file_rows(result["file_path"])
+    if not rows:
+        pytest.skip("Export produced 0 data rows -- nothing to compare against.")
+
+    export_date_columns = detect_date_columns(list(rows[0].keys()), config["export_date_columns"])
+    export_values_by_column = read_export_datetime_values(rows, export_date_columns)
+    print(f"[Templates] Export date columns detected: {export_date_columns} ({len(rows)} row(s))")
+
+    try:
+        validate_ui_export_dates(
+            "Templates", ui_values_by_column, export_values_by_column,
+            field_kinds=config["field_kinds"],
+        )
+    except (DateFormatValidationError, DateComparisonError) as exc:
+        pytest.fail(str(exc))
+
+    for column in ui_date_columns:
+        if column in export_values_by_column:
+            print(f"[Templates] {column}: UI vs Export Date/Date-Time Verification PASS")

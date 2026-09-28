@@ -47,6 +47,7 @@ from constants.sms_error_code_report_ui_headers import EXPECTED_SMS_ERROR_CODE_R
 
 from constants.sms_error_code_report_headers import EXPECTED_SMS_ERROR_CODE_REPORT_HEADERS
 from pages.sms.sms_error_code_report_page import SmsErrorCodeReportPage
+from utils.analytics_report_date_verification import verify_analytics_report_dates
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -527,3 +528,23 @@ def test_ui_default_table_headers_full(error_code_report_page):
     for col in EXPECTED_SMS_ERROR_CODE_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(error_code_report_page):
+    """Duration column (dd-mm-yyyy) -- validates on-screen format, export
+    format, and that every visible UI value has a corresponding value in
+    the export (see utils/analytics_report_date_verification.py).
+
+    ASSUMPTION (not yet independently confirmed for SMS the way it was for
+    RCS/WhatsApp): dd-mm-yyyy is inferred from architectural identity with
+    the already-confirmed RCS/WhatsApp analytics "Duration" column -- same
+    COLUMN_INDEX["duration"] convention, same "Duration" export header
+    (constants/sms/**/*_report_headers.py). The export side is checked with
+    accept_iso=True (via verify_analytics_report_dates), matching the real,
+    confirmed ISO yyyy-mm-dd export behavior already found on RCS/WhatsApp
+    exports, since this report family shares the same export pipeline. If a
+    real pytest run shows this assumption is wrong for SMS, fix the
+    field_kind/format here the same evidence-driven way the RCS/WhatsApp/
+    Chatbot date checks were corrected earlier in this project."""
+    ensure_on_report_page(error_code_report_page)
+    verify_analytics_report_dates(error_code_report_page, "SMS Error Code Report")

@@ -40,6 +40,14 @@ from utils.file_validator import (
     UnsupportedFileTypeError,
     validate_file_headers,
 )
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_ui_date_columns,
+    validate_date_values_format,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.report]
@@ -865,3 +873,124 @@ def test_ui_default_table_headers_full(download_center_page):
     for col in EXPECTED_SMS_DOWNLOAD_CENTER_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Download Center UI (shared reusable
+#         utility -- utils/datetime_verification.py, config in
+#         utils/date_module_config.py). No UI-vs-export comparison here:
+#         the list's "Created at" column is the DOWNLOAD REQUEST's
+#         creation date, while the download button fetches a PER-ROW
+#         generated report file whose own "Created At" column (per
+#         constants/sms_download_headers.py) describes the underlying
+#         messages, not the download request -- a different real field,
+#         not a second representation of the same value. Comparing them
+#         would be a fabricated correspondence, so this is UI-side
+#         format verification only (see DATE_MODULE_CONFIG["download_center"]).
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(download_center_page):
+    """For the real Download Center list date/date-time column
+    ("Created at" -- confirmed via constants/sms_download_center_ui_headers.py),
+    validate every populated on-screen value is a real, correctly
+    formatted date/date-time."""
+    download_center_page.navigate()
+    download_center_page.wait_for_table_load(timeout=15000)
+
+    config = DATE_MODULE_CONFIG["download_center"]
+    # Raw (blank-preserving) headers -- see BasePage.get_raw_headers()'s
+    # docstring for why the filtered get_table_headers() can silently
+    # misalign a column-index lookup.
+    ui_headers = download_center_page.get_raw_headers(download_center_page.TABLE_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the Download Center UI table right now.")
+
+    row_count = download_center_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No Download Center rows visible -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=download_center_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+
+    for column, values in ui_values_by_column.items():
+        field_kind = config["field_kinds"].get(column, "auto")
+        try:
+            validate_date_values_format("Download Center", column, values, field_kind=field_kind)
+        except DateFormatValidationError as exc:
+            pytest.fail(str(exc))
+        print(f"[Download Center] {column}: Date/Date-Time Format Verification PASS ({len(values)} row(s))")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Download Center Summary Popup (row's View
+# icon). CONFIRMED via a real pasted DOM of the "Automated Report - <N>
+# Days - Summary" modal: 'Generated at' / 'Completed at' (date-time) and a
+# 'Period' date-only RANGE. UI-only (popup has no export correspondence).
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_summary_popup(download_center_page):
+    """Applies the Status = Completed filter first (TC_07's confirmed
+    filter flow) so the opened row is guaranteed to have both a
+    'Generated at' AND a 'Completed at' value -- a Processing/Pending row
+    has no Completed at yet, which would silently skip that field instead
+    of actually verifying it. Then opens that row's Summary/View popup
+    and validates 'Generated at' / 'Completed at' date-time fields and
+    the 'Period' date range are each real, correctly formatted values."""
+    ensure_on_dc_page(download_center_page)
+    download_center_page.open_filter_panel()
+    download_center_page.page.wait_for_timeout(500)
+    download_center_page.set_filter_status(SMSDownloadCenterPage.STATUS_COMPLETED)
+    download_center_page.page.wait_for_timeout(1500)
+    download_center_page.wait_for_table_load(timeout=15000)
+
+    row_count = download_center_page.get_row_count()
+    if row_count == 0:
+        reset_filters(download_center_page)
+        pytest.skip("No Completed Download Center rows visible -- nothing to open a Summary popup for.")
+
+    download_center_page.click_view_icon(0)
+    if not download_center_page.is_popup_open():
+        reset_filters(download_center_page)
+        pytest.skip("Summary popup did not open for row 0 -- nothing to date-verify.")
+
+    try:
+        generated_at = download_center_page.get_popup_generated_at()
+        completed_at = download_center_page.get_popup_completed_at()
+        period_start, period_end = download_center_page.get_popup_period_dates()
+
+        datetime_fields = {"Generated At": generated_at, "Completed At": completed_at}
+        for column, value in datetime_fields.items():
+            if not value:
+                # e.g. a still-Processing report has no Completed at yet --
+                # not a format violation, nothing to check.
+                continue
+            try:
+                validate_date_values_format(
+                    "Download Center Summary Popup", column, [value], field_kind="date-time"
+                )
+            except DateFormatValidationError as exc:
+                pytest.fail(str(exc))
+            print(f"[Download Center Summary Popup] {column}: Date/Date-Time Format Verification PASS ({value!r})")
+
+        date_only_fields = {"Period Start": period_start, "Period End": period_end}
+        for column, value in date_only_fields.items():
+            if not value:
+                continue
+            try:
+                validate_date_values_format(
+                    "Download Center Summary Popup", column, [value], field_kind="date"
+                )
+            except DateFormatValidationError as exc:
+                pytest.fail(str(exc))
+            print(f"[Download Center Summary Popup] {column}: Date Format Verification PASS ({value!r})")
+    finally:
+        download_center_page.close_popup()
+        reset_filters(download_center_page)

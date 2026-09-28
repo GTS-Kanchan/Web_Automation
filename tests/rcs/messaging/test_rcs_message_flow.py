@@ -42,11 +42,24 @@ import pytest
 from constants.rcs_message_headers import EXPECTED_RCS_MESSAGE_HEADERS
 from constants.rcs_message_ui_headers import EXPECTED_RCS_MESSAGE_UI_HEADERS
 from pages.rcs.rcs_message_page import RcsMessagePage
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateComparisonError,
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_date_columns,
+    detect_ui_date_columns,
+    read_export_datetime_values,
+    validate_date_values_format,
+    validate_ui_export_dates,
+)
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
     HeaderValidationError,
     UnsupportedFileTypeError,
+    read_file_rows,
     validate_file_headers,
 )
 
@@ -418,3 +431,108 @@ def test_ui_default_table_headers_full(message_page):
     for col in EXPECTED_RCS_MESSAGE_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- RCS Messages (shared reusable utility --
+# utils/datetime_verification.py, config in utils/date_module_config.py).
+# Strict dd-mm-yyyy / dd-mm-yyyy hh:mm:ss only, no relaxation.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(message_page):
+    """For every real RCS Messages date/date-time column ("Submitted at",
+    "Delivered at", "Read at", "Failed at", "Created at" -- confirmed via
+    constants/rcs_message_ui_headers.py / constants/rcs_message_headers.py,
+    not hardcoded here), validates every populated on-screen value is a
+    real dd-mm-yyyy/dd-mm-yyyy hh:mm:ss value, validates the export's own
+    values the same way, and compares UI vs export per column."""
+    ensure_on_rcs_messages_page(message_page)
+
+    config = DATE_MODULE_CONFIG["rcs_messages"]
+    ui_headers = message_page.get_raw_headers(message_page.TABLE_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the RCS Messages UI table right now.")
+
+    row_count = message_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No RCS Message rows visible -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=message_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+
+    message_page.click_export()
+    file_path = message_page._last_download_path
+    if not file_path:
+        pytest.skip("RCS Messages export did not produce a downloaded file -- UI-only verification stands.")
+
+    _headers, rows = read_file_rows(file_path)
+    if not rows:
+        pytest.skip("RCS Messages export produced 0 data rows -- nothing to compare against.")
+
+    export_date_columns = detect_date_columns(list(rows[0].keys()), config["export_date_columns"])
+    export_values_by_column = read_export_datetime_values(rows, export_date_columns)
+
+    try:
+        validate_ui_export_dates(
+            "RCS Messages", ui_values_by_column, export_values_by_column,
+            field_kinds=config["field_kinds"],
+        )
+    except (DateFormatValidationError, DateComparisonError) as exc:
+        pytest.fail(str(exc))
+    print(f"[RCS Messages] Date/Date-Time Verification PASS ({row_count} UI row(s))")
+
+
+# ════════════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Message Details Popup (Timeline).
+# CONFIRMED via a real pasted DOM: heading "Message Details", Timeline
+# card shows Created/Scheduled/Submitted/Delivered/Read, each
+# dd-mm-yyyy hh:mm:ss (e.g. "28-09-2026 17:01:31"). UI-only format check
+# (no export correspondence for a detail popup), reuses the same
+# utils/datetime_verification.py used everywhere else in this suite.
+# ═════════════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_details_popup(message_page):
+    """Opens the first row's Message Details popup and validates its
+    Timeline Created/Scheduled/Submitted/Delivered/Read date-time fields
+    are each a real, correctly formatted dd-mm-yyyy hh:mm:ss value."""
+    ensure_on_rcs_messages_page(message_page)
+
+    row_count = message_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No RCS Message rows visible -- nothing to open a Message Details popup for.")
+
+    if not message_page.click_view_icon(0):
+        pytest.skip("No View icon on row 0 -- nothing to date-verify.")
+    if not message_page.is_popup_open():
+        pytest.skip("Message Details popup did not open for row 0 -- nothing to date-verify.")
+
+    try:
+        fields = {
+            "Created": message_page.get_popup_created(),
+            "Scheduled": message_page.get_popup_scheduled(),
+            "Submitted": message_page.get_popup_submitted(),
+            "Delivered": message_page.get_popup_delivered(),
+            "Read": message_page.get_popup_read(),
+        }
+        for column, value in fields.items():
+            if not value:
+                # Not every field applies to every message (e.g. "Read"
+                # only applies once a message has actually been read) --
+                # not a format violation, nothing to check.
+                continue
+            try:
+                validate_date_values_format("Message Details Popup", column, [value], field_kind="date-time")
+            except DateFormatValidationError as exc:
+                pytest.fail(str(exc))
+            print(f"[Message Details Popup] {column}: Date/Date-Time Format Verification PASS ({value!r})")
+    finally:
+        message_page.close_popup()
+

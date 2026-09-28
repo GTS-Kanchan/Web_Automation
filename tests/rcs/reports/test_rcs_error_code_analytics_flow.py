@@ -17,6 +17,7 @@ import pytest
 from constants.rcs_error_code_analytics_headers import EXPECTED_RCS_ERROR_CODE_ANALYTICS_HEADERS
 from constants.rcs_error_code_analytics_ui_headers import EXPECTED_RCS_ERROR_CODE_ANALYTICS_UI_HEADERS
 from pages.rcs.rcs_error_code_analytics_page import RcsErrorCodeAnalyticsPage
+from utils.analytics_report_date_verification import verify_analytics_report_dates
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -542,3 +543,13 @@ def test_ui_default_table_headers_full(error_code_analytics_page):
     for col in EXPECTED_RCS_ERROR_CODE_ANALYTICS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(error_code_analytics_page):
+    """Duration column (CONFIRMED single date, dd-mm-yyyy, in both the UI
+    and the export -- constants/rcs/**/*_analytics_headers.py) -- validates
+    on-screen format, export format, and that every visible UI value has a
+    corresponding value in the export (see
+    utils/analytics_report_date_verification.py)."""
+    ensure_on_report_page(error_code_analytics_page)
+    verify_analytics_report_dates(error_code_analytics_page, "RCS Error Code Analytics")

@@ -24,6 +24,14 @@ from constants.sms_campaign_ui_headers import EXPECTED_SMS_CAMPAIGN_UI_HEADERS
 from utils.config import Config
 from utils.test_data_generator import generate_all, DATA_DIR
 from utils.parallel import unique_name
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_ui_date_columns,
+    validate_date_values_format,
+)
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.campaign]
@@ -805,9 +813,10 @@ def test_TC044_preview_shows_details(campaign_page):
 
 
 @pytest.mark.smoke
-def test_TC045_launch_from_preview(campaign_page):
+def test_TC045_launch_from_preview(campaign_page, campaign_dlr):
     """TC045 – Launching campaign from preview succeeds."""
-    start_create(campaign_page, "TC045")
+    name = start_create(campaign_page, "TC045")
+    campaign_dlr.launched(campaign_page, name)  # verify DLRs once this test passes (conftest.py)
     try:
         campaign_page.select_sender_id(VALID_SENDER_ID)
         campaign_page.select_template(VALID_TEMPLATE)
@@ -967,3 +976,98 @@ def test_ui_default_table_headers_full(campaign_page):
     for col in EXPECTED_SMS_CAMPAIGN_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Campaign List UI (shared reusable
+#         utility -- utils/datetime_verification.py, config in
+#         utils/date_module_config.py). No confirmed bulk export header
+#         spec exists yet for this list page (see
+#         DATE_MODULE_CONFIG["campaign_list"]'s comment), so this is a
+#         UI-side format verification only -- not a fabricated UI-vs-
+#         export comparison.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(campaign_page):
+    """For every real Campaign List date/date-time column ("Created at",
+    "Scheduled at" -- confirmed via constants/sms_campaign_ui_headers.py,
+    not hardcoded here), validate every populated on-screen value is a
+    real, correctly-formatted date/date-time (dd-mm-yyyy or
+    dd-mm-yyyy hh:mm:ss)."""
+    ensure_list(campaign_page)
+
+    config = DATE_MODULE_CONFIG["campaign_list"]
+    # Raw (blank-preserving) headers -- see BasePage.get_raw_headers()'s
+    # docstring for why the filtered get_visible_column_headers() can
+    # silently misalign a column-index lookup.
+    ui_headers = campaign_page.get_raw_headers(campaign_page.TABLE_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the Campaign List UI table right now.")
+
+    row_count = campaign_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No campaign rows visible -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=campaign_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+
+    for column, values in ui_values_by_column.items():
+        field_kind = config["field_kinds"].get(column, "auto")
+        try:
+            validate_date_values_format("Campaign List", column, values, field_kind=field_kind)
+        except DateFormatValidationError as exc:
+            pytest.fail(str(exc))
+        print(f"[Campaign List] {column}: Date/Date-Time Format Verification PASS ({len(values)} row(s))")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Campaign Details Popup -- Date/Date-Time Verification (Timeline)
+# CONFIRMED via a real pasted DOM: the row's View icon
+# (data-tooltip-target="tooltip-view-<id>") opens a "Campaign Details"
+# modal whose Timeline card shows Created at / Scheduled at, each
+# "dd-mm-yyyy hh:mm:ss" (e.g. "28-09-2026 13:05:15"). UI-only format
+# check (no export correspondence for a detail popup), same reusable
+# utils/datetime_verification.py used everywhere else in this suite.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_details_popup(campaign_page):
+    """Opens the first row's Campaign Details popup and validates its
+    Timeline 'Created at' / 'Scheduled at' date-time fields are each a
+    real, correctly formatted dd-mm-yyyy hh:mm:ss value."""
+    ensure_list(campaign_page)
+
+    row_count = campaign_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No campaign rows visible -- nothing to open a Campaign Details popup for.")
+
+    if not campaign_page.click_view_icon_on_row(0):
+        pytest.skip("No View icon on row 0 -- nothing to date-verify.")
+    if not campaign_page.is_popup_open():
+        pytest.skip("Campaign Details popup did not open for row 0 -- nothing to date-verify.")
+
+    try:
+        fields = {
+            "Created At": campaign_page.get_popup_created_at(),
+            "Scheduled At": campaign_page.get_popup_scheduled_at(),
+        }
+        for column, value in fields.items():
+            if not value:
+                # Scheduled at may legitimately be absent for an
+                # immediately-sent (non-scheduled) campaign -- not a
+                # format violation, nothing to check.
+                continue
+            try:
+                validate_date_values_format("Campaign Details Popup", column, [value], field_kind="date-time")
+            except DateFormatValidationError as exc:
+                pytest.fail(str(exc))
+            print(f"[Campaign Details Popup] {column}: Date/Date-Time Format Verification PASS ({value!r})")
+    finally:
+        campaign_page.close_popup()

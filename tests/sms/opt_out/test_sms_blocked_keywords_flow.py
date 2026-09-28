@@ -42,6 +42,7 @@ import pytest
 from pages.sms.sms_blocked_keywords_page import SmsBlockedKeywordsPage
 from constants.sms_blocked_keywords_ui_headers import EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS
 from utils.parallel import short_unique_tag
+from utils.datetime_verification import detect_ui_date_columns
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.opt_out]
@@ -458,3 +459,59 @@ def test_ui_default_table_headers_full(keywords_page):
     for col in EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Block Keywords (shared reusable utility
+#         framework, per the multi-module date-verification task)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_no_date_column(keywords_page):
+    """This module's own confirmed UI header spec
+    (constants/sms_blocked_keywords_ui_headers.py:
+    EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS = ["Action", "Keyword",
+    "Status"]) has NO date/date-time column at all, and
+    SmsBlockedKeywordsPage has no export/download capability either --
+    both independently confirmed, not assumed. Per this task's own rule
+    ("Do not fail a test merely because a module does not contain a date
+    column"), this records that fact as a real, passing assertion against
+    the live page (so an app change that DOES add a date column here is
+    caught and this test starts actually exercising
+    utils/datetime_verification.py, the same reusable framework every
+    other SMS module's date verification already uses) rather than
+    silently omitting Block Keywords from date-verification coverage."""
+    _to_list(keywords_page)
+    ui_headers = keywords_page.get_visible_column_headers()
+    # Confirm the page's real, current headers still match the fully
+    # confirmed spec (no surprise extra column of any kind). CONFIRMED
+    # real behavior: this app renders header LABELS uppercase via CSS
+    # text-transform (same as every other list/report page in this
+    # project -- e.g. the SMS Campaign Report's UPPERCASE on-screen
+    # headers), so this compares case-insensitively rather than against
+    # EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS's own Title-Case spelling.
+    normalized_ui = {h.strip().lower() for h in ui_headers}
+    normalized_expected = {h.strip().lower() for h in EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS}
+    assert normalized_expected <= normalized_ui, (
+        f"Block Keywords UI headers changed from the confirmed spec "
+        f"{EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS} -- now: {ui_headers}. "
+        f"Re-confirm this module's real columns before assuming the "
+        f"date-column conclusion below still holds."
+    )
+    # ... then specifically probe for any of the date-column names this
+    # app actually uses elsewhere (Created At/Updated At, Received At --
+    # every other SMS module's real, confirmed date columns) in case one
+    # was silently added here.
+    KNOWN_APP_DATE_COLUMN_NAMES = [
+        "Created At", "Updated At", "Received At", "Submitted At",
+        "DLR Received At", "Scheduled At", "Completed At",
+    ]
+    detected = detect_ui_date_columns(ui_headers, KNOWN_APP_DATE_COLUMN_NAMES, {})
+    assert detected == [], (
+        f"Block Keywords UI table now shows what looks like a date/"
+        f"date-time column ({detected}) -- wire this module into "
+        f"DATE_MODULE_CONFIG (utils/date_module_config.py) and give it "
+        f"the same UI-vs-export date verification as the other SMS "
+        f"modules instead of leaving it here as a documented no-op."
+    )
+    print("[Block Keywords] Confirmed: no date/date-time column exists on this page (Action/Keyword/Status only).")

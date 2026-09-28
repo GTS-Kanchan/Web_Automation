@@ -72,11 +72,23 @@ from constants.rcs_optout_ui_headers import EXPECTED_RCS_OPTOUT_UI_HEADERS
 from pages.rcs.rcs_optout_page import RcsOptOutPage
 from utils.parallel import short_unique_digits
 from utils.test_data_generator import DATA_DIR
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateComparisonError,
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_date_columns,
+    detect_ui_date_columns,
+    read_export_datetime_values,
+    validate_ui_export_dates,
+)
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
     HeaderValidationError,
     UnsupportedFileTypeError,
+    read_file_rows,
     validate_file_headers,
 )
 
@@ -734,3 +746,60 @@ def test_ui_default_table_headers_full(optout_page):
     for col in EXPECTED_RCS_OPTOUT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ═════════════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- RCS Blocked Numbers (shared reusable
+# utility -- utils/datetime_verification.py, config in
+# utils/date_module_config.py). Strict dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+# only, no relaxation.
+# ═════════════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(optout_page):
+    """For the real RCS Blocked Numbers date/date-time column
+    ("Opted Out At" -- confirmed via constants/rcs_optout_ui_headers.py /
+    constants/rcs_optout_headers.py, not hardcoded here), validates
+    every populated on-screen value is a real dd-mm-yyyy/dd-mm-yyyy
+    hh:mm:ss value, validates the export's own values the same way, and
+    compares UI vs export."""
+    ensure_on_optout_page(optout_page)
+
+    config = DATE_MODULE_CONFIG["rcs_blocked_numbers"]
+    ui_headers = optout_page.get_raw_headers(optout_page.TABLE_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the RCS Blocked Numbers UI table right now.")
+
+    row_count = optout_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No RCS Blocked Number rows visible -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=optout_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+
+    result = optout_page.export_csv()
+    if not result:
+        pytest.skip("RCS Blocked Numbers export did not produce a downloaded file -- UI-only verification stands.")
+
+    _headers, rows = read_file_rows(result["file_path"])
+    if not rows:
+        pytest.skip("RCS Blocked Numbers export produced 0 data rows -- nothing to compare against.")
+
+    export_date_columns = detect_date_columns(list(rows[0].keys()), config["export_date_columns"])
+    export_values_by_column = read_export_datetime_values(rows, export_date_columns)
+
+    try:
+        validate_ui_export_dates(
+            "RCS Blocked Numbers", ui_values_by_column, export_values_by_column,
+            field_kinds=config["field_kinds"],
+        )
+    except (DateFormatValidationError, DateComparisonError) as exc:
+        pytest.fail(str(exc))
+    print(f"[RCS Blocked Numbers] Date/Date-Time Verification PASS ({row_count} UI row(s))")
+

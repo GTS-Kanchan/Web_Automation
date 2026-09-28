@@ -15,11 +15,24 @@ from constants.rcs_campaign_headers import EXPECTED_RCS_CAMPAIGN_HEADERS
 from constants.rcs_campaign_ui_headers import EXPECTED_RCS_CAMPAIGN_UI_HEADERS
 from pages.rcs.rcs_campaign_page import RCSCampaignPage
 from utils.config import Config
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateComparisonError,
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_date_columns,
+    detect_ui_date_columns,
+    read_export_datetime_values,
+    validate_date_values_format,
+    validate_ui_export_dates,
+)
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
     HeaderValidationError,
     UnsupportedFileTypeError,
+    read_file_rows,
     validate_file_headers,
 )
 
@@ -229,3 +242,110 @@ def test_ui_default_table_headers_full(campaign_page):
     for col in EXPECTED_RCS_CAMPAIGN_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ═════════════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- RCS Campaign List (shared reusable utility --
+# utils/datetime_verification.py, config in utils/date_module_config.py).
+# Strict dd-mm-yyyy / dd-mm-yyyy hh:mm:ss only, no relaxation.
+# ═════════════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(campaign_page):
+    """For every real RCS Campaign List date/date-time column ("Created At",
+    "Scheduled At" -- confirmed via constants/rcs_campaign_ui_headers.py /
+    constants/rcs_campaign_headers.py, not hardcoded here), validates every
+    populated on-screen value is a real dd-mm-yyyy/dd-mm-yyyy hh:mm:ss value,
+    validates the export's own values the same way, and compares UI vs
+    export per column."""
+    campaign_page.load_campaign_list()
+
+    config = DATE_MODULE_CONFIG["rcs_campaign_list"]
+    ui_headers = campaign_page.get_raw_headers(campaign_page.TABLE_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the RCS Campaign List UI table right now.")
+
+    row_count = len(campaign_page.get_table_rows())
+    if row_count == 0:
+        pytest.skip("No RCS Campaign rows visible -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=campaign_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+
+    result = campaign_page.click_export_csv()
+    if not result:
+        pytest.skip("RCS Campaign List export did not produce a downloaded file -- UI-only verification stands.")
+
+    _headers, rows = read_file_rows(result["file_path"])
+    if not rows:
+        pytest.skip("RCS Campaign List export produced 0 data rows -- nothing to compare against.")
+
+    export_date_columns = detect_date_columns(list(rows[0].keys()), config["export_date_columns"])
+    export_values_by_column = read_export_datetime_values(rows, export_date_columns)
+
+    try:
+        validate_ui_export_dates(
+            "RCS Campaign List", ui_values_by_column, export_values_by_column,
+            field_kinds=config["field_kinds"],
+        )
+    except (DateFormatValidationError, DateComparisonError) as exc:
+        pytest.fail(str(exc))
+    print(f"[RCS Campaign List] Date/Date-Time Verification PASS ({row_count} UI row(s))")
+
+
+# ════════════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Campaign Details Popup. CONFIRMED via a
+# real pasted DOM: heading "Campaign Details", Basic Information shows
+# Created At/Updated At, Scheduling Details shows Scheduled At/Started
+# At/Completed At, each dd-mm-yyyy hh:mm:ss (e.g. "28-09-2026 17:01:28").
+# UI-only format check (no export correspondence for a detail popup),
+# reuses the same utils/datetime_verification.py used everywhere else in
+# this suite.
+# ════════════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_details_popup(campaign_page):
+    """Opens the first row's Campaign Details popup and validates its
+    Created At/Updated At/Scheduled At/Started At/Completed At date-time
+    fields are each a real, correctly formatted dd-mm-yyyy hh:mm:ss
+    value."""
+    campaign_page.load_campaign_list()
+
+    row_count = len(campaign_page.get_table_rows())
+    if row_count == 0:
+        pytest.skip("No RCS Campaign rows visible -- nothing to open a Campaign Details popup for.")
+
+    if not campaign_page.click_view_icon_on_row(0):
+        pytest.skip("No View icon on row 0 -- nothing to date-verify.")
+    if not campaign_page.is_popup_open():
+        pytest.skip("Campaign Details popup did not open for row 0 -- nothing to date-verify.")
+
+    try:
+        fields = {
+            "Created At": campaign_page.get_popup_created_at(),
+            "Updated At": campaign_page.get_popup_updated_at(),
+            "Scheduled At": campaign_page.get_popup_scheduled_at(),
+            "Started At": campaign_page.get_popup_started_at(),
+            "Completed At": campaign_page.get_popup_completed_at(),
+        }
+        for column, value in fields.items():
+            if not value:
+                # Not every field applies to every campaign (e.g.
+                # "Scheduled At"/"Started At"/"Completed At" may not
+                # apply to a campaign that hasn't reached that stage) --
+                # not a format violation, nothing to check.
+                continue
+            try:
+                validate_date_values_format("Campaign Details Popup", column, [value], field_kind="date-time")
+            except DateFormatValidationError as exc:
+                pytest.fail(str(exc))
+            print(f"[Campaign Details Popup] {column}: Date/Date-Time Format Verification PASS ({value!r})")
+    finally:
+        campaign_page.close_popup()
+

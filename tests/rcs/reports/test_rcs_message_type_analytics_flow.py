@@ -23,6 +23,7 @@ import pytest
 from constants.rcs_message_type_analytics_headers import EXPECTED_RCS_MESSAGE_TYPE_ANALYTICS_HEADERS
 from constants.rcs_message_type_analytics_ui_headers import EXPECTED_RCS_MESSAGE_TYPE_ANALYTICS_UI_HEADERS
 from pages.rcs.rcs_message_type_analytics_page import RcsMessageTypeAnalyticsPage
+from utils.analytics_report_date_verification import verify_analytics_report_dates
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -626,3 +627,21 @@ def test_ui_default_table_headers_full(message_type_analytics_page):
     for col in EXPECTED_RCS_MESSAGE_TYPE_ANALYTICS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(message_type_analytics_page):
+    """Duration column -- dd-mm-yyyy on-screen (CONFIRMED,
+    constants/rcs/**/*_analytics_headers.py) but a real pasted pytest
+    failure showed this report's own EXPORT renders Duration as
+    "dd Mon yyyy" (e.g. "27 Sep 2026"), a third format distinct from
+    both dd-mm-yyyy and the already-confirmed ISO yyyy-mm-dd export
+    variant seen elsewhere. Uses accept_text_month=True (opt-in, scoped
+    to just this module's export side -- see
+    utils/analytics_report_date_verification.py /
+    utils/datetime_verification.py's own accept_text_month notes).
+    Validates on-screen format, export format, and that every visible UI
+    value has a corresponding value in the export."""
+    ensure_on_report_page(message_type_analytics_page)
+    verify_analytics_report_dates(
+        message_type_analytics_page, "RCS Message Type Analytics", accept_text_month=True
+    )

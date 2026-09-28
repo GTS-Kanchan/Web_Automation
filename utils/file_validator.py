@@ -151,11 +151,16 @@ def _read_xls_headers(file_path):
     return [_strip_bom(cell) if cell is not None else "" for cell in header_row]
 
 
-def _read_zip_headers(file_path):
-    """The live SMS Download Center export is a .zip that contains exactly
-    one .csv/.xlsx/.xls report file — extract that one entry to a temp
-    file and read its headers the normal way. Never inspects any other
-    entry's contents (e.g. a manifest/readme also in the zip)."""
+def _extract_zip_inner(file_path):
+    """Shared by _read_zip_headers and _read_zip_rows: the live SMS
+    Download Center export is a .zip that contains exactly one
+    .csv/.xlsx/.xls report file. Extracts that one entry and returns
+    (inner_ext, data_bytes) -- never inspects any other entry's contents
+    (e.g. a manifest/readme also in the zip). Split out of the original
+    single-purpose _read_zip_headers() so row-reading can reuse the exact
+    same zip-entry-selection logic rather than duplicating it (there is
+    now more than one caller that needs "the one real report file inside
+    this zip")."""
     try:
         with zipfile.ZipFile(file_path) as zf:
             candidates = [
@@ -174,17 +179,42 @@ def _read_zip_headers(file_path):
             inner_name = candidates[0]
             inner_ext = os.path.splitext(inner_name)[1].lower()
             data = zf.read(inner_name)
+            return inner_ext, data
     except zipfile.BadZipFile:
         raise UnsupportedFileTypeError(
             f"Downloaded file has a .zip extension but is not a valid zip archive.\n"
             f"File: {file_path}"
         )
 
+
+def _read_zip_headers(file_path):
+    """The live SMS Download Center export is a .zip that contains exactly
+    one .csv/.xlsx/.xls report file -- extract that one entry to a temp
+    file and read its headers the normal way. Never inspects any other
+    entry's contents (e.g. a manifest/readme also in the zip)."""
+    inner_ext, data = _extract_zip_inner(file_path)
     fd, tmp_path = tempfile.mkstemp(suffix=inner_ext)
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
         return read_file_headers(tmp_path)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
+def _read_zip_rows(file_path):
+    """Row-data equivalent of _read_zip_headers() -- same zip-entry
+    extraction (via _extract_zip_inner), then reads the extracted file's
+    headers AND data rows the normal way."""
+    inner_ext, data = _extract_zip_inner(file_path)
+    fd, tmp_path = tempfile.mkstemp(suffix=inner_ext)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        return read_file_rows(tmp_path)
     finally:
         try:
             os.remove(tmp_path)
@@ -219,6 +249,131 @@ def read_file_headers(file_path):
         "Supported formats:\n.csv\n.xlsx\n.xls\n.zip (containing .csv/.xlsx/.xls)"
     )
 
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Row-data extraction (phase 2 -- see module docstring)
+#
+# Everything below reads DATA ROWS in addition to headers. It is entirely
+# ADDITIVE: read_file_headers() above is completely untouched and still
+# reads only the header row (see
+# tests/unit/test_file_validator.py::test_read_file_headers_does_not_read_row_data),
+# so every existing caller of read_file_headers()/validate_file_headers()
+# is unaffected by this section. Added for the Campaign Report "Total
+# Messages" export deep-verification flow (required-field / data-type /
+# date-format / UI-count-vs-export-count checks), which needs the actual
+# row values, not just the header row.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _row_to_dict(headers, raw_row):
+    """Zips a raw row (list of cell values, already BOM-stripped where
+    applicable) against `headers` into {header: value}. A row shorter than
+    the header list (a real possibility for a ragged CSV) is padded with
+    "" for the missing trailing cells rather than raising -- a genuinely
+    missing/blank trailing field is exactly what verify_required_fields()
+    downstream is supposed to catch and report, not something this
+    low-level reader should hide by erroring out first."""
+    row = list(raw_row) + [""] * (len(headers) - len(raw_row))
+    return {header: row[i] for i, header in enumerate(headers)}
+
+
+def _read_csv_rows(file_path):
+    with open(file_path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.reader(f)
+        header_row = next(reader, None)
+        if not header_row:
+            return [], []
+        headers = [_strip_bom(cell) for cell in header_row]
+        rows = []
+        for raw_row in reader:
+            if not raw_row or all((cell is None or str(cell).strip() == "") for cell in raw_row):
+                continue  # skip a genuinely blank line (e.g. trailing newline), not a real data row
+            rows.append(_row_to_dict(headers, raw_row))
+    return headers, rows
+
+
+def _read_xlsx_rows(file_path):
+    if openpyxl is None:
+        raise UnsupportedFileTypeError(
+            "Cannot read .xlsx file -- the 'openpyxl' package is not installed.\n"
+            f"File: {file_path}\n"
+            "Install it with: pip install openpyxl"
+        )
+    wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+    try:
+        ws = wb.active
+        all_rows = list(ws.iter_rows(values_only=True))
+    finally:
+        wb.close()
+    if not all_rows:
+        return [], []
+    headers = [_strip_bom(cell) if cell is not None else "" for cell in all_rows[0]]
+    rows = []
+    for raw_row in all_rows[1:]:
+        # openpyxl's used-range can overestimate and yield a trailing
+        # phantom row of all-None cells -- skip ONLY a row where every
+        # cell is None (not merely falsy: 0 and "" are real data, not a
+        # phantom row).
+        if all(cell is None for cell in raw_row):
+            continue
+        rows.append(_row_to_dict(headers, raw_row))
+    return headers, rows
+
+
+def _read_xls_rows(file_path):
+    if xlrd is None:
+        raise UnsupportedFileTypeError(
+            "Cannot read legacy .xls file -- the 'xlrd' package is not installed.\n"
+            f"File: {file_path}\n"
+            "Install it with: pip install xlrd"
+        )
+    wb = xlrd.open_workbook(file_path)
+    sheet = wb.sheet_by_index(0)
+    if sheet.nrows == 0:
+        return [], []
+    headers = [_strip_bom(cell) if cell is not None else "" for cell in sheet.row_values(0)]
+    rows = []
+    for r in range(1, sheet.nrows):
+        raw_row = sheet.row_values(r)
+        if all((cell is None or str(cell).strip() == "") for cell in raw_row):
+            continue
+        rows.append(_row_to_dict(headers, raw_row))
+    return headers, rows
+
+
+def read_file_rows(file_path):
+    """Read the header row AND every data row of file_path. Returns
+    (headers, rows) where `rows` is a list of {header: value} dicts, one
+    per data row (the header row itself is never included in `rows`, and
+    a genuinely blank line/phantom row is skipped -- see each per-format
+    reader's own docstring for exactly what counts as "blank"). Dispatches
+    on file extension exactly like read_file_headers() (same supported
+    formats: .csv/.xlsx/.xls/.zip-wrapping-one-of-those).
+
+    Cell values are returned AS READ by the underlying library -- a CSV
+    cell is always a string (including an empty one); an .xlsx/.xls cell
+    keeps its native type (str, int, float, or a real datetime.datetime/
+    datetime.date for a date-formatted Excel cell) rather than being
+    stringified here, so a downstream date check can recognize an already-
+    valid Excel date object without having to re-parse a formatted string
+    that may not even exist for that cell.
+
+    Raises UnsupportedFileTypeError for any other extension, same as
+    read_file_headers().
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".csv":
+        return _read_csv_rows(file_path)
+    if ext == ".xlsx":
+        return _read_xlsx_rows(file_path)
+    if ext == ".xls":
+        return _read_xls_rows(file_path)
+    if ext == ".zip":
+        return _read_zip_rows(file_path)
+    raise UnsupportedFileTypeError(
+        f"Unsupported downloaded file type:\n{ext or '(no extension)'}\n\n"
+        "Supported formats:\n.csv\n.xlsx\n.xls\n.zip (containing .csv/.xlsx/.xls)"
+    )
 
 # ─────────────────────────────────────────────────────────────────────────
 # Formatting helpers (failure messages only — never dumps file contents)

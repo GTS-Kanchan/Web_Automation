@@ -507,3 +507,64 @@ class RcsMessagePage(BasePage):
                 return max(0, len(list(csv.reader(fh))) - 1)
         except Exception:
             return 0
+
+    # -------------------------------------------------------------------------
+    # Message Details popup (Timeline) -- CONFIRMED via a real pasted DOM:
+    # heading h3 "Message Details", close button
+    # wire:click="$dispatch('closeModal')". Timeline card rows are
+    # <span>Created:</span><span>28-09-2026 17:01:31</span> (also
+    # Scheduled/Submitted/Delivered/Read, same shape) -- every observed
+    # value carries seconds, dd-mm-yyyy hh:mm:ss.
+    # -------------------------------------------------------------------------
+    POPUP_HEADING = "xpath=//h3[normalize-space()='Message Details']"
+    POPUP_CLOSE_BTN = (
+        "xpath=//h3[normalize-space()='Message Details']"
+        "/ancestor::div[contains(@class,'space-y-6')][1]"
+        "//button[contains(@wire:click,\"closeModal\")]"
+    )
+
+    def is_popup_open(self):
+        try:
+            return self.page.locator(self.POPUP_HEADING).first.is_visible()
+        except Exception:
+            return False
+
+    def close_popup(self):
+        try:
+            btn = self.h.wait_for_element_clickable(self.POPUP_CLOSE_BTN, timeout=5000)
+            btn.click()
+            self.page.wait_for_timeout(500)
+            return
+        except Exception:
+            pass
+        try:
+            self.page.keyboard.press("Escape")
+            self.page.wait_for_timeout(500)
+        except Exception:
+            pass
+
+    def _get_popup_timeline_value(self, label):
+        try:
+            loc = self.page.locator(
+                f"xpath=//span[normalize-space(text())='{label}']/following-sibling::span[1]"
+            )
+            if loc.count() > 0:
+                return loc.first.inner_text().strip()
+            return ""
+        except Exception:
+            return ""
+
+    def get_popup_created(self):
+        return self._get_popup_timeline_value("Created:")
+
+    def get_popup_scheduled(self):
+        return self._get_popup_timeline_value("Scheduled:")
+
+    def get_popup_submitted(self):
+        return self._get_popup_timeline_value("Submitted:")
+
+    def get_popup_delivered(self):
+        return self._get_popup_timeline_value("Delivered:")
+
+    def get_popup_read(self):
+        return self._get_popup_timeline_value("Read:")

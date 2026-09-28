@@ -6,7 +6,7 @@
 active_environment: dev
 
 environments:
-  testqa:
+  staging:
     base_url: "https://testqa.cpaas.globeteleservices.com"
     sms_send_path: "/api/sms/send"
     campaign_send_path: "/api/sms/campaign/send"
@@ -14,6 +14,18 @@ environments:
     send_msg_path: "/api/sms/send-msg"
     sms_json_path: "/api/sms/json"
     webengage_send_path: "/api/v1/sms/webengage/send"
+    # DLR base URL + path -- given as a single fixed http://IP:PORT value
+    # (not per-environment) via the DLR test-case spec. Kept here (rather
+    # than hardcoded in sms_api_client.py) so it's a one-line change if it
+    # later turns out to differ per environment, matching every other URL
+    # in this file. Confirm/replace if this instance actually uses a
+    # different DLR host.
+    dlr_base_url: "http://140.245.230.67:8080"
+    dlr_path: "/api/v1/dlr"
+    # Bulk DLR verification endpoint -- POST {dlr_base_url}{dlr_verify_path}
+    # with {"message_ids": [...], "expected_status": ..., "require_billing": ...}.
+    # Given directly by the "Verify DLR for /api/sms/json" test-case spec.
+    dlr_verify_path: "/api/v1/dlr/verify"
     # Token can also be supplied via env var SMS_API_TOKEN_TESTQA (preferred for CI).
     # If set, the env var always wins over the value here.
     auth_token: "96|M7uofiXwASnjZp8QN8wWaQSFnO8AIDdmXl9t5fXj19985c1c"
@@ -30,6 +42,9 @@ environments:
     send_msg_path: "/api/sms/send-msg"
     sms_json_path: "/api/sms/json"
     webengage_send_path: "/api/v1/sms/webengage/send"
+    dlr_base_url: "http://140.245.230.67:8080"
+    dlr_path: "/api/v1/dlr"
+    dlr_verify_path: "/api/v1/dlr/verify"
     # Token can also be supplied via env var SMS_API_TOKEN_DEV (preferred for CI).
     auth_token: "019f459b-d9c2-704a-804e-6343ef5e83df|9747rBAtPx33I9lwp04AiszieGQd221NOKYN2Z5q5042a514"
     campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
@@ -45,6 +60,9 @@ environments:
     send_msg_path: "/api/sms/send-msg"
     sms_json_path: "/api/sms/json"
     webengage_send_path: "/api/v1/sms/webengage/send"
+    dlr_base_url: "http://140.245.230.67:8080"
+    dlr_path: "/api/v1/dlr"
+    dlr_verify_path: "/api/v1/dlr/verify"
     auth_token: "193|5jlGF0wDJ3DQSOcLA4Z46XyGpuJPaNXrTILfp483a1f8e224"
     campaign_id: "22709452-14e3-4896-b8a3-20341a22c2a8"
     template_id: "6513"  # TODO: Set the production template ID
@@ -59,6 +77,9 @@ environments:
     send_msg_path: "/api/sms/send-msg"
     sms_json_path: "/api/sms/json"
     webengage_send_path: "/api/v1/sms/webengage/send"
+    dlr_base_url: "http://140.245.230.67:8080"
+    dlr_path: "/api/v1/dlr"
+    dlr_verify_path: "/api/v1/dlr/verify"
     # Token can also be supplied via env var SMS_API_TOKEN_MALAYSIA
     auth_token: "019f5b90-33af-72a5-806f-9b6a4b5fd668|fTHVTMBZp5k31nC2N9JrHzjyiyLkPxU88KVb0ywK6027fd57"
     campaign_id: "13288824-ef19-4385-8a25-4aef57d5c077"

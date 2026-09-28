@@ -440,3 +440,98 @@ class RCSCampaignPage(BasePage):
                 return count
             self.page.wait_for_timeout(500)
         return last_count
+
+    # -------------------------------------------------------------------------
+    # Campaign Details popup -- CONFIRMED via a real pasted DOM: heading h3
+    # "Campaign Details", close button
+    # wire:click="$dispatch('closeModal')". Basic Information card uses
+    # <span> label/value pairs with a trailing colon on the label
+    # ("Created At:"/"Updated At:"); Scheduling Details card uses <p>
+    # label/value pairs WITHOUT a trailing colon ("Scheduled At"/
+    # "Started At"/"Completed At"). Every observed value carries seconds,
+    # dd-mm-yyyy hh:mm:ss.
+    # -------------------------------------------------------------------------
+    POPUP_HEADING = "xpath=//h3[normalize-space()='Campaign Details']"
+    POPUP_CLOSE_BTN = (
+        "xpath=//h3[normalize-space()='Campaign Details']"
+        "/ancestor::div[contains(@class,'space-y-6')][1]"
+        "//button[contains(@wire:click,\"closeModal\")]"
+    )
+
+    def is_popup_open(self):
+        try:
+            return self.page.locator(self.POPUP_HEADING).first.is_visible()
+        except Exception:
+            return False
+
+    def close_popup(self):
+        try:
+            btn = self.h.wait_for_element_clickable(self.POPUP_CLOSE_BTN, timeout=5000)
+            btn.click()
+            self.page.wait_for_timeout(500)
+            return
+        except Exception:
+            pass
+        try:
+            self.page.keyboard.press("Escape")
+            self.page.wait_for_timeout(500)
+        except Exception:
+            pass
+
+    def _get_popup_span_value(self, label):
+        try:
+            loc = self.page.locator(
+                f"xpath=//span[normalize-space(text())='{label}']/following-sibling::span[1]"
+            )
+            if loc.count() > 0:
+                return loc.first.inner_text().strip()
+            return ""
+        except Exception:
+            return ""
+
+    def _get_popup_p_value(self, label):
+        try:
+            loc = self.page.locator(
+                f"xpath=//p[normalize-space(text())='{label}']/following-sibling::p[1]"
+            )
+            if loc.count() > 0:
+                return loc.first.inner_text().strip()
+            return ""
+        except Exception:
+            return ""
+
+    def get_popup_created_at(self):
+        return self._get_popup_span_value("Created At:")
+
+    def get_popup_updated_at(self):
+        return self._get_popup_span_value("Updated At:")
+
+    def get_popup_scheduled_at(self):
+        return self._get_popup_p_value("Scheduled At")
+
+    def get_popup_started_at(self):
+        return self._get_popup_p_value("Started At")
+
+    def get_popup_completed_at(self):
+        return self._get_popup_p_value("Completed At")
+
+    # -------------------------------------------------------------------------
+    # Row view action -- same confirmed tooltip-view pattern already used
+    # on RcsMessagePage.click_view_icon() elsewhere in this codebase.
+    # -------------------------------------------------------------------------
+    ROW_VIEW_BTN = "xpath=(//button[contains(@data-tooltip-target,'tooltip-view-')])[1]"
+
+    def click_view_icon_on_row(self, row_idx=0):
+        try:
+            btns = self.page.locator("xpath=//button[contains(@data-tooltip-target,'tooltip-view-')]")
+            if row_idx < btns.count():
+                btn = btns.nth(row_idx)
+                btn.scroll_into_view_if_needed()
+                btn.click(force=True)
+            else:
+                el = self.h.wait_for_element_clickable(self.ROW_VIEW_BTN, timeout=8000)
+                el.click(force=True)
+            self.page.wait_for_timeout(1500)
+            return True
+        except Exception:
+            return False

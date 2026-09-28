@@ -11,6 +11,7 @@ wire:model/Alpine-teleported elements) but now run via
 `page.evaluate()`/`page.evaluate_handle()`/`ElementHandle.query_selector_all()`
 instead of `driver.execute_script()` + `driver.find_elements()`.
 """
+import datetime
 import os
 import re
 import time
@@ -56,6 +57,27 @@ class SMSCampaignPage(BasePage):
     # page, so this stays with the plain xpath rather than guessing one.
     TABLE_HEADERS       = "xpath=//table//th"
 
+    # TABLE_NAME -- NOT independently re-derived from a fresh DOM dump (this
+    # session's environment cannot launch a browser to inspect the live
+    # page). Instead this is read directly off the filter ids below
+    # (SELECT_FILTER_DEPARTMENT = "#sms_campaigns-filter-department" etc.),
+    # which the comment on that block says ARE confirmed from a real, live
+    # DOM dump -- "sms_campaigns" is the literal id prefix in that
+    # confirmed string, not a guess. Every other list/report page in this
+    # project (rappasoft/laravel-livewire-tables, same package -- see e.g.
+    # pages/sms/opt_out/sms_blocked_numbers_page.py: TABLE_NAME =
+    # "sms_optouts" alongside its own "#sms_optouts-filter-..." ids and
+    # NEXT_PAGE_BTN = "...nextPage('sms_optoutsPage')...") uses this exact
+    # same TABLE_NAME value for both its filter-id prefix and its
+    # nextPage()/#table- ids, with zero exceptions found in this codebase.
+    # NEXT_PAGE_BTN below follows that same established, codebase-wide
+    # convention. has_next_page()/go_to_next_page() fail closed (return
+    # False / no-op) rather than raise if this locator turns out not to
+    # match the real page, so a wrong inference here degrades pagination
+    # rather than breaking the suite.
+    TABLE_NAME          = "sms_campaigns"
+    NEXT_PAGE_BTN       = f"xpath=//button[contains(@*[name()='wire:click'],\"nextPage('{TABLE_NAME}Page')\")]"
+
     # Row action: "Reports" icon -- CONFIRMED from a real, pasted DOM
     # capture: a plain <a data-tooltip-target="tooltip-reports-<id>"
     # href="https://<host>/campaigns/messages/total/<uuid>">, navigating
@@ -64,6 +86,51 @@ class SMSCampaignPage(BasePage):
     # naming convention already confirmed on the WhatsApp Campaign
     # listing page's own Reports icon.
     REPORTS_LINK_IN_ROW = "xpath=.//*[contains(@data-tooltip-target,'tooltip-reports-')]"
+
+    # Row action: "View" icon -- CONFIRMED from a real, pasted DOM capture:
+    # <button data-tooltip-target="tooltip-view-<id>"
+    #   wire:click.prevent="$dispatch('openModal', { component: 'sms.campaign.view',
+    #     arguments: {"campaignId": <id>} })" type="button">, opening the
+    # "Campaign Details" Livewire modal (Campaign Statistics cards +
+    # Timeline showing Created at / Scheduled at). Same tooltip-target /
+    # openModal convention already confirmed for the Reports icon above
+    # and for SMSMessagePage's own View icon.
+    ALL_VIEW_ICONS      = "xpath=//button[contains(@data-tooltip-target,'tooltip-view-')]"
+    ROW_VIEW_ICON       = "xpath=(//button[contains(@data-tooltip-target,'tooltip-view-')])[1]"
+    VIEW_ICON_IN_ROW    = "xpath=.//*[contains(@data-tooltip-target,'tooltip-view-')]"
+
+    # ── Campaign Details Popup (Livewire UI modal) ─────────────────────────
+    # Same modal-container convention already confirmed for
+    # SMSMessagePage's Message Details popup and
+    # SMSDownloadCenterPage's Summary popup.
+    POPUP_CONTAINER = (
+        "xpath=//div[@id='modal-container' and .//*[self::div or self::section]]"
+        " | //div[@role='dialog']"
+        " | //div[contains(@class,'fixed') and contains(@class,'inset') and .//h2]"
+    )
+    POPUP_CLOSE_BTN = (
+        "xpath=//div[@id='modal-container']//button[contains(.,'Close') or @aria-label='Close'"
+        "    or contains(.,'×') or contains(.,'✕')]"
+        " | //div[@role='dialog']//button[@aria-label='Close' or contains(.,'Close')]"
+    )
+
+    # Campaign Details popup Timeline date/date-time fields -- CONFIRMED
+    # from a real pasted DOM: each is a
+    # "<span>Label:</span><span>value</span>" pair inside the "Timeline"
+    # card, e.g.
+    #   <span>Created at:</span><span>28-09-2026 13:05:15</span>
+    #   <span>Scheduled at:</span><span>28-09-2026 13:05:15</span>
+    # Exact normalize-space() match on the label (not a contains()-based
+    # lookup) to avoid any future substring-ambiguity, same reasoning as
+    # SMSMessagePage's popup date locators.
+    POPUP_CREATED_AT_VALUE = (
+        "xpath=(//*[@id='modal-container' or @role='dialog']"
+        "//span[normalize-space()='Created at:']/following-sibling::span)[1]"
+    )
+    POPUP_SCHEDULED_AT_VALUE = (
+        "xpath=(//*[@id='modal-container' or @role='dialog']"
+        "//span[normalize-space()='Scheduled at:']/following-sibling::span)[1]"
+    )
 
     # Filter — locators confirmed from a live DOM dump of the SMS Campaigns
     # list page's filter panel (rappasoft/laravel-livewire-tables
@@ -364,8 +431,24 @@ class SMSCampaignPage(BasePage):
         action. Returns False (rather than asserting) if there is no
         data row or no Reports link on it, so callers can skip
         gracefully instead of guessing at a fallback."""
-        row = self.get_first_data_row()
-        if row is None:
+        return self.click_reports_link_on_row(0)
+
+    def click_reports_link_on_row(self, row_index):
+        """Same as click_reports_link_on_first_row() above, generalized to
+        an arbitrary visible row index (0-based) -- added so a caller that
+        has already located a specific row (e.g. via
+        find_row_index_by_age_days() below) can open THAT row's report
+        page instead of always the first/latest one. Returns False if
+        there is no such row or it has no Reports link, exactly like the
+        row-0 case."""
+        rows = self.page.locator(self.TABLE_ROWS)
+        try:
+            if row_index < 0 or row_index >= rows.count():
+                return False
+            row = rows.nth(row_index)
+            if not row.is_visible():
+                return False
+        except Exception:
             return False
         try:
             link = row.locator(self.REPORTS_LINK_IN_ROW).first
@@ -378,6 +461,107 @@ class SMSCampaignPage(BasePage):
             link.click(force=True)
         self.page.wait_for_timeout(1000)
         return True
+
+    # ── View icon / Campaign Details Popup ──────────────────────────────────
+
+    def click_view_icon_on_row(self, row_index=0):
+        """Click the confirmed View icon (data-tooltip-target=
+        'tooltip-view-<id>') on the given visible campaign row (0-based) --
+        a Livewire openModal dispatch (native .click() works, same as
+        SMSMessagePage.click_view_icon()), opening the "Campaign Details"
+        modal. Returns False (rather than asserting) if there is no such
+        row or it has no View icon, so callers can skip gracefully."""
+        rows = self.page.locator(self.TABLE_ROWS)
+        try:
+            if row_index < 0 or row_index >= rows.count():
+                return False
+            row = rows.nth(row_index)
+            if not row.is_visible():
+                return False
+        except Exception:
+            return False
+        try:
+            icon = row.locator(self.VIEW_ICON_IN_ROW).first
+            if icon.count() == 0:
+                return False
+        except Exception:
+            return False
+        icon.scroll_into_view_if_needed()
+        icon.click()
+        self.page.wait_for_timeout(2000)  # allow modal to render
+        return True
+
+    def is_popup_open(self):
+        """True when the Campaign Details Livewire modal is present and visible."""
+        try:
+            container = self.h.wait_for_element_visible(self.POPUP_CONTAINER, timeout=8000)
+            return container.is_visible()
+        except Exception:
+            return False
+
+    def close_popup(self):
+        try:
+            btn = self.h.wait_for_element_clickable(self.POPUP_CLOSE_BTN, timeout=5000)
+            btn.click()
+            self.page.wait_for_timeout(800)
+        except Exception:
+            try:
+                self.page.keyboard.press("Escape")
+                self.page.wait_for_timeout(500)
+            except Exception:
+                pass
+
+    def get_popup_all_text(self):
+        try:
+            return self.page.locator(self.POPUP_CONTAINER).first.inner_text().strip()
+        except Exception:
+            return ""
+
+    def get_popup_created_at(self):
+        """Campaign Details popup Timeline 'Created at' date-time value."""
+        try:
+            return self.page.locator(self.POPUP_CREATED_AT_VALUE).first.inner_text().strip()
+        except Exception:
+            return ""
+
+    def get_popup_scheduled_at(self):
+        """Campaign Details popup Timeline 'Scheduled at' date-time value."""
+        try:
+            return self.page.locator(self.POPUP_SCHEDULED_AT_VALUE).first.inner_text().strip()
+        except Exception:
+            return ""
+
+    def click_reports_link_for_exact_name(self, name):
+        """Click the Reports icon on the first visible campaign row whose
+        cell text equals *name* exactly (after trimming) -- unlike
+        click_reports_link_on_first_row(), a search for "OTP_test" never
+        opens "OTP_test_2" by accident. The list renders newest first, so
+        the first exact match is the most recent execution. Returns False
+        if no row matches or that row has no Reports link."""
+        rows = self.page.locator(self.TABLE_ROWS)
+        try:
+            count = rows.count()
+        except Exception:
+            return False
+        for i in range(count):
+            row = rows.nth(i)
+            try:
+                if not row.is_visible():
+                    continue
+                texts = [t.strip() for t in row.locator("td").all_inner_texts()]
+            except Exception:
+                continue
+            if name not in texts:
+                continue
+            link = row.locator(self.REPORTS_LINK_IN_ROW).first
+            if link.count() == 0:
+                return False
+            link.scroll_into_view_if_needed()
+            with self.page.expect_navigation(timeout=15000):
+                link.click(force=True)
+            self.page.wait_for_timeout(1000)
+            return True
+        return False
 
     def click_create_campaign(self):
         """Navigate to create page — tries button click first, falls back to URL."""
@@ -488,6 +672,24 @@ class SMSCampaignPage(BasePage):
                 if r.is_visible() and r.inner_text().strip():
                     cnt += 1
             return cnt
+
+    def has_next_page(self):
+        """Same convention as every other rappasoft/laravel-livewire-tables
+        page object in this project (e.g. SmsCampaignMessageReportPage,
+        SmsBlockedNumbersPage) -- see NEXT_PAGE_BTN's docstring above for
+        why this table's button locator is inferred rather than freshly
+        confirmed. Returns False (never raises) if the button isn't
+        present/visible/enabled, so a wrong inference just means
+        pagination is unavailable rather than a crash."""
+        try:
+            btns = self.page.locator(self.NEXT_PAGE_BTN)
+            return any(b.is_visible() and b.is_enabled() for b in btns.all())
+        except Exception:
+            return False
+
+    def go_to_next_page(self):
+        self._js_click_first_visible(self.NEXT_PAGE_BTN, timeout=10000)
+        self.page.wait_for_timeout(1500)
 
     def is_campaign_name_in_list(self, name: str, timeout: int = 10000) -> bool:
         """
@@ -679,6 +881,101 @@ class SMSCampaignPage(BasePage):
         get_visible_column_count() above, which already confirmed
         "xpath=//table//th" as a working locator on this page."""
         return self._get_headers_safe(self.TABLE_HEADERS)
+
+    def get_column_index(self, header_name):
+        """0-based index of the column whose header equals *header_name*
+        (case-insensitive), or None. Same convention as
+        SmsCampaignMessageReportPage.get_column_index()."""
+        for i, h in enumerate(self.get_visible_column_headers()):
+            if h.strip().lower() == header_name.strip().lower():
+                return i
+        return None
+
+    def get_cell_text(self, row_index, col_index):
+        """Return text of cell at (row_index, col_index) -- 0-based. Same
+        convention as SmsCampaignMessageReportPage.get_cell_text()."""
+        try:
+            rows = self.page.locator(self.TABLE_ROWS)
+            cells = rows.nth(row_index).locator("td")
+            return cells.nth(col_index).inner_text().strip()
+        except Exception:
+            return ""
+
+    def find_row_index_by_age_days(self, target_days, tolerance_days=1, date_column="Created At", max_pages=50):
+        """Scan the campaign list -- paginating forward via
+        has_next_page()/go_to_next_page() above as needed -- for the row
+        whose *date_column* cell is closest to `target_days` days old
+        (now minus the parsed cell date), and return its 0-based index
+        ON WHATEVER PAGE IT WAS FOUND (the browser is left on that page,
+        so a caller can act on the row immediately -- e.g.
+        click_reports_link_on_row(row_index) right after this returns).
+        Returns None, leaving the browser wherever the scan ended, if the
+        date column isn't present, or no row anywhere within max_pages
+        falls within `tolerance_days` of the target.
+
+        The "Created At" column (format dd-mm-yyyy hh:mm:ss, matching
+        utils.report_data_validator.DATE_FORMATS) is USER-CONFIRMED
+        (2026-09-28) -- this list page has no working date-range filter
+        (see the "no Schedule From/To date-range filter" note near
+        BTN_FILTER above), and this session's environment could not
+        launch a browser to inspect the live table itself, so the column
+        name/format were confirmed directly by the user rather than
+        guessed. Pagination (has_next_page/go_to_next_page) is inferred
+        from this codebase's otherwise-universal rappasoft/laravel-
+        livewire-tables convention -- see NEXT_PAGE_BTN's docstring above
+        -- and fails closed (has_next_page() returns False) rather than
+        looping forever if that inference is wrong for this page.
+
+        The list is sorted newest-first, so once every row on a page is
+        already OLDER than `target_days + tolerance_days`, every
+        subsequent page can only be older still -- the scan stops early
+        in that case instead of paging all the way to the end for
+        nothing. `max_pages` is a hard safety cap independent of that
+        early-stop, in case the list is not actually sorted the way this
+        assumes.
+        """
+        from utils.report_data_validator import parse_report_date
+
+        col_index = self.get_column_index(date_column)
+        if col_index is None:
+            return None
+
+        now = datetime.datetime.now()
+        best_index = None
+        best_diff = None
+
+        for _page_num in range(max_pages):
+            row_count = self.get_row_count()
+            page_oldest_within_range = False
+            for i in range(row_count):
+                raw = self.get_cell_text(i, col_index)
+                parsed = parse_report_date(raw)
+                if parsed is None:
+                    continue
+                age_days = (now - parsed).total_seconds() / 86400.0
+                diff = abs(age_days - target_days)
+                if best_diff is None or diff < best_diff:
+                    best_diff = diff
+                    best_index = i
+                if age_days <= target_days + tolerance_days:
+                    page_oldest_within_range = True
+
+            if best_diff is not None and best_diff <= tolerance_days:
+                # Already found a match on this page -- no need to page
+                # further (rows only get older from here).
+                break
+            if not page_oldest_within_range and row_count > 0:
+                # Every row on this page is already older than the
+                # target+tolerance window, and the list is newest-first,
+                # so no later page can contain a closer match.
+                break
+            if not self.has_next_page():
+                break
+            self.go_to_next_page()
+
+        if best_index is not None and best_diff is not None and best_diff <= tolerance_days:
+            return best_index
+        return None
 
     def set_per_page(self, value):
         try:

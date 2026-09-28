@@ -163,3 +163,64 @@ class BasePage:
             except Exception:
                 continue
         return None
+
+    def get_cell_text(self, row_index, col_index, table_rows_css=None):
+        """Generic (row, col) 0-based cell text reader, added to BasePage
+        so every page object gets it for free instead of re-implementing
+        the same 3-line body per page (the exact pattern already
+        confirmed working, independently, on several page objects in
+        this project -- e.g. SmsCampaignMessageReportPage.get_cell_text(),
+        SMSCampaignPage.get_cell_text()). Uses `self.TABLE_ROWS` (every
+        page object in this project already defines this class attribute
+        for its own table) unless a page needs a different rows locator
+        for this one call (`table_rows_css` override). Never raises --
+        returns "" on any error, matching the existing per-page
+        implementations' contract."""
+        try:
+            rows = self.page.locator(table_rows_css or self.TABLE_ROWS)
+            cells = rows.nth(row_index).locator("td")
+            return cells.nth(col_index).inner_text().strip()
+        except Exception:
+            return ""
+
+    def get_column_index(self, header_name):
+        """Generic 0-based index of the column whose header equals
+        *header_name* (case-insensitive, whitespace-trimmed), or None.
+        Reuses whatever `get_visible_column_headers()` the concrete page
+        object already provides (every page object in this project
+        defines one, typically via `self._get_headers_safe(self.TABLE_HEADERS)`)
+        rather than re-reading headers itself -- same convention as the
+        get_column_index() already confirmed working independently on
+        SmsCampaignMessageReportPage and SMSCampaignPage."""
+        for i, h in enumerate(self.get_visible_column_headers()):
+            if h.strip().lower() == header_name.strip().lower():
+                return i
+        return None
+
+    def get_raw_headers(self, headers_locator):
+        """Return EVERY header cell's text, in DOM order, INCLUDING blank
+        entries (e.g. an icon-only Action column with no text label) --
+        unlike `_get_headers_safe(headers_locator)` / most page objects'
+        `get_visible_column_headers()`, which filter blank header text
+        out.
+
+        This matters whenever a header's INDEX (not just its presence)
+        will be used to read a cell via `get_cell_text(row, col_index)`:
+        that method indexes into the FULL, unfiltered `<td>` list, so a
+        column-index computed from a BLANK-FILTERED header list silently
+        points at the wrong cell the moment any earlier column's header
+        renders empty text -- confirmed as a real bug in this project (a
+        blank "Action" header column shifted every later column's
+        filtered-list index left by one, so a "Created At" lookup built
+        from the filtered header list actually read the next column's
+        cell, e.g. Phone Number or Product, instead).
+
+        Always use THIS (not the page's own get_visible_column_headers())
+        to build a header-name -> cell-index mapping; use the filtered
+        get_visible_column_headers() only when checking a column's mere
+        PRESENCE, where a shifted index doesn't matter."""
+        try:
+            headers = self.page.locator(headers_locator)
+            return [h.strip() for h in headers.all_inner_texts()]
+        except Exception:
+            return []

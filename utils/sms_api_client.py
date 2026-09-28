@@ -246,6 +246,70 @@ class SmsApiClient:
             timeout=self._timeout_ms,
         )
 
+    # ---- GET {dlr_base_url}/api/v1/dlr/{message_id} -----------------------
+    def get_dlr(self, message_id: str, headers: Optional[dict] = None) -> ApiResponse:
+        """
+        Fetches the DLR (delivery-receipt) record for a previously-sent
+        message. Lives on a separate host:port from the main SMS API
+        (see env.dlr_url / environments.yaml's dlr_base_url), so it does
+        NOT default to self.env.headers -- no auth requirement for this
+        endpoint has been documented/confirmed, so the default request
+        sends only Accept: application/json. Pass `headers` explicitly
+        (e.g. a Bearer token) once/if that's confirmed to be required.
+        """
+        if not self.env.dlr_url:
+            raise ValueError(
+                f"No dlr_base_url/dlr_path configured for environment "
+                f"'{self.env.name}' in environments.yaml -- cannot call "
+                f"get_dlr()."
+            )
+        req_headers = headers if headers is not None else {"Accept": "application/json"}
+        return _timed(
+            self.context.get,
+            f"{self.env.dlr_url}/{message_id}",
+            headers=req_headers,
+            timeout=self._timeout_ms,
+        )
+
+    # ---- POST {dlr_base_url}/api/v1/dlr/verify (bulk) ----------------------
+    def verify_dlr_bulk(
+        self,
+        message_ids: list,
+        expected_status: Optional[str] = "DELIVERED",
+        require_billing: Optional[bool] = True,
+        headers: Optional[dict] = None,
+    ) -> ApiResponse:
+        """
+        Bulk DLR verification -- POST {dlr_base_url}/api/v1/dlr/verify
+        with {"message_ids": [...], "expected_status": ..., "require_billing": ...}.
+        Request body shape given directly by the "Verify DLR for
+        /api/sms/json" test-case spec's example. Same
+        no-default-auth-header reasoning as get_dlr(): this is a
+        separate service from the main SMS API and no auth requirement
+        for it has been confirmed.
+        """
+        if not self.env.dlr_verify_url:
+            raise ValueError(
+                f"No dlr_base_url/dlr_verify_path configured for "
+                f"environment '{self.env.name}' in environments.yaml -- "
+                f"cannot call verify_dlr_bulk()."
+            )
+        req_headers = headers if headers is not None else {"Accept": "application/json"}
+        # expected_status / require_billing are optional on the receiver; pass
+        # None to leave them out (e.g. tests that only check DLR reception).
+        payload = {"message_ids": message_ids}
+        if expected_status is not None:
+            payload["expected_status"] = expected_status
+        if require_billing is not None:
+            payload["require_billing"] = require_billing
+        return _timed(
+            self.context.post,
+            self.env.dlr_verify_url,
+            data=payload,
+            headers=req_headers,
+            timeout=self._timeout_ms,
+        )
+
     # ---- Raw / malformed-body escape hatch --------------------------------
     def post_raw(self, url: str, raw_body: str, headers: dict) -> ApiResponse:
         """

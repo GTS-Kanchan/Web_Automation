@@ -121,6 +121,16 @@ class Config:
     # OTP-type template name, for the OTP campaign E2E test
     SMS_OTP_TEMPLATE_NAME = os.getenv("SMS_OTP_TEMPLATE_NAME", "OTP_Test")
 
+    # TRANSACTIONAL template for the "Verify DLR for Transaction SMS Template"
+    # test. No default on purpose: the test must fail when .env lacks it.
+    SMS_TRANSACTION_TEMPLATE = os.getenv("SMS_TRANSACTION_TEMPLATE", "").strip()
+    SMS_TRANSACTION_TEMPLATE_TYPE = os.getenv("SMS_TRANSACTION_TEMPLATE_TYPE", "TRANSACTIONAL").strip()
+
+    # Template for the "Verify DLR and Short URL Click Count" test. No
+    # default on purpose: the test must fail when .env lacks it.
+    SMS_URL_CLICK_TEMPLATE = os.getenv("SMS_URL_CLICK_TEMPLATE", "").strip()
+    SMS_URL_CLICK_TEMPLATE_TYPE = os.getenv("SMS_URL_CLICK_TEMPLATE_TYPE", "TRANSACTIONAL").strip()
+
     # Phone numbers pasted into "Copy-Paste" import (newline-separated)
     SMS_PASTE_CONTACTS = os.getenv(
         "SMS_PASTE_CONTACTS",

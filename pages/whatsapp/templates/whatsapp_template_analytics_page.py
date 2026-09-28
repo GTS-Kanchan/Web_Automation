@@ -1,4 +1,8 @@
+import os
+import time
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class WhatsappTemplateAnalyticsPage(BasePage):
@@ -287,9 +291,35 @@ class WhatsappTemplateAnalyticsPage(BasePage):
             self.page.wait_for_timeout(800)
         return True
 
-    def click_export_csv(self):
-        self._js_click(self.EXPORT_CSV_BUTTON, timeout=10000)
-        self.page.wait_for_timeout(1500)
+    def click_export_csv(self, timeout_ms=30000):
+        """Clicks Export CSV, capturing the resulting download via
+        page.expect_download() -- previously just clicked and slept,
+        never actually capturing a file, which silently produced no
+        downloaded export for every WhatsApp analytics report (confirmed
+        via a real pytest run: all 7 export-side date-verification tests
+        skipped with "export did not produce a downloaded file").
+
+        Returns {"elapsed_s", "file_path", "file_size"} on success, or
+        None on failure (timeout / no download triggered) -- matches the
+        RCS analytics family's confirmed-working click_export_csv() contract.
+        """
+        try:
+            btn = self.h.wait_for_element_clickable(self.EXPORT_CSV_BUTTON, timeout=10000)
+            btn.scroll_into_view_if_needed()
+            start = time.time()
+            with self.page.expect_download(timeout=timeout_ms) as dl_info:
+                self._js_click(self.EXPORT_CSV_BUTTON, timeout=10000)
+            download = dl_info.value
+            filename = download.suggested_filename or "whatsapp_template_report_export.csv"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {
+                "elapsed_s": time.time() - start,
+                "file_path": dest,
+                "file_size": os.path.getsize(dest),
+            }
+        except Exception:
+            return None
 
     def get_pagination_results_text(self):
         el = self.h.wait_for_element_visible(self.PAGINATION_RESULTS_TEXT)

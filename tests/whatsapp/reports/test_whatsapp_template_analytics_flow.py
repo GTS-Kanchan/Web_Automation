@@ -45,6 +45,7 @@ Run:
 import pytest
 
 from pages.whatsapp.whatsapp_template_analytics_page import WhatsappTemplateAnalyticsPage
+from utils.analytics_report_date_verification import verify_analytics_report_dates
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.report]
@@ -578,3 +579,15 @@ def test_template_analytics_dlr_awaited_column_values(template_analytics_page):
     if not values:
         pytest.skip("No rows to validate")
     assert all(v.strip() != "" for v in values)
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(template_analytics_page):
+    """Duration column (dd-mm-yyyy, confirmed via project owner + this
+    page's own live-DOM COLUMN_INDEX comment) -- validates on-screen
+    format and, if the export contains a matching Duration column,
+    validates its format too and compares UI vs export values (see
+    utils/analytics_report_date_verification.py; no confirmed
+    constants/whatsapp export-header file exists for this report family,
+    so that half of the check degrades to a skip rather than guessing)."""
+    ensure_on_report_page(template_analytics_page)
+    verify_analytics_report_dates(template_analytics_page, "WhatsApp Template Analytics")

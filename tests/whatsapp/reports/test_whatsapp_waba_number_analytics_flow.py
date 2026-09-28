@@ -49,6 +49,7 @@ Run:
 import pytest
 
 from pages.whatsapp.whatsapp_waba_number_analytics_page import WhatsappWabaNumberAnalyticsPage
+from utils.analytics_report_date_verification import verify_analytics_report_dates
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.report]
@@ -571,3 +572,15 @@ def test_waba_number_analytics_dlr_awaited_column_values(waba_number_analytics_p
     if not values:
         pytest.skip("No rows to validate")
     assert all(v.strip() != "" for v in values)
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(waba_number_analytics_page):
+    """Duration column (dd-mm-yyyy, confirmed via project owner + this
+    page's own live-DOM COLUMN_INDEX comment) -- validates on-screen
+    format and, if the export contains a matching Duration column,
+    validates its format too and compares UI vs export values (see
+    utils/analytics_report_date_verification.py; no confirmed
+    constants/whatsapp export-header file exists for this report family,
+    so that half of the check degrades to a skip rather than guessing)."""
+    ensure_on_report_page(waba_number_analytics_page)
+    verify_analytics_report_dates(waba_number_analytics_page, "WhatsApp WABA Number Analytics")

@@ -844,6 +844,32 @@ class RcsTemplateCreatePage(BasePage):
     # Added to support a full end-to-end create-then-verify-in-list test,
     # mirroring the already-confirmed RCSCampaignPage.is_campaign_name_in_list().
     LIST_TABLE_ID = "table-table"
+    TABLE_HEADERS = f"#{LIST_TABLE_ID} thead th"
+    TABLE_ROWS = f"#{LIST_TABLE_ID} tbody tr"
+
+    def get_row_count(self):
+        """Count of real (non-empty-state) data rows currently rendered
+        in the Template list table -- same body/contract as
+        RcsOptOutPage.get_row_count() and every other RCS list page's own
+        get_row_count()."""
+        try:
+            rows = self.page.locator(self.TABLE_ROWS)
+            count = 0
+            for i in range(rows.count()):
+                row = rows.nth(i)
+                tds = row.locator("td")
+                n = tds.count()
+                if n == 0:
+                    continue
+                if any(tds.nth(j).inner_text().strip() for j in range(n)):
+                    count += 1
+            return count
+        except Exception:
+            return 0
+
+    def get_visible_column_headers(self):
+        return self._get_headers_safe(self.TABLE_HEADERS)
+
     INPUT_SEARCH_LIST = (
         "xpath=//input[@*[name()='wire:model.live' and contains(.,'search')] "
         "or contains(@placeholder,'Search Template')]"

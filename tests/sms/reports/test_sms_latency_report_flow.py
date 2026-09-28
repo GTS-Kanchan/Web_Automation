@@ -33,6 +33,7 @@ import pytest
 from constants.sms_latency_report_headers import EXPECTED_SMS_LATENCY_REPORT_HEADERS
 from constants.sms_latency_report_ui_headers import EXPECTED_SMS_LATENCY_REPORT_UI_HEADERS
 from pages.sms.sms_latency_report_page import SmsLatencyReportPage
+from utils.analytics_report_date_verification import verify_analytics_report_dates
 from utils.file_validator import (
     EmptyFileError,
     FileNotDownloadedError,
@@ -447,3 +448,23 @@ def test_ui_default_table_headers_full(latency_report_page):
     for col in EXPECTED_SMS_LATENCY_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(latency_report_page):
+    """Duration column -- dd-mm-yyyy hh:mm (date-time, WITHOUT seconds).
+
+    CORRECTION (real pasted pytest failure): this module defaults to
+    hourly Report Type, and its live Duration values are hour-bucket
+    timestamps like '28-09-2026 15:00' -- a real date-time, not a bare
+    date like the other SMS report modules, and missing the seconds
+    component this project's dd-mm-yyyy hh:mm:ss date-time convention
+    otherwise requires everywhere else. Project owner confirmed this is
+    expected/correct for hourly-grouped Duration, not a bug. Uses
+    field_kind="date-time" with accept_no_seconds=True (opt-in, scoped to
+    just this module's Duration column -- see
+    utils/analytics_report_date_verification.py /
+    utils/datetime_verification.py's own accept_no_seconds notes)."""
+    ensure_on_report_page(latency_report_page)
+    verify_analytics_report_dates(
+        latency_report_page, "SMS Latency Report", field_kind="date-time", accept_no_seconds=True
+    )

@@ -43,6 +43,7 @@ from pages.common.login_page import LoginPage
 from pages.sms.sms_error_codes_page import SmsErrorCodesPage
 from constants.sms_error_codes_ui_headers import EXPECTED_SMS_ERROR_CODES_UI_HEADERS
 from utils.config import Config
+from utils.datetime_verification import detect_ui_date_columns
 
 
 pytestmark = [pytest.mark.sms, pytest.mark.report]
@@ -447,3 +448,52 @@ def test_ui_default_table_headers_full(error_codes_page):
     for col in EXPECTED_SMS_ERROR_CODES_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Error Codes (shared reusable utility
+#         framework, per the multi-module date-verification task)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_no_date_column(error_codes_page):
+    """This module's own confirmed UI header spec
+    (constants/sms_error_codes_ui_headers.py:
+    EXPECTED_SMS_ERROR_CODES_UI_HEADERS = ["Name", "code", "description"])
+    has NO date/date-time column at all, and SmsErrorCodesPage has no
+    export/download capability either -- both independently confirmed,
+    not assumed. Per this task's own rule ("Do not fail a test merely
+    because a module does not contain a date column"), this records that
+    fact as a real, passing assertion against the live page (so an app
+    change that DOES add a date column here is caught and this test
+    starts actually exercising utils/datetime_verification.py, the same
+    reusable framework every other SMS module's date verification
+    already uses) rather than silently omitting Error Codes from
+    date-verification coverage."""
+    ensure_on_page(error_codes_page)
+    ui_headers = error_codes_page.get_visible_column_headers()
+    # CONFIRMED real behavior: this app renders header LABELS uppercase
+    # via CSS text-transform (same as every other list/report page in
+    # this project), so this compares case-insensitively rather than
+    # against EXPECTED_SMS_ERROR_CODES_UI_HEADERS's own spelling.
+    normalized_ui = {h.strip().lower() for h in ui_headers}
+    normalized_expected = {h.strip().lower() for h in EXPECTED_SMS_ERROR_CODES_UI_HEADERS}
+    assert normalized_expected <= normalized_ui, (
+        f"Error Codes UI headers changed from the confirmed spec "
+        f"{EXPECTED_SMS_ERROR_CODES_UI_HEADERS} -- now: {ui_headers}. "
+        f"Re-confirm this module's real columns before assuming the "
+        f"date-column conclusion below still holds."
+    )
+    KNOWN_APP_DATE_COLUMN_NAMES = [
+        "Created At", "Updated At", "Received At", "Submitted At",
+        "DLR Received At", "Scheduled At", "Completed At",
+    ]
+    detected = detect_ui_date_columns(ui_headers, KNOWN_APP_DATE_COLUMN_NAMES, {})
+    assert detected == [], (
+        f"Error Codes UI table now shows what looks like a date/"
+        f"date-time column ({detected}) -- wire this module into "
+        f"DATE_MODULE_CONFIG (utils/date_module_config.py) and give it "
+        f"the same UI-vs-export date verification as the other SMS "
+        f"modules instead of leaving it here as a documented no-op."
+    )
+    print("[Error Codes] Confirmed: no date/date-time column exists on this page (Name/code/description only).")

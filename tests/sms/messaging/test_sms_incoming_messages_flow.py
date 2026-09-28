@@ -50,7 +50,19 @@ from utils.file_validator import (
     FileNotDownloadedError,
     HeaderValidationError,
     UnsupportedFileTypeError,
+    read_file_rows,
     validate_file_headers,
+)
+from utils.date_module_config import DATE_MODULE_CONFIG
+from utils.datetime_verification import (
+    DateComparisonError,
+    DateFormatValidationError,
+    capture_ui_datetime_values,
+    column_index_lookup,
+    detect_date_columns,
+    detect_ui_date_columns,
+    read_export_datetime_values,
+    validate_ui_export_dates,
 )
 
 
@@ -442,3 +454,67 @@ def test_ui_default_table_headers_full(incoming_messages_page):
     for col in EXPECTED_SMS_INCOMING_MESSAGES_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
             f"Column '{col}' not found in headers: {headers}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- Incoming Messages UI vs Export (shared
+#         reusable utility -- utils/datetime_verification.py, config in
+#         utils/date_module_config.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_vs_export(incoming_messages_page):
+    """For the real Incoming Messages date/date-time column ("Received
+    At" -- confirmed via constants/sms_incoming_messages_ui_headers.py /
+    sms_incoming_messages_headers.py, present under the exact same name
+    on both the UI table and the export), validate the currently-visible
+    UI table's values and the exported file's values are each correctly
+    formatted, and every visible UI value has a corresponding value in
+    the export."""
+    ensure_on_page(incoming_messages_page)
+
+    config = DATE_MODULE_CONFIG["incoming_messages"]
+    # Raw (blank-preserving) headers -- see BasePage.get_raw_headers()'s
+    # docstring for why the filtered get_visible_column_headers() can
+    # silently misalign a column-index lookup.
+    ui_headers = incoming_messages_page.get_raw_headers(incoming_messages_page.TABLE_HEADERS)
+    ui_date_columns = detect_ui_date_columns(ui_headers, config["date_columns"], config["ui_column_names"])
+    if not ui_date_columns:
+        pytest.skip("No configured date/date-time column is present in the Incoming Messages UI table right now.")
+
+    row_count = incoming_messages_page.get_row_count()
+    if row_count == 0:
+        pytest.skip("No Incoming Messages rows visible -- nothing to date-verify.")
+
+    ui_values_by_column = capture_ui_datetime_values(
+        get_cell_text=incoming_messages_page.get_cell_text,
+        get_column_index=column_index_lookup(ui_headers),
+        row_count=row_count,
+        date_columns=ui_date_columns,
+        column_pairs=config["ui_column_names"],
+    )
+    print(f"[Incoming Messages] UI date columns detected: {ui_date_columns} ({row_count} row(s))")
+
+    result = incoming_messages_page.export_csv()
+    if result is None or result.get("file_path") == "background_job_triggered.csv":
+        pytest.skip("Export did not produce a direct download within the wait window (background job).")
+
+    _headers, rows = read_file_rows(result["file_path"])
+    if not rows:
+        pytest.skip("Export produced 0 data rows -- nothing to compare against.")
+
+    export_date_columns = detect_date_columns(list(rows[0].keys()), config["export_date_columns"])
+    export_values_by_column = read_export_datetime_values(rows, export_date_columns)
+    print(f"[Incoming Messages] Export date columns detected: {export_date_columns} ({len(rows)} row(s))")
+
+    try:
+        validate_ui_export_dates(
+            "Incoming Messages", ui_values_by_column, export_values_by_column,
+            field_kinds=config["field_kinds"],
+        )
+    except (DateFormatValidationError, DateComparisonError) as exc:
+        pytest.fail(str(exc))
+
+    for column in ui_date_columns:
+        if column in export_values_by_column:
+            print(f"[Incoming Messages] {column}: UI vs Export Date/Date-Time Verification PASS")

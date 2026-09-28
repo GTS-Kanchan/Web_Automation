@@ -424,13 +424,14 @@ def test_TC_C018_cancel_returns_to_list(campaign_creation_page):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.smoke
-def test_TC_C019_full_e2e_copy_paste_send_now(campaign_creation_page):
+def test_TC_C019_full_e2e_copy_paste_send_now(campaign_creation_page, campaign_dlr):
     """
     Full E2E: name → sender ID → template → paste contacts → Send Now → preview.
     Does NOT launch to avoid creating real campaigns.
     """
     page = campaign_creation_page
     name = go_to_create(page, "E2E")
+    campaign_dlr.launched(page, name)  # verify DLRs once this test passes (conftest.py)
 
     # Sender ID and Template are required for the Preview modal to open
     # (see the assert below) -- previously wrapped in a bare
@@ -528,7 +529,7 @@ def test_TC_C020_full_e2e_file_upload(campaign_creation_page):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.smoke
-def test_TC_C021_launch_campaign(campaign_creation_page):
+def test_TC_C021_launch_campaign(campaign_creation_page, campaign_dlr):
     """
     Full E2E that actually launches the campaign:
       name → sender ID → paste contacts → Send Now → Preview → Launch Campaign
@@ -538,6 +539,7 @@ def test_TC_C021_launch_campaign(campaign_creation_page):
     """
     page = campaign_creation_page
     name = go_to_create(page, "LAUNCH")
+    campaign_dlr.launched(page, name)  # verify DLRs once this test passes (conftest.py)
 
     # Sender ID (required for launch)
     try:
@@ -724,7 +726,7 @@ def _setup_with_var_template(page, suffix):
 
 
 @pytest.mark.smoke
-def test_TC_C023_template_vars_send_now_launch(campaign_creation_page):
+def test_TC_C023_template_vars_send_now_launch(campaign_creation_page, campaign_dlr):
     """
     Template with variables (newtempdemo) — Send Now — Launch.
       name → DUMMY sender → newtempdemo template → fill variables
@@ -732,6 +734,7 @@ def test_TC_C023_template_vars_send_now_launch(campaign_creation_page):
     """
     page = campaign_creation_page
     name = _setup_with_var_template(page, "C023")
+    campaign_dlr.launched(page, name)  # verify DLRs once this test passes (conftest.py)
 
     # App may have redirected to list after import
     if page.is_campaign_list_page():
@@ -831,7 +834,7 @@ def test_TC_C024_template_vars_scheduled_launch(campaign_creation_page):
 # ==============================================================================
 
 @pytest.mark.smoke
-def test_TC_C025_launch_file_upload_send_now(campaign_creation_page):
+def test_TC_C025_launch_file_upload_send_now(campaign_creation_page, campaign_dlr):
     """
     Full E2E launch using CSV file upload for contacts - Send Now.
       name -> sender ID -> template -> upload CSV -> Send Now
@@ -840,6 +843,7 @@ def test_TC_C025_launch_file_upload_send_now(campaign_creation_page):
     """
     page = campaign_creation_page
     name = go_to_create(page, "FILE_NOW")
+    campaign_dlr.launched(page, name)  # verify DLRs once this test passes (conftest.py)
     filepath = data_file("valid_contacts.xlsx")
 
     try:
@@ -982,7 +986,7 @@ def test_TC_C026_launch_file_upload_scheduled(campaign_creation_page):
 
 
 @pytest.mark.smoke
-def test_TC_C027_launch_otp_template_send_now(campaign_creation_page):
+def test_TC_C027_launch_otp_template_send_now(campaign_creation_page, campaign_dlr):
     """
     Full E2E launch using the OTP template - Send Now.
       name -> sender ID (dummy) -> OTP_Test template -> paste contacts
@@ -1000,6 +1004,7 @@ def test_TC_C027_launch_otp_template_send_now(campaign_creation_page):
     """
     page = campaign_creation_page
     name = go_to_create(page, "OTP_NOW")
+    campaign_dlr.launched(page, name)  # verify DLRs once this test passes (conftest.py)
 
     # Sender ID (required for launch)
     try:

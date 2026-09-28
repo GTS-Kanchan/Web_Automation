@@ -128,6 +128,18 @@ class SmsCampaignMessageReportPage(BasePage):
     TABLE = f"#table-{TABLE_NAME}"
     TABLE_HEADERS = f"#table-{TABLE_NAME} thead th"
     TABLE_ROWS = f"#table-{TABLE_NAME} tbody tr"
+    # Row "View" action in the leading Action column. Same data-tooltip-target
+    # convention ("tooltip-view-<uuid>") as the confirmed View icon on the SMS
+    # Messages page (SMSMessagePage.ALL_VIEW_ICONS), whose button opens the
+    # Livewire modal component 'sms.campaign.message.view' -- i.e. the
+    # campaign-message details modal. Scoped to ONE row, so each recipient's
+    # own View is clicked. If the report renders its View differently, the
+    # test fails with "View button is unavailable" instead of guessing.
+    VIEW_BTN_IN_ROW = "xpath=.//*[self::button or self::a][contains(@data-tooltip-target,'tooltip-view-')]"
+    # rappasoft/livewire-tables pagination: nextPage('<table>Page'), the same
+    # naming as the email/rcs pages' confirmed NEXT_PAGE_BTN locators.
+    NEXT_PAGE_BTN = f"xpath=//button[contains(@*[name()='wire:click'],\"nextPage('{TABLE_NAME}Page')\")]"
+
     SORT_CONTACT_BTN = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('number')\")]"
     SORT_STATUS_BTN = "xpath=//button[contains(@*[name()='wire:click'],\"sortBy('status')\")]"
     NO_RECORDS_MSG = (
@@ -267,6 +279,62 @@ class SmsCampaignMessageReportPage(BasePage):
 
     def get_visible_column_headers(self):
         return self._get_headers_safe(self.TABLE_HEADERS)
+
+    def get_cell_text(self, row_index, col_index):
+        """Return text of cell at (row_index, col_index) -- 0-based.
+        Same convention as SMSMessagePage.get_cell_text() (pages/sms/
+        sms_message_page.py), reused here for row-level data (e.g. the
+        CONTACT column) that get_visible_column_headers()/get_row_count()
+        alone don't expose."""
+        try:
+            rows = self.page.locator(self.TABLE_ROWS)
+            cells = rows.nth(row_index).locator("td")
+            return cells.nth(col_index).inner_text().strip()
+        except Exception:
+            return ""
+
+    def get_column_index(self, header_name):
+        """0-based index of the column whose header equals *header_name*
+        (case-insensitive), or None."""
+        for i, h in enumerate(self.get_visible_column_headers()):
+            if h.strip().lower() == header_name.strip().lower():
+                return i
+        return None
+
+    def has_next_page(self):
+        try:
+            btns = self.page.locator(self.NEXT_PAGE_BTN)
+            return any(b.is_visible() and b.is_enabled() for b in btns.all())
+        except Exception:
+            return False
+
+    def go_to_next_page(self):
+        self._js_click_first_visible(self.NEXT_PAGE_BTN, timeout=10000)
+        self.page.wait_for_timeout(1500)
+        self.wait_for_table_load()
+
+    def click_view_in_row(self, row_index):
+        """Click the View action of the row at *row_index* (0-based, visible
+        data rows of the report table). Returns False when that row has no
+        View control."""
+        try:
+            row = self.page.locator(self.TABLE_ROWS).nth(row_index)
+            btn = row.locator(self.VIEW_BTN_IN_ROW).first
+            if btn.count() == 0:
+                return False
+            btn.scroll_into_view_if_needed()
+            btn.click()
+            self.page.wait_for_timeout(2000)  # Livewire modal render
+            return True
+        except Exception:
+            return False
+
+    def message_details_popup(self):
+        """The message-details modal is the same Livewire modal the SMS
+        Messages page opens, so its confirmed readers (is_popup_open,
+        get_popup_message_id, close_popup, ...) are reused as-is."""
+        from pages.sms.messaging.sms_message_page import SMSMessagePage
+        return SMSMessagePage(self.page)
 
     def verify_table_headers(self, expected_headers):
         """True if the table's real headers match `expected_headers`
