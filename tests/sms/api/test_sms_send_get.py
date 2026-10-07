@@ -12,6 +12,8 @@ the underlying client now using Playwright's APIRequestContext.
 
 import pytest
 
+from utils.dlr_helpers import verify_and_validate_dlrs_bulk
+
 pytestmark = pytest.mark.sms
 
 
@@ -36,6 +38,24 @@ def test_send_sms_get_valid_query_params_returns_success(api_client, test_data, 
             if isinstance(body.get("data"), list) and len(body["data"]) > 0:
                 assert body["data"][0]["status"] in ("queued", "submitted")
                 assert "message_id" in body["data"][0]
+
+                # ── DLR Verification + DLR Format/Schema check ──────────────
+                message_ids = [e["message_id"] for e in body["data"] if e.get("message_id")]
+                expected_mobiles = {e["message_id"]: e.get("number") for e in body["data"] if e.get("message_id") and e.get("number")}
+                record_property("message_ids", ", ".join(message_ids))
+                verify_response, verify_body, results, counts, failures, report = verify_and_validate_dlrs_bulk(
+                    api_client, message_ids, expected_mobiles=expected_mobiles,
+                )
+                record_property("DLR Bulk Validation Report", report)
+                print("\n" + report)
+                assert counts["missing_dlrs"] == 0, (
+                    f"{counts['missing_dlrs']} of {len(message_ids)} DLR(s) were never "
+                    f"received.\n{report}\nFailures: {failures}"
+                )
+                assert counts["invalid_format"] == 0, (
+                    f"{counts['invalid_format']} of {len(message_ids)} DLR(s) failed "
+                    f"format/schema validation.\n{report}\nFailures: {failures}"
+                )
             assert "data" in body
     except ValueError:
         # If it doesn't return JSON, at least we asserted 200

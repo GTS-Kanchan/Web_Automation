@@ -46,6 +46,12 @@ import uuid
 
 import pytest
 
+from utils.dlr_format_validator import (
+    build_dlr_validation_report,
+    extract_full_dlr_fields,
+    validate_dlr_correlation,
+    validate_dlr_format,
+)
 from utils.dlr_helpers import (
     DLR_POLL_TIMEOUT_SECONDS,
     poll_for_dlr,
@@ -162,4 +168,28 @@ def test_dlr_received_after_send_msg(api_client, test_data, record_property):
             f"DLR correlation_id ({fields['correlation_id']!r}) does not "
             f"match the correlation_id sent with the request "
             f"({correlation_id!r}). Body: {dlr_body}"
+        )
+
+    # ── DLR Format/Schema Verification (generic test -- status/code are
+    #               only checked to EXIST, never compared to a specific
+    #               value, per the "Important Existing DLR Rule"). mobile
+    #               correlation is skipped here -- this endpoint takes
+    #               `phone` as a query param, not a confirmed field this
+    #               test reads back for comparison -- only message_id
+    #               correlation (against `identifier`, the real DLR
+    #               lookup key used above) is checked ─────────────────────
+    dlr_fields_full = extract_full_dlr_fields(dlr_body)
+    format_result = validate_dlr_format(dlr_fields_full)
+    correlation_result = validate_dlr_correlation(dlr_fields_full, expected_message_id=identifier)
+    report = build_dlr_validation_report(format_result, correlation_result)
+    record_property("DLR Validation Report", report)
+    print("\n" + report)
+    assert format_result["passed"], (
+        f"DLR format/schema validation failed for identifier={identifier}: "
+        f"{format_result['failed_fields']}.\n{report}\nBody: {dlr_body}"
+    )
+    if not used_correlation_id:
+        assert correlation_result["passed"], (
+            f"DLR correlation failed for identifier={identifier}: "
+            f"{correlation_result['detail']}.\n{report}\nBody: {dlr_body}"
         )

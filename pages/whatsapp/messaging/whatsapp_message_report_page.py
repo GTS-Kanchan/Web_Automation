@@ -1,4 +1,7 @@
+import os
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class WhatsAppMessageReportPage(BasePage):
@@ -86,8 +89,8 @@ class WhatsAppMessageReportPage(BasePage):
 
     # ── Table ────────────────────────────────────────────────────────────────
     TABLE = f"#table-{TABLE_NAME}"
-    TABLE_HEADERS = f"#table-{TABLE_NAME} thead th"
-    TABLE_ROWS = f"#table-{TABLE_NAME} tbody tr"
+    TABLE_HEADERS = f"#table-{TABLE_NAME} > thead th"
+    TABLE_ROWS = f"#table-{TABLE_NAME} > tbody > tr"
     NO_RECORDS_MSG = (
         "xpath=//*[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'no items found') "
         "or contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'no record') "
@@ -255,7 +258,7 @@ class WhatsAppMessageReportPage(BasePage):
             return []
 
     def get_first_data_row(self):
-        return self._first_visible_data_row(f"#table-{self.TABLE_NAME} tbody tr")
+        return self._first_visible_data_row(f"#table-{self.TABLE_NAME} > tbody > tr")
 
     # ── Sorting ──────────────────────────────────────────────────────────────
 
@@ -389,6 +392,28 @@ class WhatsAppMessageReportPage(BasePage):
     def get_export_csv_href(self):
         el = self.h.wait_for_element_visible(self.EXPORT_CSV_LINK)
         return el.get_attribute("href")
+
+    def export_csv(self, timeout=30000):
+        """Clicks the real "Export CSV" anchor and captures the resulting
+        browser download (this page has no confirm modal -- see class
+        docstring caveat re: the plain-anchor export). Returns
+        {"file_path": ..., "file_size": ...} on success, or None on
+        failure/no download -- same contract as
+        WhatsappIncomingMessagesPage.export_csv(), used by
+        utils.header_verification.verify_module_headers()'s
+        click_export_csv callback."""
+        try:
+            link = self.h.wait_for_element_visible(self.EXPORT_CSV_LINK, timeout=10000)
+            link.scroll_into_view_if_needed()
+            with self.page.expect_download(timeout=timeout) as dl_info:
+                link.click(force=True)
+            download = dl_info.value
+            filename = download.suggested_filename or "wa_messages_report_export.csv"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {"file_path": dest, "file_size": os.path.getsize(dest)}
+        except Exception:
+            return None
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
 

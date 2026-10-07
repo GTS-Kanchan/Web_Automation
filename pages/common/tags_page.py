@@ -25,7 +25,7 @@ class TagsPage(BasePage):
     # "deselectAllColumns", no wire:model.live) — explicitly excluded here
     # since toggling it hides every column, not just one.
     COLUMN_CHECKBOXES = (
-        "xpath=//div[contains(@wire:key,'columnSelect-') and not(contains(@wire:key,'columnSelect-selectAll'))]"
+        "xpath=//div[contains(@*[name()='wire:key'],'columnSelect-') and not(contains(@*[name()='wire:key'],'columnSelect-selectAll'))]"
         "//input[@type='checkbox']"
     )
     COLUMN_HEADER = "table thead th"

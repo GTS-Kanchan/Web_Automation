@@ -53,6 +53,7 @@ from utils.datetime_verification import (
     read_export_datetime_values,
     validate_date_values_format,
     validate_ui_export_dates,
+    verify_popup_datetime_fields,
 )
 from utils.file_validator import (
     EmptyFileError,
@@ -490,29 +491,42 @@ def test_date_datetime_verification_ui_vs_export(message_page):
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
-# Date/Date-Time Verification -- Message Details Popup (Timeline).
+# Date/Date-Time Verification -- RCS Messages View Popup (Timeline).
 # CONFIRMED via a real pasted DOM: heading "Message Details", Timeline
-# card shows Created/Scheduled/Submitted/Delivered/Read, each
-# dd-mm-yyyy hh:mm:ss (e.g. "28-09-2026 17:01:31"). UI-only format check
-# (no export correspondence for a detail popup), reuses the same
-# utils/datetime_verification.py used everywhere else in this suite.
+# card shows Created/Scheduled/Submitted/Delivered/Read, each observed
+# as dd-mm-yyyy hh:mm:ss (e.g. "28-09-2026 17:01:31") -- field_kind
+# left as "auto" (not forced to "date-time") since this project's
+# accepted-format spec for this check allows EITHER dd-mm-yyyy hh:mm:ss
+# OR a bare dd-mm-yyyy. UI-only (no export correspondence for a detail
+# popup). Uses verify_popup_datetime_fields() -- the shared, channel/
+# module/component-agnostic popup-field date utility in
+# utils/datetime_verification.py, reusable as-is for RCS Campaign
+# Reports, RCS exports, or any other RCS (or non-RCS) module's
+# named-field date display, not just this one popup.
 # ═════════════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.regression
 def test_date_datetime_verification_details_popup(message_page):
-    """Opens the first row's Message Details popup and validates its
-    Timeline Created/Scheduled/Submitted/Delivered/Read date-time fields
-    are each a real, correctly formatted dd-mm-yyyy hh:mm:ss value."""
+    """Opens the first row's View popup (Message Details) and validates
+    every populated Timeline date/date-time field -- Created, Scheduled,
+    Submitted, Delivered, Read -- against this project's two accepted
+    formats (dd-mm-yyyy hh:mm:ss / dd-mm-yyyy), confirming each is also
+    a real, calendar-valid date/time (not merely format-shaped). Not
+    hardcoded to a single field: every field this popup renders is
+    captured and checked; a field the current message hasn't reached
+    yet (e.g. "Read" before it's been read) renders blank and is
+    skipped, same as a genuinely absent value anywhere else in this
+    suite -- never treated as a format violation."""
     ensure_on_rcs_messages_page(message_page)
 
     row_count = message_page.get_row_count()
     if row_count == 0:
-        pytest.skip("No RCS Message rows visible -- nothing to open a Message Details popup for.")
+        pytest.skip("No RCS Message rows visible -- nothing to open a View popup for.")
 
     if not message_page.click_view_icon(0):
         pytest.skip("No View icon on row 0 -- nothing to date-verify.")
     if not message_page.is_popup_open():
-        pytest.skip("Message Details popup did not open for row 0 -- nothing to date-verify.")
+        pytest.skip("View popup (Message Details) did not open for row 0 -- nothing to date-verify.")
 
     try:
         fields = {
@@ -522,17 +536,17 @@ def test_date_datetime_verification_details_popup(message_page):
             "Delivered": message_page.get_popup_delivered(),
             "Read": message_page.get_popup_read(),
         }
-        for column, value in fields.items():
-            if not value:
-                # Not every field applies to every message (e.g. "Read"
-                # only applies once a message has actually been read) --
-                # not a format violation, nothing to check.
-                continue
-            try:
-                validate_date_values_format("Message Details Popup", column, [value], field_kind="date-time")
-            except DateFormatValidationError as exc:
-                pytest.fail(str(exc))
-            print(f"[Message Details Popup] {column}: Date/Date-Time Format Verification PASS ({value!r})")
+        try:
+            normalized = verify_popup_datetime_fields(
+                "RCS", "Messages", "View Popup", fields, field_kind="auto",
+            )
+        except DateFormatValidationError as exc:
+            pytest.fail(str(exc))
+        for field_name, value in fields.items():
+            if field_name in normalized:
+                print(f"[RCS Messages / View Popup] {field_name}: Date/Date-Time Format Verification PASS ({value!r})")
+            else:
+                print(f"[RCS Messages / View Popup] {field_name}: blank/not applicable -- skipped")
     finally:
         message_page.close_popup()
 

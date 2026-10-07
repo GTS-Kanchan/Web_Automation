@@ -16,6 +16,8 @@ import copy
 
 import pytest
 
+from utils.dlr_helpers import verify_and_validate_dlrs_bulk
+
 pytestmark = pytest.mark.sms
 
 
@@ -47,6 +49,30 @@ def test_send_sms_valid_payload_returns_success(api_client, test_data, record_pr
         assert "number" in entry
         assert "units" in entry
         assert "received_at" in entry
+
+    # ── DLR Verification + DLR Format/Schema check for every sent
+    #               message -- added on top of the response-shape checks
+    #               above, per the project owner's instruction to verify
+    #               DLR + DLR format for every success API test ────────
+    message_ids = [e["message_id"] for e in body["data"]]
+    expected_mobiles = {e["message_id"]: e["number"] for e in body["data"]}
+    record_property("message_ids", ", ".join(message_ids))
+    verify_response, verify_body, results, counts, failures, report = verify_and_validate_dlrs_bulk(
+        api_client, message_ids, expected_mobiles=expected_mobiles,
+    )
+    record_property("DLR Bulk Validation Report", report)
+    print("\n" + report)
+    assert counts["missing_dlrs"] == 0, (
+        f"{counts['missing_dlrs']} of {len(message_ids)} DLR(s) were never "
+        f"received.\n{report}\nFailures: {failures}"
+    )
+    assert counts["invalid_format"] == 0, (
+        f"{counts['invalid_format']} of {len(message_ids)} DLR(s) failed "
+        f"format/schema validation.\n{report}\nFailures: {failures}"
+    )
+    assert counts["message_id_mismatches"] == 0 and counts["mobile_mismatches"] == 0, (
+        f"DLR correlation failed for one or more message(s).\n{report}\nFailures: {failures}"
+    )
 
 
 @pytest.mark.regression
@@ -193,6 +219,24 @@ def test_send_sms_gts_adapter_style_payload(api_client, test_data, record_proper
     assert body.get("status") == "success"
     assert len(body["data"]) == len(payload["to"])
     assert body["data"][0]["number"] == payload["to"][0]
+
+    # ── DLR Verification + DLR Format/Schema check ──────────────────────────
+    message_ids = [e["message_id"] for e in body["data"]]
+    expected_mobiles = {e["message_id"]: e.get("number") for e in body["data"] if e.get("number")}
+    record_property("message_ids", ", ".join(message_ids))
+    verify_response, verify_body, results, counts, failures, report = verify_and_validate_dlrs_bulk(
+        api_client, message_ids, expected_mobiles=expected_mobiles,
+    )
+    record_property("DLR Bulk Validation Report", report)
+    print("\n" + report)
+    assert counts["missing_dlrs"] == 0, (
+        f"{counts['missing_dlrs']} of {len(message_ids)} DLR(s) were never "
+        f"received for the GTS-adapter-style payload.\n{report}\nFailures: {failures}"
+    )
+    assert counts["invalid_format"] == 0, (
+        f"{counts['invalid_format']} of {len(message_ids)} DLR(s) failed "
+        f"format/schema validation.\n{report}\nFailures: {failures}"
+    )
 
 
 @pytest.mark.negative

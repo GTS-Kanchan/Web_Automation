@@ -644,3 +644,95 @@ def validate_ui_export_dates(module_name, ui_values_by_column, export_values_by_
         )
         results[column] = {"ui": ui_values, "export": export_values}
     return results
+def _format_popup_date_failures(channel, module, component, failures):
+    """Builds this project's REQUIRED popup/detail-view failure report
+    -- distinct from _format_date_failures()'s table-COLUMN/ROW shape
+    above, which doesn't apply to a named-field popup (there is no row
+    index for a single detail view). One full block per bad field, in
+    the exact order the task spec that introduced this requires:
+
+        Channel: <channel>
+        Module: <module>
+        Component: <component>
+        Field: <field name>
+        Actual Value: <value>
+        Expected Format: dd-mm-yyyy hh:mm:ss OR dd-mm-yyyy
+        Result: FAIL
+    """
+    blocks = []
+    for f in failures:
+        blocks.append("\n".join([
+            f"Channel: {channel}",
+            f"Module: {module}",
+            f"Component: {component}",
+            f"Field: {f['field']}",
+            f"Actual Value: {f['actual']}",
+            "Expected Format: dd-mm-yyyy hh:mm:ss OR dd-mm-yyyy",
+            "Result: FAIL",
+        ]))
+    return "\n\n".join(blocks)
+
+
+def verify_popup_datetime_fields(channel, module, component, field_values, field_kind="auto",
+                                  accept_iso=False, accept_no_seconds=False, accept_text_month=False,
+                                  accept_iso_datetime=False):
+    """Date/Date-Time Verification for a NAMED-FIELD popup/detail view
+    (label -> value pairs, e.g. a "View" modal's Timeline card) -- the
+    popup-shaped counterpart to validate_date_values_format()'s table-
+    COLUMN convention (an ordered list of same-column values across
+    rows). Deliberately channel/module/component-agnostic: callers
+    identify themselves via the `channel`/`module`/`component` strings
+    purely for this function's own failure report, so the SAME utility
+    covers an RCS Messages View popup, an RCS Campaign Reports detail
+    view, a WhatsApp/SMS popup, or any other module's named-field date
+    display -- nothing here is hardcoded to one page or one field.
+
+    `field_values`: any {field_name: raw_value} mapping the caller's own
+    page object already exposes, e.g.
+        {"Created": page.get_popup_created(), "Delivered": page.get_popup_delivered(), ...}
+    Do not hard-code a single field -- pass every date/date-time field
+    the popup actually renders; this function itself places no limit on
+    how many.
+
+    Validates EVERY populated field (trims whitespace; a blank/missing
+    field, e.g. "Read" on a message never read, is skipped -- not a
+    format violation, per this project's established "ignore empty/
+    non-date fields" convention) and reuses validate_date_format() (this
+    module's own channel-agnostic dd-mm-yyyy[ hh:mm:ss] parser, backed
+    by a real datetime.strptime() calendar check -- not a regex-only
+    pattern match, so "28-09-2026" with a real but invalid day/month
+    still fails) for the actual parsing -- no date logic duplicated here.
+    `field_kind`/`accept_*` are passed straight through to
+    validate_date_format(), same meaning as everywhere else in this
+    module; default ("auto", all accept_* off) is this project's usual
+    strict dd-mm-yyyy / dd-mm-yyyy hh:mm:ss-only rule (rejects ISO,
+    slash-separated, 2-digit year, missing seconds, or a "T" separator).
+
+    Raises DateFormatValidationError (message built by
+    _format_popup_date_failures(), one full Channel/Module/Component/
+    Field/Actual Value/Expected Format/Result:FAIL block per bad field)
+    if any populated field fails. Returns a {field_name:
+    normalized_datetime} dict on success (a blank field's name is simply
+    absent from the result, not mapped to None)."""
+    failures = []
+    normalized = {}
+    for field_name, raw in field_values.items():
+        text = raw.strip() if isinstance(raw, str) else raw
+        if _is_blank(text):
+            continue
+        ok, _parsed, _detected = validate_date_format(
+            text, field_kind=field_kind, accept_iso=accept_iso, accept_no_seconds=accept_no_seconds,
+            accept_text_month=accept_text_month, accept_iso_datetime=accept_iso_datetime,
+        )
+        if not ok:
+            failures.append({"field": field_name, "actual": text})
+        else:
+            normalized[field_name] = normalize_datetime(
+                text, field_kind=field_kind, accept_iso=accept_iso, accept_no_seconds=accept_no_seconds,
+                accept_text_month=accept_text_month, accept_iso_datetime=accept_iso_datetime,
+            )
+    if failures:
+        raise DateFormatValidationError(
+            _format_popup_date_failures(channel, module, component, failures), failures
+        )
+    return normalized

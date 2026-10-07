@@ -1,6 +1,8 @@
+import os
 import re
 
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class WhatsAppCampaignReportPage(BasePage):
@@ -491,6 +493,27 @@ class WhatsAppCampaignReportPage(BasePage):
     def get_export_csv_href(self):
         el = self.h.wait_for_element_visible(self.EXPORT_CSV_LINK)
         return el.get_attribute("href")
+
+    def export_csv(self, timeout=30000):
+        """Clicks the real "Export CSV" anchor and captures the resulting
+        browser download (this page has no confirm modal -- plain anchor,
+        see class docstring caveat #6). Returns {"file_path": ...,
+        "file_size": ...} on success, or None on failure/no download --
+        same contract as WhatsappIncomingMessagesPage.export_csv(), used
+        by utils.header_verification.verify_module_headers()'s
+        click_export_csv callback."""
+        try:
+            link = self.h.wait_for_element_visible(self.EXPORT_CSV_LINK, timeout=10000)
+            link.scroll_into_view_if_needed()
+            with self.page.expect_download(timeout=timeout) as dl_info:
+                link.click(force=True)
+            download = dl_info.value
+            filename = download.suggested_filename or "wa_campaign_report_export.csv"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {"file_path": dest, "file_size": os.path.getsize(dest)}
+        except Exception:
+            return None
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
 

@@ -65,29 +65,29 @@ class DocumentsPage(BasePage):
     FILTER_CREATED_TO = "#table-filter-created_to"
 
     # ── Filter Pills & Clear ─────────────────────────────────────────────────
-    FILTER_PILLS = "xpath=//div[contains(@wire:key,'table-filter-pill-')]"
-    FILTER_PILL_FROM = "xpath=//div[contains(@wire:key,'table-filter-pill-created_from')]"
-    FILTER_PILL_TO = "xpath=//div[contains(@wire:key,'table-filter-pill-created_to')]"
-    BTN_REMOVE_PILL_FROM = "xpath=//div[contains(@wire:key,'table-filter-pill-created_from')]//button"
-    BTN_REMOVE_PILL_TO = "xpath=//div[contains(@wire:key,'table-filter-pill-created_to')]//button"
+    FILTER_PILLS = "xpath=//div[contains(@*[name()='wire:key'],'table-filter-pill-')]"
+    FILTER_PILL_FROM = "xpath=//div[contains(@*[name()='wire:key'],'table-filter-pill-created_from')]"
+    FILTER_PILL_TO = "xpath=//div[contains(@*[name()='wire:key'],'table-filter-pill-created_to')]"
+    BTN_REMOVE_PILL_FROM = "xpath=//div[contains(@*[name()='wire:key'],'table-filter-pill-created_from')]//button"
+    BTN_REMOVE_PILL_TO = "xpath=//div[contains(@*[name()='wire:key'],'table-filter-pill-created_to')]//button"
     BTN_CLEAR_ALL_FILTERS = (
         "xpath=//button[contains(@x-on:click,'resetAllFilters')]"
         " | //small[contains(text(),'Applied Filters')]/following::button[contains(.,'Clear')][1]"
     )
 
     # ── Sorting ──────────────────────────────────────────────────────────────
-    SORT_PILL_CREATED_AT = "xpath=//span[contains(@wire:key,'table-sorting-pill-created_at')]"
-    SORT_PILL_NAME = "xpath=//span[contains(@wire:key,'table-sorting-pill-name')]"
+    SORT_PILL_CREATED_AT = "xpath=//span[contains(@*[name()='wire:key'],'table-sorting-pill-created_at')]"
+    SORT_PILL_NAME = "xpath=//span[contains(@*[name()='wire:key'],'table-sorting-pill-name')]"
     BTN_CLEAR_ALL_SORTS = (
-        "xpath=//button[contains(@wire:click,'clearSorts')]"
+        "xpath=//button[contains(@*[name()='wire:click'],'clearSorts')]"
         " | //small[contains(text(),'Applied Sorting')]/following::button[contains(.,'Clear')][1]"
     )
-    BTN_CLEAR_SORT_CREATED_AT = "xpath=//span[contains(@wire:key,'table-sorting-pill-created_at')]//button"
+    BTN_CLEAR_SORT_CREATED_AT = "xpath=//span[contains(@*[name()='wire:key'],'table-sorting-pill-created_at')]//button"
 
-    SORT_BTN_NAME = "xpath=//th[contains(.,'Name')]//button | //button[contains(@wire:click,\"sortBy('name')\")]"
+    SORT_BTN_NAME = "xpath=//th[contains(.,'Name')]//button | //button[contains(@*[name()='wire:click'],\"sortBy('name')\")]"
     SORT_BTN_CREATED_AT = (
         "xpath=//th[contains(.,'Created At')]//button"
-        " | //button[contains(@wire:click,\"sortBy('created_at')\")]"
+        " | //button[contains(@*[name()='wire:click'],\"sortBy('created_at')\")]"
     )
 
     # ── Columns Dropdown ─────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ class DocumentsPage(BasePage):
         "xpath=//div[@role='menu' and contains(@aria-labelledby,'column-select-menu')]"
         " | //div[contains(@class,'ring-opacity-5') and .//input[@value='name']]"
     )
-    CHECKBOX_ALL_COLUMNS = "xpath=//div[contains(@wire:key,'columnSelect-selectAll')]//input[@type='checkbox']"
+    CHECKBOX_ALL_COLUMNS = "xpath=//div[contains(@*[name()='wire:key'],'columnSelect-selectAll')]//input[@type='checkbox']"
 
     # ── Row View Action ──────────────────────────────────────────────────────
     ROW_VIEW_BTN = (
@@ -362,7 +362,7 @@ class DocumentsPage(BasePage):
         name_pill = self.page.locator(self.SORT_PILL_NAME).first
         if name_pill.is_visible():
             return name_pill.inner_text().strip()
-        any_pill = self.page.locator("xpath=//span[contains(@wire:key,'table-sorting-pill-')]").first
+        any_pill = self.page.locator("xpath=//span[contains(@*[name()='wire:key'],'table-sorting-pill-')]").first
         return any_pill.inner_text().strip() if any_pill.is_visible() else ""
 
     def click_sort_name(self):

@@ -41,6 +41,8 @@ Run:
 import pytest
 
 from pages.whatsapp.whatsapp_optin_page import WhatsappOptInPage
+from utils.header_verification import verify_module_ui_headers_only
+from utils.table_date_verification import verify_table_date_columns
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.opt_in]
@@ -293,3 +295,43 @@ def test_pagination_results_text(optin_page):
     reset_state(optin_page)
     text = optin_page.get_pagination_results_text()
     assert "showing" in text.lower() and "result" in text.lower()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- WhatsApp Opt-in. Reuses the shared
+# utils/table_date_verification.py helper (DATE_MODULE_CONFIG["whatsapp_optin"]
+# is this module's single source of truth for its real, confirmed date
+# columns) -- no per-module date logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(optin_page):
+    """Validates every populated on-screen date/date-time value in
+    WhatsApp Opt-in's table is a real dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+    value (UI-only -- no confirmed bulk-export column-name
+    correspondence exists yet for this module, see
+    utils/date_module_config.py's DATE_MODULE_CONFIG["whatsapp_optin"]
+    comment)."""
+    ensure_on_optin_page(optin_page)
+    verify_table_date_columns(optin_page, "WhatsApp Opt-in", "whatsapp_optin")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Header Verification -- WhatsApp Opt-in. Reuses the shared
+# utils/header_verification.py engine (EXPECTED_HEADERS["whatsapp_opt_in"]
+# in utils/header_module_config.py is this module's single source of
+# truth for its real, confirmed UI headers) -- no per-module header
+# logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_header_verification_ui(optin_page):
+    """Verifies every expected WhatsApp Opt-in UI table header is
+    present (case-insensitive, presence-only -- this project's table
+    columns are user-toggleable) and that no header is unexpectedly
+    duplicated. UI-only by explicit instruction (see
+    utils.header_verification.verify_module_ui_headers_only): this
+    module never attempts export verification and never reports
+    SKIPPED -- it ends as a plain PASS/FAIL on the UI headers alone."""
+    ensure_on_optin_page(optin_page)
+    verify_module_ui_headers_only(optin_page, "WhatsApp Opt-in", "whatsapp_opt_in")

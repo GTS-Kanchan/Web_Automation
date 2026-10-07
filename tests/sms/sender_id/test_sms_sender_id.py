@@ -200,6 +200,59 @@ class TestSenderIdValidation:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PART 1B — Entity ID client-side validation (no browser needed)
+#
+# NOTE on SID_001-SID_004 (Sender ID length): NOT implemented as a flat
+# 1-6-char rule. A real, confirmed validation message already captured
+# elsewhere in this project ("The sender id field must not be greater
+# than 12 characters.", see sms_sender_id_page.py's FORM_VALIDATION_ERROR
+# comment) matches the EXISTING India=exactly-6 / International=3-12
+# rule, not a flat 1-6 rule -- so SID_001 (6 chars, India) and SID_004
+# (7 chars rejected, India) are ALREADY covered by VALID_COMBINATIONS'
+# "ABCDEF"/IN and INVALID_SENDER_IDS' "ABCDEFG"/IN above. SID_002 (5
+# chars accepted) and SID_003 (1 char accepted) are NOT added -- they
+# contradict that confirmed real rule (project owner's explicit call).
+#
+# Entity ID (SID_012-SID_021): no validator existed for this field before
+# -- is_valid_entity_id() added (10-19 numeric digits only, per the
+# project owner's test-case spec). Values below are the spec's own exact
+# examples, not invented ones.
+# ══════════════════════════════════════════════════════════════════════════════
+
+VALID_ENTITY_IDS = [
+    "1234567890",             # SID_012: 10 digits (min)
+    "1234567890123456789",    # SID_013: 19 digits (max)
+    "123456789012345",        # SID_014: 15 digits (between min/max)
+    "123456789012",           # SID_017: 12 digits (numeric accepted)
+]
+
+INVALID_ENTITY_IDS = [
+    ("123456789",            "too short (9 digits)"),           # SID_015
+    ("12345678901234567890", "too long (20 digits)"),            # SID_016
+    ("ABCDEFGHIJ",           "alphabetic only"),                 # SID_018
+    ("ABC123456789",         "alphanumeric"),                    # SID_019
+    ("12345@#$%^",           "special characters"),              # SID_020
+    ("12345 67890",          "contains a space"),                # SID_021
+    ("",                     "empty"),
+]
+
+
+class TestEntityIdValidation:
+    """Pure unit tests — validate the new isValidEntityId() logic, no browser."""
+
+    @pytest.mark.parametrize("entity_id", VALID_ENTITY_IDS, ids=VALID_ENTITY_IDS)
+    def test_valid_entity_ids(self, entity_id):
+        assert SMSSenderIDPage.is_valid_entity_id(entity_id), \
+            f"Entity ID '{entity_id}' should be VALID"
+
+    @pytest.mark.parametrize("entity_id,reason", INVALID_ENTITY_IDS,
+                             ids=[r for _, r in INVALID_ENTITY_IDS])
+    def test_invalid_entity_ids(self, entity_id, reason):
+        assert not SMSSenderIDPage.is_valid_entity_id(entity_id), \
+            f"Entity ID '{entity_id}' ({reason}) should be INVALID"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PART 2 — Page load checks  (smoke)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -541,6 +594,196 @@ class TestInvalidSenderIdUI:
             found = sender_id_page.is_sender_id_present_in_list(sender_id)
             assert not found, \
                 f"Invalid sender ID '{sender_id}' ({reason}) should NOT be created"
+        _to_list(sender_id_page)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PART 4B — Entity ID UI validation + country-dependent show/hide
+#
+# SID_010/SID_011: Entity ID field display + mandatory-for-India checks.
+# SID_015/016/018/019/020/021: Entity ID length/format rejected via the
+#   real create form (same pattern as TestInvalidSenderIdUI above, but
+#   holding Sender ID valid/fixed and varying Entity ID instead).
+# SID_022-026: non-IN country behavior. A real sender_id is only ever
+#   created as IN in this project's other tests ("app only supports IN
+#   in this env" — INDIA_VALID comment above), so these intentionally
+#   pytest.skip() rather than fail when "United States"/"United Kingdom"
+#   isn't a real option in this environment's country dropdown, instead
+#   of asserting on a guessed option label/value that was never
+#   confirmed real.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# A valid India sender ID not already used elsewhere in this file's static
+# data, so these UI tests don't collide with INDIA_VALID's own creates.
+_ENTITY_UI_SENDER_ID = "ENT001"
+
+NON_IN_COUNTRIES = ["United States", "United Kingdom"]
+
+
+def _open_create_form(sender_id_page):
+    _to_list(sender_id_page)
+    sender_id_page.click_create_sender_id()
+    assert sender_id_page.is_element_present(SMSSenderIDPage.FORM_SENDER_ID_INPUT, timeout=10000), \
+        "Create form did not open"
+
+
+class TestEntityIdUIFlow:
+
+    @pytest.mark.smoke
+    def test_entity_id_field_displayed_for_india(self, sender_id_page):
+        """SID_010: selecting India shows the Entity ID textbox."""
+        _open_create_form(sender_id_page)
+        try:
+            sender_id_page.select_country("India")
+        except Exception:
+            pytest.skip("Could not select India — country dropdown locator needs update")
+        assert sender_id_page.is_element_visible(SMSSenderIDPage.FORM_ENTITY_ID_INPUT, timeout=5000), \
+            "Entity ID textbox should be displayed once India is selected"
+        _to_list(sender_id_page)
+
+    @pytest.mark.regression
+    @pytest.mark.negative
+    def test_entity_id_mandatory_for_india(self, sender_id_page):
+        """SID_011: India selected, Entity ID left blank — expect a
+        validation error, not a successful save."""
+        _open_create_form(sender_id_page)
+        sender_id_page.fill_sender_id(_ENTITY_UI_SENDER_ID)
+        try:
+            sender_id_page.select_country("India")
+        except Exception:
+            pytest.skip("Could not select India — country dropdown locator needs update")
+        try:
+            sender_id_page.select_type("Transactional")
+        except Exception:
+            pass
+        # Deliberately NOT calling fill_entity_id() here.
+        sender_id_page.click_save()
+        sender_id_page.page.wait_for_timeout(2000)
+        still_on_form = "create" in sender_id_page.get_current_url().lower()
+        errors = sender_id_page.get_validation_errors()
+        assert still_on_form or errors, "Leaving Entity ID blank for India should show a validation error"
+        _to_list(sender_id_page)
+
+    @pytest.mark.regression
+    @pytest.mark.negative
+    @pytest.mark.parametrize("entity_id,reason", INVALID_ENTITY_IDS,
+                             ids=[r for _, r in INVALID_ENTITY_IDS])
+    def test_invalid_entity_id_rejected(self, sender_id_page, entity_id, reason):
+        """SID_015/016/018/019/020/021: an India sender ID with an invalid
+        Entity ID must fail isValidEntityId() AND not be created."""
+        assert not SMSSenderIDPage.is_valid_entity_id(entity_id), \
+            f"Entity ID '{entity_id}' ({reason}) should be INVALID per isValidEntityId()"
+
+        _open_create_form(sender_id_page)
+        sender_id_page.fill_sender_id(_ENTITY_UI_SENDER_ID)
+        try:
+            sender_id_page.select_country("India")
+        except Exception:
+            pytest.skip("Could not select India — country dropdown locator needs update")
+        try:
+            sender_id_page.select_type("Transactional")
+        except Exception:
+            pass
+        if entity_id:
+            sender_id_page.fill_entity_id(entity_id)
+        sender_id_page.click_save()
+        sender_id_page.page.wait_for_timeout(2000)
+
+        still_on_form = "create" in sender_id_page.get_current_url().lower()
+        if still_on_form:
+            _to_list(sender_id_page)
+            return
+
+        found = sender_id_page.is_sender_id_present_in_list(_ENTITY_UI_SENDER_ID)
+        assert not found, (
+            f"Sender ID should NOT be created with Entity ID '{entity_id}' ({reason})"
+        )
+        _to_list(sender_id_page)
+
+
+class TestNonIndiaCountryEntityId:
+    """SID_022-026 — non-IN country behavior. See the module-level note
+    above PART 4B: these skip (rather than fail) if this environment's
+    country dropdown doesn't actually offer a non-IN option, since no
+    real option label/value for one was ever confirmed in this project."""
+
+    @pytest.mark.regression
+    @pytest.mark.parametrize("country", NON_IN_COUNTRIES, ids=NON_IN_COUNTRIES)
+    def test_entity_id_hidden_for_non_india_country(self, sender_id_page, country):
+        """SID_022/SID_023: selecting a non-IN country hides the Entity ID textbox."""
+        _open_create_form(sender_id_page)
+        try:
+            sender_id_page.select_country(country)
+        except Exception:
+            pytest.skip(f"'{country}' is not a selectable option in this environment's country dropdown")
+        is_hidden = sender_id_page.is_element_hidden(SMSSenderIDPage.FORM_ENTITY_ID_INPUT, timeout=5000)
+        assert is_hidden, f"Entity ID textbox should be hidden once '{country}' is selected"
+        _to_list(sender_id_page)
+
+    @pytest.mark.regression
+    def test_entity_id_disappears_switching_india_to_usa(self, sender_id_page):
+        """SID_024: Entity ID textbox is visible for India, then disappears
+        after switching the country to a non-IN one."""
+        _open_create_form(sender_id_page)
+        try:
+            sender_id_page.select_country("India")
+        except Exception:
+            pytest.skip("Could not select India — country dropdown locator needs update")
+        assert sender_id_page.is_element_visible(SMSSenderIDPage.FORM_ENTITY_ID_INPUT, timeout=5000), \
+            "Entity ID textbox should be visible for India before switching"
+        try:
+            sender_id_page.select_country("United States")
+        except Exception:
+            pytest.skip("'United States' is not a selectable option in this environment's country dropdown")
+        assert sender_id_page.is_element_hidden(SMSSenderIDPage.FORM_ENTITY_ID_INPUT, timeout=5000), \
+            "Entity ID textbox should disappear after switching India -> United States"
+        _to_list(sender_id_page)
+
+    @pytest.mark.regression
+    def test_create_non_india_sender_without_entity_id(self, sender_id_page):
+        """SID_025: a non-IN sender ID can be created without an Entity ID."""
+        sender_id = "ABC123"   # valid per is_valid_sender_id() International rule (3-12 chars)
+        _open_create_form(sender_id_page)
+        sender_id_page.fill_sender_id(sender_id)
+        try:
+            sender_id_page.select_country("United States")
+        except Exception:
+            pytest.skip("'United States' is not a selectable option in this environment's country dropdown")
+        try:
+            sender_id_page.select_type("Transactional")
+        except Exception:
+            pass
+        # Deliberately NOT calling fill_entity_id() here.
+        sender_id_page.click_save()
+        sender_id_page.page.wait_for_timeout(2000)
+        found = sender_id_page.is_sender_id_present_in_list(sender_id)
+        assert found, f"Non-IN sender ID '{sender_id}' should be created without an Entity ID"
+        _to_list(sender_id_page)
+
+    @pytest.mark.regression
+    def test_entity_id_not_retained_after_country_switch(self, sender_id_page):
+        """SID_026: an Entity ID typed while India is selected is not
+        retained after switching away and back to India."""
+        _open_create_form(sender_id_page)
+        try:
+            sender_id_page.select_country("India")
+        except Exception:
+            pytest.skip("Could not select India — country dropdown locator needs update")
+        sender_id_page.fill_entity_id(SMSSenderIDPage.generate_random_entity_id())
+        try:
+            sender_id_page.select_country("United States")
+        except Exception:
+            pytest.skip("'United States' is not a selectable option in this environment's country dropdown")
+        try:
+            sender_id_page.select_country("India")
+        except Exception:
+            pytest.skip("Could not re-select India — country dropdown locator needs update")
+        sender_id_page.page.wait_for_timeout(500)
+        current_value = sender_id_page.page.locator(SMSSenderIDPage.FORM_ENTITY_ID_INPUT).input_value()
+        assert not current_value, (
+            f"Entity ID should be cleared after switching country away and back, "
+            f"got {current_value!r}"
+        )
         _to_list(sender_id_page)
 
 
@@ -944,7 +1187,20 @@ class TestUploadEdgeCases:
 
     @pytest.mark.regression
     def test_upload_mixed_valid_invalid(self, sender_id_page):
-        """Valid rows imported, invalid rows rejected — some feedback either way, not silent failure."""
+        """Valid rows imported, invalid rows rejected — some feedback either way, not silent failure.
+
+        STRENGTHENED: beyond the feedback-or-error check, also confirms the
+        VALID rows from mixed_valid_invalid.csv (sid["mixed"] in
+        utils/test_data_generator.py — MIXVD1/IN exact-6, MIXVALID2/SG,
+        MIXVALID3/MY, all now corrected to pass is_valid_sender_id()) are
+        actually present in the list afterwards, using the same exact-<td>
+        is_sender_id_present_in_list() check proven reliable by
+        test_upload_csv_and_verify_in_list above. The known-invalid rows
+        (AB, TEST!@#) are reported but not asserted on — a prior run showed
+        this app's upload path gives no reliable inline error signal for
+        rejected rows (see the removed-tests comment above this class), so
+        asserting their absence would reintroduce that same flakiness.
+        """
         self._skip_if_no_permission(sender_id_page)
         self._open_upload_popup(sender_id_page)
         sender_id_page.upload_file(data_file("mixed_valid_invalid.csv"))
@@ -955,6 +1211,54 @@ class TestUploadEdgeCases:
         assert success or error, "Mixed file should produce feedback — not silent failure"
         if sender_id_page.is_upload_popup_open():
             sender_id_page.click_cancel_upload()
+
+        sender_id_page.page.wait_for_timeout(2000)
+        valid_ids = ["MIXVD1", "MIXVALID2", "MIXVALID3"]
+        invalid_ids = ["AB", "TEST!@#"]
+        missing_valid = [sid for sid in valid_ids if not sender_id_page.is_sender_id_present_in_list(sid)]
+        still_invalid = [sid for sid in invalid_ids if sender_id_page.is_sender_id_present_in_list(sid)]
+        if still_invalid:
+            print(f"[UploadMixed] Note: invalid row(s) also found in list (no reliable "
+                  f"reject signal from this upload path — see class docstring): {still_invalid}")
+        assert not missing_valid, (
+            f"Valid sender ID(s) from mixed_valid_invalid.csv NOT found in list after import: "
+            f"{missing_valid}"
+        )
+
+    @pytest.mark.regression
+    def test_generated_mixed_upload_data_matches_validation_rules(self):
+        """Static, no-browser check: every row in the generated
+        mixed_valid_invalid.csv (sid["mixed"] in utils/test_data_generator.py)
+        must classify the SAME way under is_valid_sender_id()/
+        is_valid_entity_id() as its own "Valid row"/"Invalid — ..." label in
+        the Description column — guards the generator itself against
+        drifting out of sync with the confirmed validation rules (e.g. the
+        prior bug where IN-tagged 9-char sender IDs were labeled "Valid
+        row" despite violating India's exact-6-char rule)."""
+        path = data_file("mixed_valid_invalid.csv")
+        if not os.path.exists(path):
+            pytest.skip(f"File not found: {path}")
+
+        import csv as _csv
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            reader = _csv.DictReader(fh)
+            rows = list(reader)
+        assert rows, f"{path} should contain at least one data row"
+
+        mismatches = []
+        for row in rows:
+            sid = row.get("Sender ID", "")
+            country = row.get("Country Code", "")
+            desc = (row.get("Description") or "").lower()
+            expected_valid = desc.startswith("valid")
+            actual_valid = SMSSenderIDPage.is_valid_sender_id(sid, country)
+            if expected_valid != actual_valid:
+                mismatches.append(
+                    f"{sid!r} (country={country!r}, desc={desc!r}): "
+                    f"expected_valid={expected_valid}, is_valid_sender_id()={actual_valid}"
+                )
+
+        assert not mismatches, "Generated row(s) no longer match their own expected validity:\n" + "\n".join(mismatches)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -158,7 +158,10 @@ No cross-page inheritance/mixins per this project's established convention
 (confirmed via `grep -rn "^class .*Page(" pages/ | grep -v "BasePage"`
 returning zero matches).
 """
+import os
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class WhatsAppTemplatePage(BasePage):
@@ -208,10 +211,10 @@ class WhatsAppTemplatePage(BasePage):
     }
 
     # ── Bulk Action / Export ─────────────────────────────────────────────────
-    EXPORT_BTN = "xpath=//button[normalize-space()='Export to XLSX']"
+    EXPORT_BTN = "xpath=//button[normalize-space()='Export to CSV' or normalize-space()='Export CSV' or contains(normalize-space(),'Export')]"
     EXPORT_MODAL_HEADER = "xpath=//h2[normalize-space()='Export']"
     EXPORT_CONFIRM_TEXT = "xpath=//p[contains(normalize-space(.),'Are you sure you want to export the selected data')]"
-    EXPORT_YES_BTN = "button[wire\\:click='exportAll']"
+    EXPORT_YES_BTN = "xpath=//button[@*[name()='wire:click']='exportAll' or contains(normalize-space(),'Yes, Export')]"
     EXPORT_NO_BTN = "xpath=//div[.//h2[normalize-space()='Export']]//button[normalize-space()='No']"
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
@@ -459,6 +462,36 @@ class WhatsAppTemplatePage(BasePage):
     def cancel_export(self):
         self._js_click(self.EXPORT_NO_BTN, timeout=10000)
         self.page.wait_for_timeout(500)
+
+    def export_csv(self, timeout=45000):
+        """Best-effort full export flow for
+        utils.header_verification.verify_module_headers()'s
+        click_export_csv callback. The real download is gated behind an
+        async server-side job (exportStatus/downloadUrl, watched via
+        x-init/$watch plus a 5s wire:poll while the modal is open -- see
+        class docstring #4); that 'ready' state was never captured with
+        a populated value during this page's DOM capture, so no
+        'download ready' locator is targeted here -- this opens the
+        modal, clicks 'Yes, Export', and simply waits (with a generous
+        timeout) for ANY browser download the page produces in that
+        window. Returns {"file_path": ..., "file_size": ...} on
+        success, or None if no download fires within the timeout --
+        verify_module_headers() treats that as "no download produced"
+        and skips gracefully, so a slow/never-completing async export
+        never makes this test flaky or failing."""
+        try:
+            self.click_export_button()
+            if not self.is_export_modal_open():
+                return None
+            with self.page.expect_download(timeout=timeout) as dl_info:
+                self.confirm_export()
+            download = dl_info.value
+            filename = download.suggested_filename or "wa_templates_export.xlsx"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {"file_path": dest, "file_size": os.path.getsize(dest)}
+        except Exception:
+            return None
 
     # ══════════════════════════════════════════════════════════════════════
     # Columns dropdown

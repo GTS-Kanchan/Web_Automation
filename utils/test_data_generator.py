@@ -378,36 +378,48 @@ def generate_all(include_large=True):
     """
     _ensure_dir()
 
+    # Entity ID values below are realistic 10-19-digit numeric strings per
+    # is_valid_entity_id() (pages/sms/sender_id/sms_sender_id_page.py) --
+    # fixed per project owner's confirmed real account entity ID
+    # ("1701158046444780002", also used as _ENTITY_ID below for Template
+    # rows) for IN rows specifically, since that field is only shown/
+    # validated for India; non-IN rows (SG/MY) keep a placeholder since the
+    # Entity ID field doesn't apply there at all.
+    #
+    # Sender ID VALUES below are now length-correct per is_valid_sender_id():
+    # IN requires EXACTLY 6 alphanumeric chars; International (SG/MY/etc.)
+    # is 3-12. "AUTOTEST1"/"AUTOTEST2"/"MIXVALID1" (9 chars) used to be
+    # tagged IN despite failing that exact-6 rule -- fixed to 6-char IDs.
     sid = {
         "valid": [
-            ["AUTOTEST1", "ENT001", "IN", "Auto test sender 1"],
-            ["AUTOTEST2", "ENT001", "IN", "Auto test sender 2"],
+            ["AUTOT1",   "1701158046444780002", "IN", "Auto test sender 1"],
+            ["AUTOT2",   "1701158046444780002", "IN", "Auto test sender 2"],
             ["AUTOTEST3", "ENT002", "SG", "Auto test sender 3"],
             ["AUTOTEST4", "ENT002", "SG", "Auto test sender 4"],
             ["AUTOTEST5", "ENT003", "MY", "Auto test sender 5"],
         ],
         "invalid_length": [
-            ["AB",            "ENT001", "IN", "Too short (2 chars)"],
-            ["A",             "ENT001", "IN", "Too short (1 char)"],
-            ["TOOLONGSIDXX",  "ENT001", "IN", "Too long (12 chars)"],
-            ["VERYLONGID123", "ENT001", "IN", "Too long (13 chars)"],
+            ["AB",            "1701158046444780002", "IN", "Too short (2 chars)"],
+            ["A",             "1701158046444780002", "IN", "Too short (1 char)"],
+            ["TOOLONGSIDXX",  "1701158046444780002", "IN", "Too long for India (12 chars, needs exactly 6)"],
+            ["VERYLONGID123", "1701158046444780002", "IN", "Too long (13 chars)"],
         ],
         "invalid_chars": [
-            ["TEST!@#", "ENT001", "IN", "Special chars"],
-            ["SID$%^&", "ENT001", "IN", "Special chars 2"],
-            ["ID<>?/",  "ENT001", "IN", "Special chars 3"],
+            ["TEST!@#", "1701158046444780002", "IN", "Special chars"],
+            ["SID$%^&", "1701158046444780002", "IN", "Special chars 2"],
+            ["ID<>?/",  "1701158046444780002", "IN", "Special chars 3"],
         ],
         "duplicates": [
-            ["DUPTEST1", "ENT001", "IN", "Duplicate test 1"],
-            ["DUPTEST1", "ENT001", "IN", "Duplicate test 1 again"],
-            ["DUPTEST2", "ENT001", "IN", "Duplicate test 2"],
+            ["DUPTS1", "1701158046444780002", "IN", "Duplicate test 1"],
+            ["DUPTS1", "1701158046444780002", "IN", "Duplicate test 1 again"],
+            ["DUPTS2", "1701158046444780002", "IN", "Duplicate test 2"],
             ["DUPTEST2", "ENT002", "SG", "Duplicate test 2 again"],
         ],
         "mixed": [
-            ["MIXVALID1", "ENT001", "IN", "Valid row"],
+            ["MIXVD1",   "1701158046444780002", "IN", "Valid row"],
             ["MIXVALID2", "ENT001", "SG", "Valid row"],
-            ["AB",        "ENT001", "IN", "Invalid — too short"],
-            ["TEST!@#",   "ENT001", "IN", "Invalid — special chars"],
+            ["AB",        "1701158046444780002", "IN", "Invalid — too short"],
+            ["TEST!@#",   "1701158046444780002", "IN", "Invalid — special chars"],
             ["MIXVALID3", "ENT002", "MY", "Valid row"],
         ],
         "missing_col": [
@@ -415,9 +427,9 @@ def generate_all(include_large=True):
             ["MISSCOL2", "SG", "Missing entity ID 2"],
         ],
         "invalid_country": [
-            ["CNTTEST1", "ENT001", "XX", "Invalid country XX"],
-            ["CNTTEST2", "ENT001", "ZZ", "Invalid country ZZ"],
-            ["CNTTEST3", "ENT001", "99", "Invalid country 99"],
+            ["CNTTEST1", "1701158046444780002", "XX", "Invalid country XX"],
+            ["CNTTEST2", "1701158046444780002", "ZZ", "Invalid country ZZ"],
+            ["CNTTEST3", "1701158046444780002", "99", "Invalid country 99"],
         ],
     }
     # Real bulk-upload rows in the live app's actual import format (provided
@@ -427,43 +439,51 @@ def generate_all(include_large=True):
     _ENTITY_ID = "1701158046444780002'"
     import random, string
     ts = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    # Digit-only suffix for template DLT IDs — is_valid_dlt_id() requires an
+    # all-digit value (12-25 digits, confirmed per TC_05/16/17), but `ts` above
+    # is alphanumeric (fine for template_name uniqueness). Using `ts` directly
+    # inside a template_dlt_id f-string could randomly embed a letter and make
+    # the generated template row fail DLT ID validation. `ts_digits` is used
+    # for every template_dlt_id value instead, while `ts` keeps being used for
+    # template_name.
+    ts_digits = "".join(random.choices(string.digits, k=6))
     tmpl = {
         "valid": [
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"170716158089584{ts}",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"170716158089584{ts_digits}",
              "template_name": f"Template1_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Dear Candidate, your password has been reset. Your new password is {{1}} - GTS",
              "template_sample": "Dear Candidate, your password has been reset. Your new password is 9876 - GTS"},
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"170716158089873{ts}",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"170716158089873{ts_digits}",
              "template_name": f"Template2_{ts}", "template_product": "promotional", "content_type": "U",
              "template_content": "प्रिय उम्मीदवार, आपका पासवर्ड रीसेट कर दिया गया है। आपका नया पासवर्ड {{1}} है - GTS",
              "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts}3",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts_digits}3",
              "template_name": f"Template3_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Hello {name}, your OTP is {otp}", "template_sample": ""},
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts}4",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts_digits}4",
              "template_name": f"Template4_{ts}", "template_product": "promotional", "content_type": "N",
              "template_content": "Get 50% off today! Visit our store.", "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts}5",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts_digits}5",
              "template_name": f"Template5_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Your OTP is {otp}. Valid for 10 minutes.", "template_sample": ""},
         ],
         "no_vars": [
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts}6",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts_digits}6",
              "template_name": f"Template6_{ts}", "template_product": "promotional", "content_type": "N",
              "template_content": "Hello {name}, your OTP is {otp}", "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts}7",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts_digits}7",
              "template_name": f"Template7_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Get 50% off today! Visit our store.", "template_sample": ""},
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts}8",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts_digits}8",
              "template_name": f"Template8_{ts}", "template_product": "promotional", "content_type": "N",
              "template_content": "Your OTP is {otp}. Valid for 10 minutes.", "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts}9",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"82749817481{ts_digits}9",
              "template_name": f"Template9_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Hello {name}, your OTP is {otp}", "template_sample": ""},
-            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts}10",
+            {"sender_id": "AM-SMS", "entity_id": _ENTITY_ID, "template_dlt_id": f"12849821798{ts_digits}10",
              "template_name": f"Template10_{ts}", "template_product": "promotional", "content_type": "N",
              "template_content": "Get 50% off today! Visit our store.", "template_sample": ""},
-            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts}11",
+            {"sender_id": "DUMMY", "entity_id": _ENTITY_ID, "template_dlt_id": f"81234982149{ts_digits}11",
              "template_name": f"Template11_{ts}", "template_product": "transactional", "content_type": "N",
              "template_content": "Your OTP is {otp}. Valid for 10 minutes.", "template_sample": ""},
         ],

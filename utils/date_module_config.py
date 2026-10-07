@@ -238,4 +238,201 @@ DATE_MODULE_CONFIG = {
         "export_date_columns": ["Opted Out At"],
         "field_kinds": {"Opted Out At": "auto"},
     },
+    # ------------------------------------------------------------------
+    # WhatsApp modules (11, per explicit project-owner scope document:
+    # WhatsApp Messages, WhatsApp Campaign List, WhatsApp Number,
+    # WhatsApp Templates, WhatsApp Download Center, WhatsApp Incoming
+    # Messages, WhatsApp Blocked Users, WhatsApp Campaign
+    # Reports/Message Reports, WhatsApp Opt-in, WhatsApp Opt-out,
+    # WhatsApp Flows). Unlike RCS/SMS, NO constants/whatsapp/*_headers.py
+    # files exist for any module (confirmed: `find constants -iname
+    # "*whatsapp*"` returns nothing) -- every column name below is taken
+    # instead from each module's own already-confirmed evidence already
+    # living in this project's page objects/tests (a COLUMN_INDEX dict,
+    # a "sortBy(...)" applied-sort pill assertion e.g. "created at:
+    # Z-A", or a docstring/test listing real captured DOM column
+    # headers -- see each entry's own comment for its specific source).
+    # None of these modules has a confirmed bulk-export column-name
+    # correspondence for any date field (every export capability seen so
+    # far -- CSV href, "Export to XLSX" trigger -- is only asserted by
+    # href/dialog-presence, never downloaded and parsed against a real
+    # header list), so every entry's "export_date_columns" is None and
+    # verification is UI-format-only, same convention as
+    # "campaign_list"/"download_center" above. Do not add an export
+    # correspondence here without first downloading and parsing a real
+    # file to confirm the column name, per this project's own rule.
+    # ------------------------------------------------------------------
+    "whatsapp_messages": {
+        # WhatsApp Messages (Messages Report) --
+        # pages/whatsapp/messaging/whatsapp_message_report_page.py.
+        # Columns confirmed via
+        # tests/whatsapp/messaging/test_whatsapp_message_report_flow.py's
+        # own _ROW_HEADERS_FOR_POPUP_CROSSCHECK dict (real
+        # get_column_values() lookups against the live table): "created
+        # at", "submitted at", "delivered at", "read at". A confirmed
+        # "failed at" sort button exists (SORT_FAILED_AT_BTN) but no
+        # test ever confirmed it as a visible TABLE column (only the
+        # Timeline popup section renders "Failed"), so it is left out of
+        # this table-level entry, not fabricated in.
+        "date_columns": ["Created At", "Submitted At", "Delivered At", "Read At"],
+        "ui_column_names": {
+            "Created At": "created at",
+            "Submitted At": "submitted at",
+            "Delivered At": "delivered at",
+            "Read At": "read at",
+        },
+        "export_date_columns": None,
+        "field_kinds": {
+            "Created At": "auto",
+            "Submitted At": "auto",
+            "Delivered At": "auto",
+            "Read At": "auto",
+        },
+    },
+    "whatsapp_campaign_list": {
+        # WhatsApp Campaign List --
+        # pages/whatsapp/campaigns/whatsapp_campaign_page.py. "Created
+        # At" confirmed via test_TC_sorting's applied-sort-pill assertion
+        # ("created at" in pill.lower()); "Scheduled at" confirmed via
+        # this page's own module docstring/sorting comment ("Action/Total
+        # Messages/Scheduled at are [not sortable]" -- i.e. the column
+        # exists, just isn't a sort target).
+        "date_columns": ["Created At", "Scheduled At"],
+        "ui_column_names": {"Created At": "created at", "Scheduled At": "scheduled at"},
+        "export_date_columns": None,
+        "field_kinds": {"Created At": "auto", "Scheduled At": "auto"},
+    },
+    "whatsapp_number": {
+        # WhatsApp Number (Sender ID) --
+        # pages/whatsapp/sender_id/whatsapp_sender_id_page.py. Only
+        # "created_at" appears in this page's own confirmed COLUMN_INDEX
+        # dict (Action/App Name/WABA Number/Status/Quality/Message
+        # Limit/MM Lite APIs/Created At) -- unlike SMS's Sender ID
+        # module, there is no confirmed "Updated At" column here, so
+        # none is added.
+        "date_columns": ["Created At"],
+        "ui_column_names": {"Created At": "created at"},
+        "export_date_columns": None,
+        "field_kinds": {"Created At": "auto"},
+    },
+    "whatsapp_templates": {
+        # WhatsApp Templates -- pages/whatsapp/templates/whatsapp_template_page.py.
+        # "created_at" confirmed via this page's own SORT_KEYS dict and
+        # test_TC013_sorting_created_at_column's applied-sort-pill
+        # assertion ("created at" in pill.lower()).
+        "date_columns": ["Created At"],
+        "ui_column_names": {"Created At": "created at"},
+        "export_date_columns": None,
+        "field_kinds": {"Created At": "auto"},
+    },
+    "whatsapp_download_center": {
+        # WhatsApp Download Center --
+        # pages/whatsapp/download_center/whatsapp_download_center_page.py.
+        # "Created At" confirmed verbatim via
+        # tests/whatsapp/download_center/test_whatsapp_download_center_flow.py's
+        # own TestTC02TableColumns docstring, itself built from a real
+        # captured column list (Actions, Name, Category, From, To,
+        # Created At, Status), and independently via the "created-at"
+        # slug used elsewhere in that same test file. "From"/"To" are
+        # real confirmed columns too, but no test/DOM evidence confirms
+        # they actually hold date VALUES (as opposed to e.g. a
+        # date-range filter echo or free text) rather than assuming, so
+        # they are deliberately left out here -- same "do not invent"
+        # convention as RCS Templates' "Last Used At" above.
+        "date_columns": ["Created At"],
+        "ui_column_names": {"Created At": "created at"},
+        "export_date_columns": None,
+        "field_kinds": {"Created At": "auto"},
+    },
+    "whatsapp_incoming_messages": {
+        # WhatsApp Incoming Messages --
+        # pages/whatsapp/messaging/whatsapp_incoming_messages_page.py.
+        # Both columns confirmed via this page's own COLUMN_INDEX dict
+        # (Action/Campaign Name/WABA Number/Country Code/User
+        # Number/User Name/Type/Received At/Created At) and via
+        # tests/whatsapp/more/test_whatsapp_incoming_messages_flow.py's
+        # own comment ("only Received At / Created At are sortable").
+        "date_columns": ["Received At", "Created At"],
+        "ui_column_names": {"Received At": "received at", "Created At": "created at"},
+        "export_date_columns": None,
+        "field_kinds": {"Received At": "auto", "Created At": "auto"},
+    },
+    "whatsapp_blocked_users": {
+        # WhatsApp Blocked Users -- pages/whatsapp/more/whatsapp_blocked_users_page.py.
+        # "blocked_at" confirmed via this page's own COLUMN_INDEX dict
+        # (bulk_checkbox/phone_number/sender_id/blocked_at/actions) and
+        # sort_by_blocked_at() used in
+        # tests/whatsapp/more/test_whatsapp_blocked_users_flow.py.
+        "date_columns": ["Blocked At"],
+        "ui_column_names": {"Blocked At": "blocked at"},
+        "export_date_columns": None,
+        "field_kinds": {"Blocked At": "auto"},
+    },
+    "whatsapp_campaign_reports": {
+        # WhatsApp Campaign Reports / Message Reports (per-campaign
+        # report page, DISTINCT from the top-level "WhatsApp Messages"
+        # report above) --
+        # pages/whatsapp/campaigns/whatsapp_campaign_report_page.py.
+        # Columns confirmed via
+        # tests/whatsapp/campaigns/test_whatsapp_campaign_report_flow.py's
+        # own _ROW_HEADERS_FOR_POPUP_CROSSCHECK dict (real
+        # get_column_values() lookups): "created at", "sent at",
+        # "delivered at", "read at".
+        "date_columns": ["Created At", "Sent At", "Delivered At", "Read At"],
+        "ui_column_names": {
+            "Created At": "created at",
+            "Sent At": "sent at",
+            "Delivered At": "delivered at",
+            "Read At": "read at",
+        },
+        "export_date_columns": None,
+        "field_kinds": {
+            "Created At": "auto",
+            "Sent At": "auto",
+            "Delivered At": "auto",
+            "Read At": "auto",
+        },
+    },
+    "whatsapp_optin": {
+        # WhatsApp Opt-in -- pages/whatsapp/more/whatsapp_optin_page.py.
+        # "opted_in_at" confirmed via this page's own COLUMN_INDEX dict
+        # (bulk_checkbox/action/phone_number/sender/opted_in_at) and
+        # sort_by_opted_in_at() used in
+        # tests/whatsapp/more/test_whatsapp_optin_flow.py.
+        "date_columns": ["Opted In At"],
+        "ui_column_names": {"Opted In At": "opted in at"},
+        "export_date_columns": None,
+        "field_kinds": {"Opted In At": "auto"},
+    },
+    "whatsapp_optout": {
+        # WhatsApp Opt-out -- pages/whatsapp/more/whatsapp_optout_page.py.
+        # "opted_out_at" confirmed via this page's own COLUMN_INDEX dict
+        # (bulk_checkbox/action/phone_number/sender/opted_out_at) and
+        # sort_by_opted_out_at() used in
+        # tests/whatsapp/more/test_whatsapp_optout_flow.py.
+        "date_columns": ["Opted Out At"],
+        "ui_column_names": {"Opted Out At": "opted out at"},
+        "export_date_columns": None,
+        "field_kinds": {"Opted Out At": "auto"},
+    },
+    "whatsapp_flows": {
+        # WhatsApp Flows -- pages/whatsapp/more/whatsapp_flows_page.py
+        # (the Flows LIST page -- disambiguated from
+        # whatsapp_flow_builder_page.py/flow_builder_page.py/
+        # test_flow_builder.py, which build/edit a single flow's canvas
+        # and have no list-table date column at all). Only "created_at"
+        # appears in this page's own confirmed COLUMN_INDEX dict
+        # (Action/Flow ID/Name/WABA Number/Status/Categories/Created
+        # At), confirmed too via
+        # tests/whatsapp/more/test_whatsapp_flows_flow.py's
+        # applied-sort-pill assertion ("created at" in pill.lower()).
+        # The spec's "creation/update/publish" date fields degrade to
+        # creation-only here since no Updated At/Published At column is
+        # present in this list table -- not fabricated in.
+        "date_columns": ["Created At"],
+        "ui_column_names": {"Created At": "created at"},
+        "export_date_columns": None,
+        "field_kinds": {"Created At": "auto"},
+    },
 }
+

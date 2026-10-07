@@ -32,6 +32,12 @@ so -- that would directly contradict the spec's stated intent.
 
 import pytest
 
+from utils.dlr_format_validator import (
+    build_dlr_validation_report,
+    extract_full_dlr_fields,
+    validate_dlr_correlation,
+    validate_dlr_format,
+)
 from utils.dlr_helpers import (
     DLR_POLL_TIMEOUT_SECONDS,
     extract_message_id_from_send_response,
@@ -104,3 +110,21 @@ def test_dlr_received_after_template_send(api_client, test_data, record_property
     # with received=true and a matching message_id (steps 5-7) IS the
     # confirmation. Deliberately NOT asserting on status / provider_status /
     # status_code or any delivery-status value anywhere in dlr_body.
+
+    # ── DLR Format/Schema Verification (generic test -- status/code are
+    #               only checked to EXIST, never compared to a specific
+    #               value, per the "Important Existing DLR Rule") ────────
+    dlr_fields_full = extract_full_dlr_fields(dlr_body)
+    format_result = validate_dlr_format(dlr_fields_full)
+    correlation_result = validate_dlr_correlation(dlr_fields_full, expected_message_id=message_id)
+    report = build_dlr_validation_report(format_result, correlation_result)
+    record_property("DLR Validation Report", report)
+    print("\n" + report)
+    assert format_result["passed"], (
+        f"DLR format/schema validation failed for message_id={message_id}: "
+        f"{format_result['failed_fields']}.\n{report}\nBody: {dlr_body}"
+    )
+    assert correlation_result["passed"], (
+        f"DLR correlation failed for message_id={message_id}: "
+        f"{correlation_result['detail']}.\n{report}\nBody: {dlr_body}"
+    )

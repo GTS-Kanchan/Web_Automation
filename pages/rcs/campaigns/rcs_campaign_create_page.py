@@ -324,7 +324,7 @@ class RcsCampaignCreatePage(BasePage):
     )
     CONTACT_MGMT_SELECT_ALL = (
         "xpath=//div[contains(@class,'fixed')]//input[@type='checkbox']"
-        "[contains(@id,'all') or contains(@wire:model,'all')] | "
+        "[contains(@id,'all') or contains(@*[name()='wire:model'],'all')] | "
         "//div[contains(@class,'fixed')]//label[contains(translate(.,"
         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'select all')]"
     )

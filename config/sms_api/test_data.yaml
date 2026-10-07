@@ -179,7 +179,7 @@ campaign_send:
 
 template_send:
   valid_payload:
-    id: "808"
+    id: "55517"
     to:
       - "917002088565"
       - "919990009990"

@@ -31,6 +31,24 @@ sample given.
 
 IMPORTANT, per the spec: this test deliberately does NOT assert on
 `status`, `provider_status`, or `status_code` anywhere in the DLR body.
+
+CONFIRMED real behavior (project owner): the DLR lookup for this
+endpoint is searched BY metadata.messageId (the value generated and
+sent in the request, per this test's own design) -- kept exactly as
+designed, not switched to the send response's own "messageId" field.
+Also confirmed (project owner): "for sms webengage api, only dlr
+received" -- this test asserts received (+ the message_id correlation
+already designed into steps 7-9 above) but does NOT run the full DLR
+format/schema validation (utils/dlr_format_validator.py) that other
+SMS send APIs' DLR tests run.
+
+Response status: TWO different real `status` values have now been
+observed from this endpoint across separate live runs -- "sms_sent"
+(one real pasted response) and "sms_accepted" (a real live pytest
+failure on this very test, body `{"status":"sms_accepted"}` only).
+Since both are real, confirmed-live values, this test accepts EITHER
+rather than guessing which is "the" right one -- see
+_ACCEPTED_SEND_STATUSES below.
 """
 
 import copy
@@ -41,6 +59,8 @@ import time
 import pytest
 
 from utils.dlr_helpers import DLR_POLL_TIMEOUT_SECONDS, poll_for_dlr
+
+_ACCEPTED_SEND_STATUSES = ("sms_sent", "sms_accepted")
 
 pytestmark = pytest.mark.sms
 
@@ -68,15 +88,15 @@ def test_dlr_received_after_webengage_send_using_message_id(api_client, test_dat
     send_response = api_client.send_webengage(payload)
     record_property("Response", send_response.text)
 
-    record_property("Expected", "sms_accepted")
+    record_property("Expected", " or ".join(_ACCEPTED_SEND_STATUSES))
     send_body = send_response.json() if send_response.status_code == 200 else {}
     record_property("Actual", str(send_body.get("status")))
     assert send_response.status_code == 200, (
         f"WebEngage SMS API failed: expected 200, got "
         f"{send_response.status_code}. Body: {send_response.text}"
     )
-    assert send_body.get("status") == "sms_accepted", (
-        f"Expected response 'status' to be 'sms_accepted'. "
+    assert send_body.get("status") in _ACCEPTED_SEND_STATUSES, (
+        f"Expected response 'status' to be one of {_ACCEPTED_SEND_STATUSES}. "
         f"Body: {send_response.text}"
     )
 
@@ -120,4 +140,7 @@ def test_dlr_received_after_webengage_send_using_message_id(api_client, test_dat
     # DLR received + correlated + a 200 response (steps 7-9 above) IS the
     # confirmation the DLR was received and stored -- no separate "stored"
     # field was given in the spec. Deliberately NOT asserting on
-    # status / provider_status / status_code anywhere in dlr_body.
+    # status / provider_status / status_code anywhere in dlr_body, and
+    # (confirmed real, project owner: "for sms webengage api, only dlr
+    # received") deliberately NOT running the full DLR format/schema
+    # validation other SMS send APIs' DLR tests run.

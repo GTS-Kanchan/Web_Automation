@@ -1,5 +1,5 @@
 Sender ID,Entity ID,Country Code,Description
-AB,ENT001,IN,Too short (2 chars)
-A,ENT001,IN,Too short (1 char)
-TOOLONGSIDXX,ENT001,IN,Too long (12 chars)
-VERYLONGID123,ENT001,IN,Too long (13 chars)
+AB,1701158046444780002,IN,Too short (2 chars)
+A,1701158046444780002,IN,Too short (1 char)
+TOOLONGSIDXX,1701158046444780002,IN,"Too long for India (12 chars, needs exactly 6)"
+VERYLONGID123,1701158046444780002,IN,Too long (13 chars)

@@ -455,7 +455,7 @@ class RCSCampaignPage(BasePage):
     POPUP_CLOSE_BTN = (
         "xpath=//h3[normalize-space()='Campaign Details']"
         "/ancestor::div[contains(@class,'space-y-6')][1]"
-        "//button[contains(@wire:click,\"closeModal\")]"
+        "//button[contains(@*[name()='wire:click'],\"closeModal\")]"
     )
 
     def is_popup_open(self):
@@ -535,3 +535,47 @@ class RCSCampaignPage(BasePage):
             return True
         except Exception:
             return False
+
+    # -------------------------------------------------------------------------
+    # Row "Reports" action -- CONFIRMED from a real, pasted DOM capture: a
+    # plain <a data-tooltip-target="tooltip-reports-<id>"
+    #   href="https://<host>/rcs/campaign/messages/total/<uuid>">, a genuine
+    # full-page navigation (NOT a Livewire wire:click action), opening the
+    # per-campaign RCS Campaign Report page
+    # (pages/rcs/campaigns/rcs_campaign_report_page.py::RCSCampaignReportPage).
+    # Same tooltip-target convention/shape as the confirmed Reports icon on
+    # the SMS and WhatsApp Campaign listing pages
+    # (pages/sms/campaigns/sms_campaign_page.py,
+    # pages/whatsapp/campaigns/whatsapp_campaign_page.py).
+    # -------------------------------------------------------------------------
+    REPORTS_LINK_IN_ROW = "xpath=.//*[contains(@data-tooltip-target,'tooltip-reports-')]"
+
+    def click_reports_icon_on_row(self, row_idx=0):
+        """Click the confirmed Reports link on the campaign row at
+        *row_idx* (0-based, visible data rows of the campaign list
+        table). A real page navigation (plain <a href>), so the click is
+        wrapped in expect_navigation() -- mirrors
+        SMSCampaignPage.click_reports_link_on_row(). Returns False
+        (never raises) if there is no such row or it has no Reports
+        link, so callers can skip gracefully instead of guessing at a
+        fallback."""
+        rows = self.page.locator(self.TABLE_ROWS)
+        try:
+            if row_idx < 0 or row_idx >= rows.count():
+                return False
+            row = rows.nth(row_idx)
+            if not row.is_visible():
+                return False
+        except Exception:
+            return False
+        try:
+            link = row.locator(self.REPORTS_LINK_IN_ROW).first
+            if link.count() == 0:
+                return False
+        except Exception:
+            return False
+        link.scroll_into_view_if_needed()
+        with self.page.expect_navigation(timeout=15000):
+            link.click(force=True)
+        self.page.wait_for_timeout(1000)
+        return True

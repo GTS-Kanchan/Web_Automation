@@ -520,7 +520,7 @@ class RcsMessagePage(BasePage):
     POPUP_CLOSE_BTN = (
         "xpath=//h3[normalize-space()='Message Details']"
         "/ancestor::div[contains(@class,'space-y-6')][1]"
-        "//button[contains(@wire:click,\"closeModal\")]"
+        "//button[contains(@*[name()='wire:click'],\"closeModal\")]"
     )
 
     def is_popup_open(self):
@@ -568,3 +568,6 @@ class RcsMessagePage(BasePage):
 
     def get_popup_read(self):
         return self._get_popup_timeline_value("Read:")
+
+    def get_popup_failed(self):
+        return self._get_popup_timeline_value("Failed:")

@@ -40,6 +40,8 @@ Run:
 import pytest
 
 from pages.whatsapp.whatsapp_optout_page import WhatsAppOptOutPage
+from utils.header_verification import verify_module_ui_headers_only
+from utils.table_date_verification import verify_table_date_columns
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.opt_out]
@@ -242,3 +244,43 @@ def test_TC008_clear_applied_sorting(optout_page):
     optout_page.clear_all_sorts()
     optout_page.page.wait_for_timeout(1000)
     assert optout_page.get_applied_sort_pill_text() is None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- WhatsApp Opt-out. Reuses the shared
+# utils/table_date_verification.py helper (DATE_MODULE_CONFIG["whatsapp_optout"]
+# is this module's single source of truth for its real, confirmed date
+# columns) -- no per-module date logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(optout_page):
+    """Validates every populated on-screen date/date-time value in
+    WhatsApp Opt-out's table is a real dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+    value (UI-only -- no confirmed bulk-export column-name
+    correspondence exists yet for this module, see
+    utils/date_module_config.py's DATE_MODULE_CONFIG["whatsapp_optout"]
+    comment)."""
+    ensure_on_optout_page(optout_page)
+    verify_table_date_columns(optout_page, "WhatsApp Opt-out", "whatsapp_optout")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Header Verification -- WhatsApp Opt-out. Reuses the shared
+# utils/header_verification.py engine (EXPECTED_HEADERS["whatsapp_opt_out"]
+# in utils/header_module_config.py is this module's single source of
+# truth for its real, confirmed UI headers) -- no per-module header
+# logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_header_verification_ui(optout_page):
+    """Verifies every expected WhatsApp Opt-out UI table header is
+    present (case-insensitive, presence-only -- this project's table
+    columns are user-toggleable) and that no header is unexpectedly
+    duplicated. UI-only by explicit instruction (see
+    utils.header_verification.verify_module_ui_headers_only): this
+    module never attempts export verification and never reports
+    SKIPPED -- it ends as a plain PASS/FAIL on the UI headers alone."""
+    ensure_on_optout_page(optout_page)
+    verify_module_ui_headers_only(optout_page, "WhatsApp Opt-out", "whatsapp_opt_out")

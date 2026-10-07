@@ -55,6 +55,8 @@ Run:
 import pytest
 
 from pages.whatsapp.whatsapp_campaign_page import WhatsAppCampaignPage
+from utils.header_verification import verify_module_headers
+from utils.table_date_verification import verify_table_date_columns
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.campaign]
@@ -333,3 +335,46 @@ def test_TC016_reports_action_opens_campaign_report_page(campaign_page):
     assert navigated
     assert "/whatsapp/campaigns/messages/" in campaign_page.get_current_url()
     ensure_on_campaign_page(campaign_page)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- WhatsApp Campaign List. Reuses the shared
+# utils/table_date_verification.py helper (DATE_MODULE_CONFIG["whatsapp_campaign_list"]
+# is this module's single source of truth for its real, confirmed date
+# columns) -- no per-module date logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(campaign_page):
+    """Validates every populated on-screen date/date-time value in
+    WhatsApp Campaign List's table is a real dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+    value (UI-only -- no confirmed bulk-export column-name
+    correspondence exists yet for this module, see
+    utils/date_module_config.py's DATE_MODULE_CONFIG["whatsapp_campaign_list"]
+    comment)."""
+    ensure_on_campaign_page(campaign_page)
+    verify_table_date_columns(campaign_page, "WhatsApp Campaign List", "whatsapp_campaign_list")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Header Verification -- WhatsApp Campaign List. Reuses the shared
+# utils/header_verification.py engine (EXPECTED_HEADERS["whatsapp_campaign_list"]
+# in utils/header_module_config.py is this module's single source of
+# truth for its real, confirmed UI headers) -- no per-module header
+# logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_header_verification_ui(campaign_page):
+    """Verifies every expected WhatsApp Campaign List UI table header is
+    present (case-insensitive, presence-only -- this project's table
+    columns are user-toggleable) and that no header is unexpectedly
+    duplicated. No confirmed export header list exists yet for this
+    module (see utils/header_module_config.py's EXPECTED_HEADERS["whatsapp_campaign_list"]
+    comment), so this degrades to UI-only verification, same convention
+    as this suite's Date/Date-Time Verification tests."""
+    ensure_on_campaign_page(campaign_page)
+    verify_module_headers(
+        campaign_page, "WhatsApp Campaign List", "whatsapp_campaign_list",
+        click_export_csv=campaign_page.export_csv,
+    )

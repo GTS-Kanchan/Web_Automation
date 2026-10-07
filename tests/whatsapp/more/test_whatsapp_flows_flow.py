@@ -49,6 +49,8 @@ import pytest
 
 from pages.whatsapp.whatsapp_flows_page import WhatsappFlowsPage
 from pages.whatsapp.whatsapp_flow_builder_page import WhatsappFlowBuilderPage
+from utils.header_verification import verify_module_ui_headers_only
+from utils.table_date_verification import verify_table_date_columns
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.flow]
@@ -744,3 +746,43 @@ def test_e2e_whatsapp_flow_creation_and_persistence(module_logged_in_page):
         flows.close_modal()
 
     flows.clear_search()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- WhatsApp Flows. Reuses the shared
+# utils/table_date_verification.py helper (DATE_MODULE_CONFIG["whatsapp_flows"]
+# is this module's single source of truth for its real, confirmed date
+# columns) -- no per-module date logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(flows_page):
+    """Validates every populated on-screen date/date-time value in
+    WhatsApp Flows's table is a real dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+    value (UI-only -- no confirmed bulk-export column-name
+    correspondence exists yet for this module, see
+    utils/date_module_config.py's DATE_MODULE_CONFIG["whatsapp_flows"]
+    comment)."""
+    ensure_on_flows_page(flows_page)
+    verify_table_date_columns(flows_page, "WhatsApp Flows", "whatsapp_flows")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Header Verification -- WhatsApp Flows. Reuses the shared
+# utils/header_verification.py engine (EXPECTED_HEADERS["whatsapp_flows"]
+# in utils/header_module_config.py is this module's single source of
+# truth for its real, confirmed UI headers) -- no per-module header
+# logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_header_verification_ui(flows_page):
+    """Verifies every expected WhatsApp Flows UI table header is
+    present (case-insensitive, presence-only -- this project's table
+    columns are user-toggleable) and that no header is unexpectedly
+    duplicated. UI-only by explicit instruction (see
+    utils.header_verification.verify_module_ui_headers_only): this
+    module never attempts export verification and never reports
+    SKIPPED -- it ends as a plain PASS/FAIL on the UI headers alone."""
+    ensure_on_flows_page(flows_page)
+    verify_module_ui_headers_only(flows_page, "WhatsApp Flows", "whatsapp_flows")

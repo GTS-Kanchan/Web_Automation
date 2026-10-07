@@ -41,6 +41,10 @@ correlation.
 
 import pytest
 
+from utils.dlr_format_validator import (
+    aggregate_bulk_dlr_validation,
+    build_bulk_dlr_validation_report,
+)
 from utils.dlr_helpers import (
     DLR_POLL_TIMEOUT_SECONDS,
     poll_bulk_dlr,
@@ -94,8 +98,12 @@ def test_bulk_dlr_received_after_sms_json_send(api_client, test_data, record_pro
     #            same way every other DLR test in this suite does --
     #            see poll_bulk_dlr()'s docstring for why, given the spec's
     #            own steps don't include an explicit wait step here ──────────
+    # require_billing is intentionally left out (defaults to None) --
+    # by default this environment only generates a STATUS DLR for a
+    # message, not a separate billing DLR, so requiring one here made
+    # bulk-verify wait for/expect a DLR that never arrives.
     verify_response, verify_body, results = poll_bulk_dlr(
-        api_client, message_ids, require_billing=True
+        api_client, message_ids
     )
 
     assert verify_response is not None, (
@@ -154,3 +162,23 @@ def test_bulk_dlr_received_after_sms_json_send(api_client, test_data, record_pro
     # anywhere in the DLR verification body, per the spec's explicit
     # instruction -- this test is scoped to bulk DLR reception and
     # correlation only.
+
+    # ── DLR Format/Schema Verification for every received DLR (generic
+    #               test -- status/code are only checked to EXIST, never
+    #               compared to a specific value) ─────────────────────────
+    counts, failures = aggregate_bulk_dlr_validation(message_ids, results)
+    bulk_report = build_bulk_dlr_validation_report(counts)
+    record_property("DLR Bulk Validation Report", bulk_report)
+    print("\n" + bulk_report)
+    assert counts["invalid_format"] == 0, (
+        f"{counts['invalid_format']} of {submitted_count} DLR(s) failed "
+        f"format/schema validation.\n{bulk_report}\nFailures: {failures}"
+    )
+    assert counts["message_id_mismatches"] == 0, (
+        f"{counts['message_id_mismatches']} DLR(s) had a message_id "
+        f"correlation mismatch.\n{bulk_report}\nFailures: {failures}"
+    )
+    assert counts["duplicate_dlrs"] == 0, (
+        f"{counts['duplicate_dlrs']} duplicate DLR entry/entries found.\n"
+        f"{bulk_report}\nFailures: {failures}"
+    )

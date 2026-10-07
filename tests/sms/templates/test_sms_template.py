@@ -289,8 +289,8 @@ def _create_scratch_template(template_page, track_for_cleanup=True):
         template_page.fill_sample(SAMPLE_TRANS)
     except Exception:
         pass
-    template_page.click_save()
-    template_page.page.wait_for_timeout(1500)
+    template_page.click_save(wait_ms=5000)
+    template_page.page.wait_for_timeout(3000)
     if track_for_cleanup:
         _created.append(name)
     return name
@@ -305,7 +305,8 @@ VALID_NAMES = [
     "Trans Template 01",
     "OTP-Template",
     "Promo_2024",
-    "A" * 100,          # max 100 chars
+    "A" * 62,           # TC_07: 62 chars
+    "A" * 63,           # TC_08: exactly max (63 chars)
     "abc",              # min 3 chars
 ]
 
@@ -313,20 +314,20 @@ INVALID_NAMES = [
     ("",        "empty name"),
     ("  ",      "whitespace only"),
     ("ab",      "too short (2 chars)"),
-    ("A" * 101, "too long (101 chars)"),
+    ("A" * 64,  "too long (64 chars)"),   # TC_21: 64+ chars
 ]
 
 VALID_DLT_IDS = [
-    "123456789012",     # 12 digits
-    "12345678901234",   # 14 digits
-    "12345678901234567890",  # 20 digits
+    "123456789012",                # TC_03/TC_04: 12 digits (min)
+    "12345678901234",               # 14 digits
+    "1234567890123456789012345",   # TC_05: exactly max (25 digits)
 ]
 
 INVALID_DLT_IDS = [
     ("",             "empty"),
-    ("123456789",    "too short (9 digits)"),
+    ("12345678901",  "too short (11 digits)"),   # TC_16: below the 12-digit min
     ("ABC123456789", "contains letters"),
-    ("12345678901234567890X", "21 chars with letter"),
+    ("12345678901234567890123456", "too long (26 digits)"),  # TC_17: above the 25-digit max
 ]
 
 
@@ -423,11 +424,12 @@ class TestCreateTemplate:
         except Exception:
             pass
 
-        template_page.click_save()
-        template_page.page.wait_for_timeout(2000)
+        template_page.click_save(wait_ms=5000)
+        template_page.page.wait_for_timeout(3000)
 
     def _verify_in_list(self, template_page, name):
         """Return to list and assert the template row is present."""
+        template_page.page.wait_for_timeout(2000)
         _to_list(template_page)
         assert template_page.is_template_present_in_list(name), \
             f"Template '{name}' should appear in the list after creation"
@@ -478,7 +480,7 @@ class TestCreateTemplate:
     def test_empty_form_shows_validation_errors(self, template_page):
         _to_list(template_page)
         template_page.click_create_template()
-        template_page.click_save()
+        template_page.click_save(wait_ms=1000)
         template_page.page.wait_for_timeout(1000)
         still_on_form = template_page.is_element_present(SMSTemplatePage.FORM_TEMPLATE_NAME, timeout=3000)
         errors = template_page.get_validation_errors()
@@ -494,6 +496,197 @@ class TestCreateTemplate:
         template_page.click_form_cancel()
         template_page.page.wait_for_timeout(1000)
         assert template_page.is_template_list_page(), "Cancel should return to Template list"
+
+    # ── Mandatory-field negative tests (TC_13/TC_14/TC_18/TC_19) -- each
+    #    leaves exactly ONE mandatory field blank while filling every other
+    #    field, so a failure here isolates which field's validation broke.
+    #    TC_20 ("without Country") is NOT implemented: no Country field
+    #    exists anywhere in this SMS Template form/page object
+    #    (FORM_TEMPLATE_NAME/FORM_TYPE/FORM_DLT_ID/FORM_CONTENT/FORM_SAMPLE
+    #    are the only form fields confirmed here) -- flag for the project
+    #    owner to confirm whether Country applies to this flow at all. ────
+
+    @pytest.mark.regression
+    @pytest.mark.negative
+    def test_create_without_sender_id_shows_validation_error(self, template_page):
+        """TC_13: leave Sender ID blank, fill every other field -- expect a
+        validation error ('Sender ID is mandatory'), not a successful save."""
+        _to_list(template_page)
+        template_page.click_create_template()
+        template_page.fill_template_name(_rand_name())
+        try:
+            template_page.select_type("Transactional")
+        except Exception:
+            pass
+        template_page.fill_content(CONTENT_TRANS)
+        template_page.click_save(wait_ms=2000)
+        template_page.page.wait_for_timeout(1000)
+        still_on_form = template_page.is_element_present(SMSTemplatePage.FORM_TEMPLATE_NAME, timeout=3000)
+        errors = template_page.get_validation_errors()
+        assert still_on_form or errors, "Leaving Sender ID blank should show a validation error, not save"
+        _to_list(template_page)
+
+    @pytest.mark.regression
+    @pytest.mark.negative
+    def test_create_entity_sender_without_dlt_id_shows_validation_error(self, template_page):
+        """TC_14: select an Entity-ID-mapped sender (AM-SMS) but leave DLT ID
+        blank -- expect a validation error for the mandatory DLT ID."""
+        _to_list(template_page)
+        template_page.click_create_template()
+        template_page.fill_template_name(_rand_name())
+        template_page.select_sender_id("AM-SMS")
+        template_page.page.wait_for_timeout(1000)
+        try:
+            template_page.select_type("Transactional")
+        except Exception:
+            pass
+        # Deliberately NOT calling fill_dlt_id() here -- DLT ID left blank.
+        template_page.fill_content(CONTENT_TRANS)
+        template_page.click_save(wait_ms=2000)
+        template_page.page.wait_for_timeout(1000)
+        still_on_form = template_page.is_element_present(SMSTemplatePage.FORM_TEMPLATE_NAME, timeout=3000)
+        errors = template_page.get_validation_errors()
+        assert still_on_form or errors, (
+            "Leaving DLT ID blank for an Entity-ID-mapped sender should show a validation error"
+        )
+        _to_list(template_page)
+
+    @pytest.mark.regression
+    @pytest.mark.negative
+    def test_create_without_product_type_shows_validation_error(self, template_page):
+        """TC_18: leave Product/Type blank, fill every other field -- expect
+        a validation error."""
+        _to_list(template_page)
+        template_page.click_create_template()
+        template_page.fill_template_name(_rand_name())
+        try:
+            template_page.select_sender_id(SENDER_IDS[0])
+        except Exception:
+            pass
+        # Deliberately NOT calling select_type() here -- Product/Type left blank.
+        template_page.fill_content(CONTENT_TRANS)
+        template_page.click_save(wait_ms=2000)
+        template_page.page.wait_for_timeout(1000)
+        still_on_form = template_page.is_element_present(SMSTemplatePage.FORM_TEMPLATE_NAME, timeout=3000)
+        errors = template_page.get_validation_errors()
+        assert still_on_form or errors, "Leaving Product/Type blank should show a validation error"
+        _to_list(template_page)
+
+    @pytest.mark.regression
+    @pytest.mark.negative
+    def test_create_without_content_shows_validation_error(self, template_page):
+        """TC_19: leave Content blank, fill every other field -- expect a
+        validation error."""
+        _to_list(template_page)
+        template_page.click_create_template()
+        template_page.fill_template_name(_rand_name())
+        try:
+            template_page.select_sender_id(SENDER_IDS[0])
+        except Exception:
+            pass
+        try:
+            template_page.select_type("Transactional")
+        except Exception:
+            pass
+        # Deliberately NOT calling fill_content() here -- Content left blank.
+        template_page.click_save(wait_ms=2000)
+        template_page.page.wait_for_timeout(1000)
+        still_on_form = template_page.is_element_present(SMSTemplatePage.FORM_TEMPLATE_NAME, timeout=3000)
+        errors = template_page.get_validation_errors()
+        assert still_on_form or errors, "Leaving Content blank should show a validation error"
+        _to_list(template_page)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PART 3B — Override Existing Template (same Sender + Template Name)
+#
+# TC_09 / TC_10: creating a template with the SAME Sender + Template Name
+# as an already-existing one overrides/updates that existing template in
+# place -- confirmed real behavior (project owner) -- rather than creating
+# a second row or being rejected as a duplicate.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestTemplateOverride:
+
+    def _create_then_override(self, template_page, sender_id, tmpl_type, use_dlt):
+        name = _rand_name()
+        original_content = CONTENT_TRANS
+        updated_content = CONTENT_TRANS + " UPDATED_FOR_OVERRIDE_TEST"
+
+        def _fill_and_save(content):
+            template_page.click_create_template()
+            template_page.fill_template_name(name)
+            template_page.select_sender_id(sender_id)
+            template_page.page.wait_for_timeout(1000)
+            try:
+                template_page.select_type(tmpl_type)
+            except Exception:
+                pass
+            if use_dlt:
+                template_page.fill_dlt_id(DLT_ID)
+            template_page.fill_content(content)
+            try:
+                template_page.fill_sample(SAMPLE_TRANS)
+            except Exception:
+                pass
+            template_page.click_save(wait_ms=5000)
+            template_page.page.wait_for_timeout(3000)
+
+        # -- First create --
+        _to_list(template_page)
+        _fill_and_save(original_content)
+        _created.append(name)
+
+        # -- Second create: SAME sender + SAME name, different content --
+        _to_list(template_page)
+        _fill_and_save(updated_content)
+
+        success = template_page.is_success_toast_shown() or template_page.is_template_list_page()
+        assert success, f"Re-submitting sender={sender_id!r} + name={name!r} should succeed (override)"
+
+        # -- Verify exactly ONE row for this name (override, not a duplicate) --
+        _to_list(template_page)
+        template_page.search(name)
+        template_page.page.wait_for_timeout(1500)
+        row_count = template_page.get_row_count()
+        assert row_count == 1, (
+            f"Expected exactly 1 row for overridden template '{name}', found {row_count} "
+            f"-- a second row would mean this created a NEW template instead of "
+            f"overriding the existing one"
+        )
+
+        # -- Verify the row's content reflects the NEW submission --
+        assert template_page.click_first_row_edit(), "Edit button not found on the overridden row"
+        actual_content = template_page.page.locator(SMSTemplatePage.FORM_CONTENT).input_value()
+        template_page.click_form_cancel()
+        template_page.clear_search()
+        assert actual_content.strip() == updated_content.strip(), (
+            f"Overridden template's content should be the NEW submission "
+            f"({updated_content!r}), got {actual_content!r} -- looks like the old "
+            f"template was kept instead of being overridden"
+        )
+
+    @pytest.mark.regression
+    def test_override_existing_dlt_template_same_sender_and_name(self, template_page):
+        """TC_09: Sender mapped with Entity ID (DLT) -- same sender + same
+        template name overrides the existing DLT template."""
+        self._create_then_override(template_page, "AM-SMS", "Transactional", use_dlt=True)
+
+    @pytest.mark.regression
+    def test_override_existing_non_dlt_template_same_sender_and_name(self, template_page):
+        """TC_10: Non-DLT sender (no Entity ID mapping) -- same sender + same
+        template name overrides the existing Non-DLT template.
+
+        ASSUMPTION (not independently confirmed): "dummy" is used here as
+        the Non-DLT sender and "AM-SMS" as the DLT/Entity-ID sender, based
+        on "DUMMY" being used elsewhere in this project as a generic/
+        non-India placeholder sender value. If "dummy" actually also
+        triggers the DLT ID field reactively, this test's use_dlt=False
+        step leaves that field blank, which could fail save for a
+        different reason (a mandatory DLT ID) rather than exercising the
+        intended Non-DLT override path -- flag for correction if so.
+        """
+        self._create_then_override(template_page, "dummy", "Transactional", use_dlt=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -689,6 +882,49 @@ class TestUploadTemplate:
         )
 
     @pytest.mark.regression
+    def test_generated_upload_file_matches_validation_rules(self):
+        """Static, no-browser check: every row generated for the bulk-upload
+        file (valid_template.xlsx, via utils/test_data_generator.py) must
+        satisfy the SAME template_name/template_dlt_id rules confirmed for
+        the create-template UI (3-63 chars / 12-25 digits, TC_05/07/08/16/17/21
+        -- see TestTemplateValidation above). This guards the test-data
+        generator itself: a prior bug had the DLT ID suffix drawn from
+        letters+digits, which could silently produce a non-numeric
+        template_dlt_id that is_valid_dlt_id() would reject even though the
+        row was intended to be a VALID upload row."""
+        if not os.path.exists(UPLOAD_CSV):
+            pytest.skip(f"Upload file not found: {UPLOAD_CSV}")
+        try:
+            import openpyxl
+        except ImportError:
+            pytest.skip("openpyxl not available to read the xlsx file")
+
+        wb = openpyxl.load_workbook(UPLOAD_CSV)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+        assert rows, f"{UPLOAD_CSV} should contain at least a header row"
+
+        header = [str(h).strip().lower() if h is not None else "" for h in rows[0]]
+        assert "template_name" in header and "template_dlt_id" in header, (
+            f"Expected 'template_name' and 'template_dlt_id' columns, got: {header}"
+        )
+        name_idx = header.index("template_name")
+        dlt_idx = header.index("template_dlt_id")
+
+        bad_names, bad_dlt_ids = [], []
+        for row in rows[1:]:
+            name = str(row[name_idx]) if row[name_idx] is not None else ""
+            dlt_id = str(row[dlt_idx]) if row[dlt_idx] is not None else ""
+            if not SMSTemplatePage.is_valid_template_name(name):
+                bad_names.append(name)
+            if not SMSTemplatePage.is_valid_dlt_id(dlt_id):
+                bad_dlt_ids.append(dlt_id)
+
+        assert not bad_names, f"Generated template_name value(s) fail the 3-63 char rule: {bad_names}"
+        assert not bad_dlt_ids, f"Generated template_dlt_id value(s) fail the 12-25 digit rule: {bad_dlt_ids}"
+
+    @pytest.mark.regression
     def test_cancel_upload_closes_popup(self, template_page):
         self._skip_if_no_permission(template_page)
         self._open_upload_popup(template_page)
@@ -757,8 +993,8 @@ class TestEditTemplate:
             template_page.fill_content(f"Updated content {int(template_page.page.evaluate('() => Date.now()'))}")
         except Exception:
             pass
-        template_page.click_save()
-        template_page.page.wait_for_timeout(2000)
+        template_page.click_save(wait_ms=5000)
+        template_page.page.wait_for_timeout(3000)
         assert template_page.is_success_toast_shown() or template_page.is_template_list_page(), \
             "Edit save should succeed"
         _to_list(template_page)

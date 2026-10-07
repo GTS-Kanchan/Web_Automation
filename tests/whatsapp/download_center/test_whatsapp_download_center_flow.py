@@ -96,6 +96,8 @@ import pytest
 
 from pages.whatsapp.whatsapp_download_center_page import WhatsappDownloadCenterPage
 from pages.whatsapp.whatsapp_report_create_page import WhatsappReportCreatePage
+from utils.header_verification import verify_module_ui_headers_only
+from utils.table_date_verification import verify_table_date_columns
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.report]
@@ -982,3 +984,43 @@ class TestBonusClearSorts:
             "Sort pill for 'name' still present after clear_all_sorts()"
         )
         reset_filters(download_center_page)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- WhatsApp Download Center. Reuses the shared
+# utils/table_date_verification.py helper (DATE_MODULE_CONFIG["whatsapp_download_center"]
+# is this module's single source of truth for its real, confirmed date
+# columns) -- no per-module date logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(download_center_page):
+    """Validates every populated on-screen date/date-time value in
+    WhatsApp Download Center's table is a real dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+    value (UI-only -- no confirmed bulk-export column-name
+    correspondence exists yet for this module, see
+    utils/date_module_config.py's DATE_MODULE_CONFIG["whatsapp_download_center"]
+    comment)."""
+    ensure_on_dc_page(download_center_page)
+    verify_table_date_columns(download_center_page, "WhatsApp Download Center", "whatsapp_download_center")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Header Verification -- WhatsApp Download Center. Reuses the shared
+# utils/header_verification.py engine (EXPECTED_HEADERS["whatsapp_download_center"]
+# in utils/header_module_config.py is this module's single source of
+# truth for its real, confirmed UI headers) -- no per-module header
+# logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_header_verification_ui(download_center_page):
+    """Verifies every expected WhatsApp Download Center UI table header is
+    present (case-insensitive, presence-only -- this project's table
+    columns are user-toggleable) and that no header is unexpectedly
+    duplicated. UI-only by explicit instruction (see
+    utils.header_verification.verify_module_ui_headers_only): this
+    module never attempts export verification and never reports
+    SKIPPED -- it ends as a plain PASS/FAIL on the UI headers alone."""
+    ensure_on_dc_page(download_center_page)
+    verify_module_ui_headers_only(download_center_page, "WhatsApp Download Center", "whatsapp_download_center")

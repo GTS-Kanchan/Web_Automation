@@ -256,6 +256,25 @@ class SmsApiClient:
         endpoint has been documented/confirmed, so the default request
         sends only Accept: application/json. Pass `headers` explicitly
         (e.g. a Bearer token) once/if that's confirmed to be required.
+
+        CONFIRMED real behavior (project owner, two real pasted
+        responses): the correct single-message DLR endpoint for BOTH
+        received detection and format validation is
+        GET {dlr_base_url}/api/v1/dlr/{message_id} -- NO /json suffix.
+        This REVERSES a prior fix in this same module that added
+        a /json suffix -- that earlier fix was based on one real
+        REJECTED-DLR response that happened to come from the
+        /json-suffixed endpoint, but the /json-suffixed endpoint's
+        response has NO top-level "received" boolean at all, which
+        left utils/dlr_helpers.py::poll_for_dlr()'s fields["received"]
+        permanently None (confirmed by a real live pytest timeout:
+        test_sms_send_msg_dlr.py::test_dlr_received_after_send_msg).
+        The NO-suffix endpoint's response has a top-level "received"
+        boolean PLUS a nested "dlr" object carrying the classic
+        service/sender/mobile/status/code/entity_id/template_id/
+        submit_at/dlr_received_at/units/correlation_id schema (see
+        utils/dlr_format_validator.py::extract_full_dlr_fields(), which
+        now also checks this nested "dlr" key).
         """
         if not self.env.dlr_url:
             raise ValueError(
@@ -276,7 +295,7 @@ class SmsApiClient:
         self,
         message_ids: list,
         expected_status: Optional[str] = "DELIVERED",
-        require_billing: Optional[bool] = True,
+        require_billing: Optional[bool] = None,
         headers: Optional[dict] = None,
     ) -> ApiResponse:
         """
@@ -287,6 +306,14 @@ class SmsApiClient:
         no-default-auth-header reasoning as get_dlr(): this is a
         separate service from the main SMS API and no auth requirement
         for it has been confirmed.
+
+        require_billing defaults to None (left out of the request body)
+        -- confirmed real behavior (project owner): by default this
+        environment only generates/receives the STATUS DLR for a
+        message, not a separate billing DLR, so requiring one here by
+        default made bulk-verify wait for/expect a DLR that never
+        arrives. Pass True explicitly only for a test that specifically
+        targets billing-DLR verification.
         """
         if not self.env.dlr_verify_url:
             raise ValueError(

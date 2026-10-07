@@ -287,7 +287,7 @@ class WhatsAppCampaignCreatePage(BasePage):
     # (not a Tailwind class) used to scope get_preview_summary_text() to
     # just this panel's real content.
     PREVIEW_PANEL_ANCHOR = (
-        "xpath=//button[@wire:click='proceed']"
+        "xpath=//button[@*[name()='wire:click']='proceed']"
         "/ancestor::div[.//p[contains(.,'Campaign Name:')]][1]"
     )
 

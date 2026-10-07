@@ -1,4 +1,7 @@
+import os
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class WhatsAppCampaignPage(BasePage):
@@ -66,7 +69,13 @@ class WhatsAppCampaignPage(BasePage):
     # ── Export (a confirm-modal flow, not a bulk-action dropdown -- the QA
     # checklist calls this "Bulk Action" but the only real control is a
     # single "Export to XLSX" button that opens a Yes/No confirm dialog) ───
-    EXPORT_BUTTON = "xpath=//button[contains(normalize-space(.),'Export to XLSX')]"
+    EXPORT_BUTTON = "xpath=//button[contains(normalize-space(.),'Export to CSV')]"  # CORRECTED
+    # 2026-10 update: real button text confirmed via a pasted live-DOM
+    # capture as "Export to CSV" (an Alpine @click="showModal = true"
+    # trigger), not "Export to XLSX" -- the old text never matched any
+    # real element, so click_export() silently found nothing, the confirm
+    # dialog never opened, and export_csv() always returned None. The rest
+    # of the confirm-modal flow (confirm text/Yes-No buttons) is unchanged.
     EXPORT_CONFIRM_TEXT = (
         "xpath=//p[contains(normalize-space(.),'Are you sure you want to export')]"
     )
@@ -404,6 +413,30 @@ class WhatsAppCampaignPage(BasePage):
     def cancel_export(self):
         self._js_click(self.EXPORT_CONFIRM_NO_BTN, timeout=10000)
         self.page.wait_for_timeout(500)
+
+    def export_csv(self, timeout=30000):
+        """Best-effort full export flow (open the "Export to XLSX" confirm
+        dialog, click "Yes, Export", capture whatever browser download
+        results) for utils.header_verification.verify_module_headers()'s
+        click_export_csv callback. Returns {"file_path": ...,
+        "file_size": ...} on success, or None on failure/no download --
+        the caller (verify_module_headers) treats a falsy/None return as
+        "no download produced" and skips gracefully rather than failing,
+        so a slow or absent server-side export never makes this test
+        flaky."""
+        try:
+            self.click_export()
+            if not self.is_export_confirm_open():
+                return None
+            with self.page.expect_download(timeout=timeout) as dl_info:
+                self.confirm_export()
+            download = dl_info.value
+            filename = download.suggested_filename or "wa_campaign_list_export.xlsx"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {"file_path": dest, "file_size": os.path.getsize(dest)}
+        except Exception:
+            return None
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
 

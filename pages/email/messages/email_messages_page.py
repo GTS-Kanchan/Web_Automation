@@ -76,35 +76,35 @@ class EmailMessagesPage(BasePage):
     )
 
     # ── Filter Pills & Clear ─────────────────────────────────────────────────
-    FILTER_PILLS = "xpath=//div[contains(@wire:key,'email_messages-filter-pill-')]"
-    FILTER_PILL_FROM = "xpath=//div[contains(@wire:key,'email_messages-filter-pill-created_from')]"
-    FILTER_PILL_TO = "xpath=//div[contains(@wire:key,'email_messages-filter-pill-created_to')]"
-    BTN_REMOVE_PILL_FROM = "xpath=//div[contains(@wire:key,'email_messages-filter-pill-created_from')]//button"
-    BTN_REMOVE_PILL_TO = "xpath=//div[contains(@wire:key,'email_messages-filter-pill-created_to')]//button"
+    FILTER_PILLS = "xpath=//div[contains(@*[name()='wire:key'],'email_messages-filter-pill-')]"
+    FILTER_PILL_FROM = "xpath=//div[contains(@*[name()='wire:key'],'email_messages-filter-pill-created_from')]"
+    FILTER_PILL_TO = "xpath=//div[contains(@*[name()='wire:key'],'email_messages-filter-pill-created_to')]"
+    BTN_REMOVE_PILL_FROM = "xpath=//div[contains(@*[name()='wire:key'],'email_messages-filter-pill-created_from')]//button"
+    BTN_REMOVE_PILL_TO = "xpath=//div[contains(@*[name()='wire:key'],'email_messages-filter-pill-created_to')]//button"
     BTN_CLEAR_ALL_FILTERS = (
         "xpath=//button[contains(@x-on:click,'resetAllFilters')]"
         " | //small[contains(text(),'Applied Filters')]/following::button[contains(.,'Clear')][1]"
     )
 
     # ── Sorting ──────────────────────────────────────────────────────────────
-    SORT_PILL_CREATED_AT = "xpath=//span[contains(@wire:key,'email_messages-sorting-pill-created_at')]"
-    BTN_CLEAR_SORT_CREATED_AT = "xpath=//span[contains(@wire:key,'email_messages-sorting-pill-created_at')]//button"
+    SORT_PILL_CREATED_AT = "xpath=//span[contains(@*[name()='wire:key'],'email_messages-sorting-pill-created_at')]"
+    BTN_CLEAR_SORT_CREATED_AT = "xpath=//span[contains(@*[name()='wire:key'],'email_messages-sorting-pill-created_at')]//button"
     BTN_CLEAR_ALL_SORTS = (
-        "xpath=//button[contains(@wire:click,'clearSorts')]"
+        "xpath=//button[contains(@*[name()='wire:click'],'clearSorts')]"
         " | //small[contains(text(),'Applied Sorting')]/following::button[contains(.,'Clear')][1]"
     )
 
-    SORT_BTN_CREATED_AT = "xpath=//th[contains(.,'Created At')]//button | //button[contains(@wire:click,\"sortBy('created_at')\")]"
+    SORT_BTN_CREATED_AT = "xpath=//th[contains(.,'Created At')]//button | //button[contains(@*[name()='wire:click'],\"sortBy('created_at')\")]"
     SORT_BTN_TO_EMAIL = (
         "xpath=//th[contains(.,'To Email Address')]//button"
-        " | //button[contains(@wire:click,\"sortBy('to_email_address')\") or contains(@wire:click,\"sortBy('to-email-address')\")]"
+        " | //button[contains(@*[name()='wire:click'],\"sortBy('to_email_address')\") or contains(@*[name()='wire:click'],\"sortBy('to-email-address')\")]"
     )
-    SORT_BTN_SOURCE = "xpath=//th[contains(.,'Source')]//button | //button[contains(@wire:click,\"sortBy('source')\")]"
+    SORT_BTN_SOURCE = "xpath=//th[contains(.,'Source')]//button | //button[contains(@*[name()='wire:click'],\"sortBy('source')\")]"
 
     # ── Columns Dropdown ─────────────────────────────────────────────────────
     BTN_COLUMNS = "xpath=//button[contains(.,'Columns') and not(ancestor::table)]"
     COLUMNS_DROPDOWN_MENU = "xpath=//div[@role='menu' or contains(@aria-labelledby,'column-select-menu')]"
-    CHECKBOX_ALL_COLUMNS = "xpath=//div[contains(@wire:key,'columnSelect-selectAll')]//input[@type='checkbox']"
+    CHECKBOX_ALL_COLUMNS = "xpath=//div[contains(@*[name()='wire:key'],'columnSelect-selectAll')]//input[@type='checkbox']"
 
     # ── Table & Records ──────────────────────────────────────────────────────
     TABLE = "#table-email_messages, table"
@@ -123,7 +123,7 @@ class EmailMessagesPage(BasePage):
     # ── Export CSV ───────────────────────────────────────────────────────────
     BTN_EXPORT_CSV = (
         "xpath=//button[contains(normalize-space(.),'Export CSV') and not(ancestor::table)]"
-        " | //button[contains(@wire:click,'confirmExport')]"
+        " | //button[contains(@*[name()='wire:click'],'confirmExport')]"
     )
 
     # ── Row View Action & Modal ──────────────────────────────────────────────
@@ -315,7 +315,7 @@ class EmailMessagesPage(BasePage):
         if pill.is_visible():
             return pill.inner_text().strip()
         # Fallback to any sorting pill
-        any_pill = self.page.locator("xpath=//span[contains(@wire:key,'-sorting-pill-')]").first
+        any_pill = self.page.locator("xpath=//span[contains(@*[name()='wire:key'],'-sorting-pill-')]").first
         return any_pill.inner_text().strip() if any_pill.is_visible() else ""
 
     def clear_sorting(self):

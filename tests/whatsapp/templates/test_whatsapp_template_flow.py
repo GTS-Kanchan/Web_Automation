@@ -69,6 +69,8 @@ from datetime import date, timedelta
 import pytest
 
 from pages.whatsapp.whatsapp_template_page import WhatsAppTemplatePage
+from utils.header_verification import verify_module_headers
+from utils.table_date_verification import verify_table_date_columns
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.template]
@@ -317,3 +319,46 @@ def test_TC013_clear_all_sorts(template_page):
     assert template_page.get_applied_sort_pill_text() is None
 
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- WhatsApp Templates. Reuses the shared
+# utils/table_date_verification.py helper (DATE_MODULE_CONFIG["whatsapp_templates"]
+# is this module's single source of truth for its real, confirmed date
+# columns) -- no per-module date logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(template_page):
+    """Validates every populated on-screen date/date-time value in
+    WhatsApp Templates's table is a real dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+    value (UI-only -- no confirmed bulk-export column-name
+    correspondence exists yet for this module, see
+    utils/date_module_config.py's DATE_MODULE_CONFIG["whatsapp_templates"]
+    comment)."""
+    ensure_on_template_page(template_page)
+    verify_table_date_columns(template_page, "WhatsApp Templates", "whatsapp_templates")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Header Verification -- WhatsApp Templates. Reuses the shared
+# utils/header_verification.py engine (EXPECTED_HEADERS["whatsapp_templates"]
+# in utils/header_module_config.py is this module's single source of
+# truth for its real, confirmed UI headers) -- no per-module header
+# logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_header_verification_ui(template_page):
+    """Verifies every expected WhatsApp Templates UI table header is
+    present (case-insensitive, presence-only -- this project's table
+    columns are user-toggleable) and that no header is unexpectedly
+    duplicated. No confirmed export header list exists yet for this
+    module (see utils/header_module_config.py's EXPECTED_HEADERS["whatsapp_templates"]
+    comment), so this degrades to UI-only verification, same convention
+    as this suite's Date/Date-Time Verification tests."""
+    ensure_on_template_page(template_page)
+    verify_module_headers(
+        template_page, "WhatsApp Templates", "whatsapp_templates",
+        click_export_csv=template_page.export_csv,
+    )

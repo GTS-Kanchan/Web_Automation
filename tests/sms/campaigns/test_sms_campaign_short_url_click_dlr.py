@@ -82,6 +82,17 @@ from pages.sms.sms_campaign_page import SMSCampaignPage
 from pages.sms.campaigns.sms_campaign_message_report_page import SmsCampaignMessageReportPage
 from utils.campaign_dlr import verify_campaign_dlrs
 from utils.config import Config
+from utils.dlr_format_validator import (
+    build_click_validation_report,
+    build_dlr_validation_report,
+    extract_click_fields,
+    extract_full_dlr_fields,
+    is_click_event_body,
+    validate_click_correlation,
+    validate_click_format,
+    validate_dlr_correlation,
+    validate_dlr_format,
+)
 from utils.dlr_helpers import DLR_POLL_TIMEOUT_SECONDS, poll_for_dlr
 
 pytestmark = [pytest.mark.sms, pytest.mark.campaign]
@@ -388,15 +399,68 @@ def test_dlr_and_short_url_click_count(api_client, logged_in_page, record_proper
             f"DLR API could not be re-checked for message_id={message_id} after the "
             f"click within {DLR_POLL_TIMEOUT_SECONDS}s."
         )
-    if not fields["received"]:
-        summary.append(("DLR after click", "FAIL"))
-        summary.append(("Final Result", "FAIL"))
-        _print_summary(record_property, summary)
-        pytest.fail(
-            f"DLR for message_id={message_id} is no longer received=true after "
-            f"the URL click. Body: {dlr_body}"
+
+    # Confirmed real behavior (project owner's own sample response body):
+    # after a short URL is clicked, looking up this SAME message_id on
+    # the DLR Receiver returns a "short_link" CLICK-EVENT body instead of
+    # the plain DLR body -- it carries no top-level `received` field at
+    # all, so the plain received=true check below only applies when the
+    # body is still shaped like a plain DLR. Branch on the real shape
+    # rather than assuming one or the other.
+    if is_click_event_body(dlr_body):
+        # ── Click Event Format/Schema Verification -- message_id/contact/
+        #               short_url correlation is dynamic throughout,
+        #               never hard-coded ───────────────────────────────────
+        click_fields = extract_click_fields(dlr_body)
+        expected_contact = short_url_label.split(" (page")[0]
+        click_format_result = validate_click_format(click_fields)
+        click_correlation_result = validate_click_correlation(
+            click_fields,
+            expected_message_id=message_id,
+            expected_contact=expected_contact,
+            expected_short_url=short_url,
         )
-    summary.append(("DLR after click", "PASS"))
+        click_report = build_click_validation_report(click_format_result, click_correlation_result)
+        record_property("post_click_event_validation_report", click_report)
+        print("\n" + click_report)
+        if not click_format_result["passed"] or not click_correlation_result["passed"]:
+            summary.append(("DLR after click", "FAIL"))
+            summary.append(("Final Result", "FAIL"))
+            _print_summary(record_property, summary)
+            pytest.fail(
+                f"Click-event format/correlation validation failed for "
+                f"message_id={message_id} after the click.\n{click_report}\nBody: {dlr_body}"
+            )
+        summary.append(("DLR after click", "PASS"))
+        summary.append(("Click Event Format Validation", "PASS"))
+    else:
+        if not fields["received"]:
+            summary.append(("DLR after click", "FAIL"))
+            summary.append(("Final Result", "FAIL"))
+            _print_summary(record_property, summary)
+            pytest.fail(
+                f"DLR for message_id={message_id} is no longer received=true after "
+                f"the URL click. Body: {dlr_body}"
+            )
+        summary.append(("DLR after click", "PASS"))
+
+        # ── DLR Format/Schema Verification for the post-click DLR (generic
+        #               check -- status/code only checked to EXIST) ──────
+        dlr_fields_full = extract_full_dlr_fields(dlr_body)
+        format_result = validate_dlr_format(dlr_fields_full)
+        correlation_result = validate_dlr_correlation(dlr_fields_full, expected_message_id=message_id)
+        report = build_dlr_validation_report(format_result, correlation_result)
+        record_property("post_click_dlr_validation_report", report)
+        print("\n" + report)
+        if not format_result["passed"] or not correlation_result["passed"]:
+            summary.append(("DLR Format Validation (after click)", "FAIL"))
+            summary.append(("Final Result", "FAIL"))
+            _print_summary(record_property, summary)
+            pytest.fail(
+                f"DLR format/correlation validation failed for message_id={message_id} "
+                f"after the click.\n{report}\nBody: {dlr_body}"
+            )
+        summary.append(("DLR Format Validation (after click)", "PASS"))
 
     summary.append(("Final Result", "PASS"))
     _print_summary(record_property, summary)

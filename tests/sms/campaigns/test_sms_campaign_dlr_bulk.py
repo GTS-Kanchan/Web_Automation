@@ -102,6 +102,10 @@ from pages.sms.sms_campaign_page import SMSCampaignPage
 from pages.sms.sms_campaign_message_report_page import SmsCampaignMessageReportPage
 from pages.sms.sms_message_page import SMSMessagePage
 from utils.config import Config
+from utils.dlr_format_validator import (
+    aggregate_bulk_dlr_validation,
+    build_bulk_dlr_validation_report,
+)
 from utils.dlr_helpers import DLR_POLL_TIMEOUT_SECONDS, poll_bulk_dlr
 from utils.ui_dlr_helpers import find_latest_matching_row
 
@@ -296,8 +300,12 @@ def test_dlr_bulk_verification_for_sms_ui_campaign(api_client, logged_in_page, r
     # ── Step 11-12: build the DLR verification request dynamically and call
     #                POST /api/v1/dlr/verify ONCE, in bulk -- never per
     #                recipient, per the spec's explicit closing instruction ──
+    # require_billing is intentionally left out (defaults to None) --
+    # by default this environment only generates a STATUS DLR for a
+    # message, not a separate billing DLR, so requiring one here made
+    # bulk-verify wait for/expect a DLR that never arrives.
     verify_response, verify_body, results = poll_bulk_dlr(
-        api_client, message_ids, require_billing=True
+        api_client, message_ids
     )
 
     assert verify_response is not None, (
@@ -359,3 +367,32 @@ def test_dlr_bulk_verification_for_sms_ui_campaign(api_client, logged_in_page, r
     # anywhere in the DLR verification body, per the spec's explicit
     # instruction -- this test is scoped to bulk DLR reception and
     # correlation only.
+
+    # ── DLR Format/Schema Verification for every received DLR (generic
+    #               test -- status/code are only checked to EXIST, never
+    #               compared to a specific value). message_ids and
+    #               recipients are the SAME order/length (enforced by the
+    #               asserts above), so zipping them gives a real, dynamic
+    #               message_id -> recipient map for mobile correlation,
+    #               never a hard-coded one ──────────────────────────────
+    expected_mobiles = dict(zip(message_ids, recipients))
+    counts, failures = aggregate_bulk_dlr_validation(message_ids, results, expected_mobiles=expected_mobiles)
+    bulk_report = build_bulk_dlr_validation_report(counts)
+    record_property("DLR Bulk Validation Report", bulk_report)
+    print("\n" + bulk_report)
+    assert counts["invalid_format"] == 0, (
+        f"{counts['invalid_format']} of {len(message_ids)} DLR(s) failed "
+        f"format/schema validation.\n{bulk_report}\nFailures: {failures}"
+    )
+    assert counts["message_id_mismatches"] == 0, (
+        f"{counts['message_id_mismatches']} DLR(s) had a message_id "
+        f"correlation mismatch.\n{bulk_report}\nFailures: {failures}"
+    )
+    assert counts["mobile_mismatches"] == 0, (
+        f"{counts['mobile_mismatches']} DLR(s) had a recipient/mobile "
+        f"correlation mismatch.\n{bulk_report}\nFailures: {failures}"
+    )
+    assert counts["duplicate_dlrs"] == 0, (
+        f"{counts['duplicate_dlrs']} duplicate DLR entry/entries found.\n"
+        f"{bulk_report}\nFailures: {failures}"
+    )

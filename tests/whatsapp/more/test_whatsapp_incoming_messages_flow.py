@@ -57,6 +57,8 @@ Run:
 import pytest
 
 from pages.whatsapp.whatsapp_incoming_messages_page import WhatsappIncomingMessagesPage
+from utils.header_verification import verify_module_headers
+from utils.table_date_verification import verify_table_date_columns
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.messaging]
@@ -393,3 +395,46 @@ def test_bonus_pagination_next_and_goto_page(incoming_messages_page):
     # disabled. click_next_page() and goto_page() above are the real,
     # confirmed mechanics this test cares about, and both already succeeded
     # by this point.
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- WhatsApp Incoming Messages. Reuses the shared
+# utils/table_date_verification.py helper (DATE_MODULE_CONFIG["whatsapp_incoming_messages"]
+# is this module's single source of truth for its real, confirmed date
+# columns) -- no per-module date logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(incoming_messages_page):
+    """Validates every populated on-screen date/date-time value in
+    WhatsApp Incoming Messages's table is a real dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+    value (UI-only -- no confirmed bulk-export column-name
+    correspondence exists yet for this module, see
+    utils/date_module_config.py's DATE_MODULE_CONFIG["whatsapp_incoming_messages"]
+    comment)."""
+    ensure_on_page(incoming_messages_page)
+    verify_table_date_columns(incoming_messages_page, "WhatsApp Incoming Messages", "whatsapp_incoming_messages")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Header Verification -- WhatsApp Incoming Messages. Reuses the shared
+# utils/header_verification.py engine (EXPECTED_HEADERS["whatsapp_incoming_messages"]
+# in utils/header_module_config.py is this module's single source of
+# truth for its real, confirmed UI headers) -- no per-module header
+# logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_header_verification_ui(incoming_messages_page):
+    """Verifies every expected WhatsApp Incoming Messages UI table header is
+    present (case-insensitive, presence-only -- this project's table
+    columns are user-toggleable) and that no header is unexpectedly
+    duplicated. No confirmed export header list exists yet for this
+    module (see utils/header_module_config.py's EXPECTED_HEADERS["whatsapp_incoming_messages"]
+    comment), so this degrades to UI-only verification, same convention
+    as this suite's Date/Date-Time Verification tests."""
+    ensure_on_page(incoming_messages_page)
+    verify_module_headers(
+        incoming_messages_page, "WhatsApp Incoming Messages", "whatsapp_incoming_messages",
+        click_export_csv=incoming_messages_page.export_csv,
+    )

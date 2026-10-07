@@ -30,6 +30,10 @@ from dataclasses import dataclass, field
 
 from pages.sms.sms_campaign_page import SMSCampaignPage
 from pages.sms.sms_campaign_message_report_page import SmsCampaignMessageReportPage
+from utils.dlr_format_validator import (
+    aggregate_bulk_dlr_validation,
+    build_bulk_dlr_validation_report,
+)
 from utils.dlr_helpers import DLR_POLL_INTERVAL_SECONDS, poll_bulk_dlr
 
 DLR_VERIFY_ENABLED = os.getenv("SMS_CAMPAIGN_DLR_VERIFY", "true").strip().lower() not in ("0", "false", "no", "off")
@@ -244,7 +248,44 @@ def verify_campaign_dlrs(page, api_client, campaign_name, record_property=None,
              f"no DLR within {dlr_timeout}s for {len(not_received)} of {len(ids)}: "
              f"{[(m, by_id.get(m)) for m in not_received]}")
 
-    result.summary += [("All DLRs Received", "PASS"), ("Missing DLRs", "0"), ("Final Result", "PASS")]
+    result.summary += [("All DLRs Received", "PASS"), ("Missing DLRs", "0")]
+
+    # ── DLR Format/Schema Verification for every received DLR (generic
+    #               check -- status/code are only checked to EXIST, never
+    #               compared to a specific value, per the "Important
+    #               Existing DLR Rule"). This single injection point
+    #               covers every test that calls verify_campaign_dlrs()
+    #               directly or via the `campaign_dlr` fixture ──────────
+    expected_mobiles = {mid: label.split(" (page")[0] for label, mid in message_ids.items()}
+    format_counts, format_failures = aggregate_bulk_dlr_validation(
+        ids, results, expected_mobiles=expected_mobiles
+    )
+    bulk_report = build_bulk_dlr_validation_report(format_counts)
+    _record(record_property, "DLR Format Validation Report", bulk_report)
+    print("\n" + bulk_report)
+    if format_counts["invalid_format"] or format_counts["message_id_mismatches"] or format_counts["mobile_mismatches"] or format_counts["duplicate_dlrs"]:
+        result.summary.append(("DLR Format Validation", "FAIL"))
+        result.summary.append(("Final Result", "FAIL"))
+        for k, v in result.summary:
+            _record(record_property, f"DLR {k}", v)
+        print("\n" + result.summary_text())
+        # Diagnostic: the raw bulk-verify record for the FIRST id,
+        # included directly in the failure message (not just recorded as
+        # a property, which doesn't survive into the HTML report/pasted
+        # traceback) -- this is what confirms the real response shape
+        # when the assumed schema doesn't match, without needing a
+        # separate repro step.
+        sample_id = ids[0] if ids else None
+        sample_entry = results.get(sample_id) if sample_id is not None else None
+        raise CampaignDlrError(
+            f"[{campaign_name}] DLR Format Validation: {format_counts} -- {format_failures}\n"
+            f"Raw bulk-verify entry for message_id={sample_id!r}: {sample_entry!r}\n"
+            f"Full raw bulk-verify response body: {body!r}",
+            result.summary,
+        )
+    result.summary.append(("DLR Format Validation", "PASS"))
+
+    result.summary.append(("Final Result", "PASS"))
     for k, v in result.summary:
         _record(record_property, f"DLR {k}", v)
     print("\n" + result.summary_text())

@@ -84,26 +84,37 @@ def extract_message_id_from_send_response(send_response_body: dict) -> Optional[
 
 def extract_dlr_fields(dlr_body: Any) -> dict:
     """Returns {"received": ..., "message_id": ..., "correlation_id": ...}
-    from a DLR API response body, checking the top level first and then
-    a nested `data` object. Any field not found is None -- see this
-    module's docstring for why nothing here is guessed beyond what was
-    explicitly confirmed."""
+    from a DLR API response body, checking the top level first, then a
+    nested "dlr" object, then a nested "data" object. Any field not
+    found is None -- see this module's docstring for why nothing here
+    is guessed beyond what was explicitly confirmed.
+
+    The nested "dlr" object is CONFIRMED real (project owner, live GET
+    {dlr_base_url}/api/v1/dlr/{message_id} response -- see utils/
+    dlr_format_validator.py::extract_full_dlr_fields()'s matching
+    note): correlation_id in particular sometimes only lives under
+    "dlr" rather than at the top level."""
     result = {"received": None, "message_id": None, "correlation_id": None}
     if not isinstance(dlr_body, dict):
         return result
 
     def _fill_from(obj: dict) -> None:
         for key in result:
-            if key in obj:
+            if result[key] is None and key in obj:
                 result[key] = obj[key]
 
+    # Nested "dlr" wins over the top level for correlation_id when both
+    # are present (same priority as utils/dlr_format_validator.py::
+    # extract_full_dlr_fields() -- see its docstring); "received" only
+    # ever lives at the top level, so order doesn't affect it. "data"
+    # is a lower-priority fallback.
+    nested_dlr = dlr_body.get("dlr")
+    if isinstance(nested_dlr, dict):
+        _fill_from(nested_dlr)
     _fill_from(dlr_body)
-    nested = dlr_body.get("data")
-    if isinstance(nested, dict):
-        # Only fill in whatever the top level didn't already have.
-        for key in result:
-            if result[key] is None and key in nested:
-                result[key] = nested[key]
+    nested_data = dlr_body.get("data")
+    if isinstance(nested_data, dict):
+        _fill_from(nested_data)
     return result
 
 
@@ -192,7 +203,7 @@ def poll_bulk_dlr(
     api_client,
     message_ids: list,
     expected_status: Optional[str] = "DELIVERED",
-    require_billing: Optional[bool] = True,
+    require_billing: Optional[bool] = None,
     timeout_seconds: int = DLR_POLL_TIMEOUT_SECONDS,
     interval_seconds: int = DLR_POLL_INTERVAL_SECONDS,
 ):
@@ -200,6 +211,13 @@ def poll_bulk_dlr(
     Polls POST {dlr_base_url}/api/v1/dlr/verify with the full
     `message_ids` list until every one of them shows received=true (or
     the timeout elapses).
+
+    require_billing defaults to None (left out of the request body) --
+    confirmed real behavior (project owner): by default this environment
+    only generates/receives the STATUS DLR for a message, not a separate
+    billing DLR, so requiring one (require_billing=True) made bulk-verify
+    wait for/expect a DLR that never arrives. Pass True explicitly only
+    for a test that specifically targets billing-DLR verification.
 
     The bulk-verify test-case spec's own step list doesn't include an
     explicit "wait for the DLR to be generated" step the way the
@@ -242,3 +260,89 @@ def poll_bulk_dlr(
         time.sleep(interval_seconds)
 
     return verify_response, verify_body, results
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# DLR verification + format/schema check, shared by every "success" send
+# test in this suite (added on top of each endpoint's existing status-
+# code/response-shape assertions, per the project owner's instruction to
+# add DLR verification + DLR format checking to every success API test,
+# not just the dedicated *_dlr.py test files) -- as well as reused
+# internally by this module's own callers. Both helpers run the SAME
+# generic (no expected_status/expected_code) format check as the
+# dedicated DLR tests, preserving the existing "don't fail a DLR test
+# merely because status/provider_status/status_code differs" rule.
+# ─────────────────────────────────────────────────────────────────────────
+
+def verify_and_validate_dlr(
+    api_client,
+    identifier: str,
+    expected_mobile: Optional[str] = None,
+    timeout_seconds: int = DLR_POLL_TIMEOUT_SECONDS,
+    interval_seconds: int = DLR_POLL_INTERVAL_SECONDS,
+):
+    """Single-message DLR presence + format/schema verification: polls
+    GET {dlr_base_url}/api/v1/dlr/{identifier} (poll_for_dlr(), unchanged)
+    then runs utils.dlr_format_validator's generic format + correlation
+    check against the real response body.
+
+    Returns (dlr_response, dlr_body, fields, format_result,
+    correlation_result, report) -- `fields` is poll_for_dlr()'s own
+    received/message_id/correlation_id triple (unchanged, for callers
+    that still want the original received=true check), the rest are the
+    new format/schema layer's results.
+    """
+    from utils.dlr_format_validator import (
+        build_dlr_validation_report,
+        extract_full_dlr_fields,
+        validate_dlr_correlation,
+        validate_dlr_format,
+    )
+
+    dlr_response, dlr_body, fields = poll_for_dlr(
+        api_client, identifier, timeout_seconds=timeout_seconds, interval_seconds=interval_seconds,
+    )
+    dlr_fields_full = extract_full_dlr_fields(dlr_body)
+    format_result = validate_dlr_format(dlr_fields_full)
+    correlation_result = validate_dlr_correlation(
+        dlr_fields_full, expected_message_id=identifier, expected_mobile=expected_mobile,
+    )
+    report = build_dlr_validation_report(format_result, correlation_result)
+    return dlr_response, dlr_body, fields, format_result, correlation_result, report
+
+
+def verify_and_validate_dlrs_bulk(
+    api_client,
+    message_ids: list,
+    expected_mobiles: Optional[dict] = None,
+    timeout_seconds: int = DLR_POLL_TIMEOUT_SECONDS,
+    interval_seconds: int = DLR_POLL_INTERVAL_SECONDS,
+):
+    """Bulk DLR presence + format/schema verification for every id in
+    `message_ids`: polls POST {dlr_base_url}/api/v1/dlr/verify
+    (poll_bulk_dlr(), unchanged) then runs utils.dlr_format_validator's
+    aggregate_bulk_dlr_validation() over every result.
+
+    expected_mobiles: optional {message_id: recipient} map for mobile
+    correlation -- only pass keys for ids whose recipient field the
+    test actually confirmed (e.g. a real "number"/"mobile" field in the
+    send response), never a guessed one.
+
+    Returns (verify_response, verify_body, results, counts, failures,
+    report).
+    """
+    from utils.dlr_format_validator import (
+        aggregate_bulk_dlr_validation,
+        build_bulk_dlr_validation_report,
+    )
+
+    verify_response, verify_body, results = poll_bulk_dlr(
+        api_client, message_ids, expected_status=None, require_billing=None,
+        timeout_seconds=timeout_seconds, interval_seconds=interval_seconds,
+    )
+    results = results or {}
+    counts, failures = aggregate_bulk_dlr_validation(
+        message_ids, results, expected_mobiles=expected_mobiles,
+    )
+    report = build_bulk_dlr_validation_report(counts)
+    return verify_response, verify_body, results, counts, failures, report

@@ -21,6 +21,8 @@ import copy
 
 import pytest
 
+from utils.dlr_helpers import verify_and_validate_dlrs_bulk
+
 pytestmark = pytest.mark.sms
 
 
@@ -45,6 +47,29 @@ def test_send_template_valid_payload_returns_success(api_client, test_data, env_
     for entry in body["data"]:
         assert entry["status"] in ("queued", "submitted")
         assert "message_id" in entry
+
+    # ── DLR Verification + DLR Format/Schema check for every sent
+    #               message -- no confirmed recipient/mobile field in
+    #               this endpoint's response, so mobile correlation is
+    #               skipped, not guessed ───────────────────────────────
+    message_ids = [entry["message_id"] for entry in body["data"]]
+    record_property("message_ids", ", ".join(message_ids))
+    verify_response, verify_body, results, counts, failures, report = verify_and_validate_dlrs_bulk(
+        api_client, message_ids,
+    )
+    record_property("DLR Bulk Validation Report", report)
+    print("\n" + report)
+    assert counts["missing_dlrs"] == 0, (
+        f"{counts['missing_dlrs']} of {len(message_ids)} DLR(s) were never "
+        f"received.\n{report}\nFailures: {failures}"
+    )
+    assert counts["invalid_format"] == 0, (
+        f"{counts['invalid_format']} of {len(message_ids)} DLR(s) failed "
+        f"format/schema validation.\n{report}\nFailures: {failures}"
+    )
+    assert counts["message_id_mismatches"] == 0, (
+        f"DLR message_id correlation failed for one or more message(s).\n{report}\nFailures: {failures}"
+    )
 
 
 @pytest.mark.regression
@@ -192,6 +217,28 @@ def test_send_template_multiple_recipients(api_client, test_data, env_config, re
         f"Expected 200 for a multi-recipient template send, got "
         f"{response.status_code}. Body: {response.text}"
     )
+
+    # ── DLR Verification + DLR Format/Schema check for every recipient ──────
+    body = response.json()
+    if isinstance(body.get("data"), list) and body["data"]:
+        message_ids = [entry["message_id"] for entry in body["data"] if entry.get("message_id")]
+        record_property("message_ids", ", ".join(message_ids))
+        verify_response, verify_body, results, counts, failures, report = verify_and_validate_dlrs_bulk(
+            api_client, message_ids,
+        )
+        record_property("DLR Bulk Validation Report", report)
+        print("\n" + report)
+        assert counts["missing_dlrs"] == 0, (
+            f"{counts['missing_dlrs']} of {len(message_ids)} DLR(s) were never "
+            f"received for the multi-recipient template send.\n{report}\nFailures: {failures}"
+        )
+        assert counts["invalid_format"] == 0, (
+            f"{counts['invalid_format']} of {len(message_ids)} DLR(s) failed "
+            f"format/schema validation.\n{report}\nFailures: {failures}"
+        )
+        assert counts["message_id_mismatches"] == 0, (
+            f"DLR message_id correlation failed for one or more message(s).\n{report}\nFailures: {failures}"
+        )
 
 
 @pytest.mark.regression

@@ -63,7 +63,14 @@ import time
 
 import pytest
 
+# pyrefly: ignore [missing-import]
 from pages.whatsapp.whatsapp_message_report_page import WhatsAppMessageReportPage
+from utils.datetime_verification import (
+    DateFormatValidationError,
+    verify_popup_datetime_fields,
+)
+from utils.header_verification import verify_module_headers
+from utils.table_date_verification import verify_table_date_columns
 
 
 pytestmark = [pytest.mark.whatsapp, pytest.mark.report]
@@ -542,3 +549,94 @@ def test_TC030_previous_page(message_report_page):
                      "Next — consistent with there being only one page of "
                      "results under the current filter/search state.")
     ensure_on_report_page(message_report_page)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification -- WhatsApp Messages. Reuses the shared
+# utils/table_date_verification.py helper (DATE_MODULE_CONFIG["whatsapp_messages"]
+# is this module's single source of truth for its real, confirmed date
+# columns) -- no per-module date logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_date_datetime_verification_ui_format(message_report_page):
+    """Validates every populated on-screen date/date-time value in
+    WhatsApp Messages's table is a real dd-mm-yyyy / dd-mm-yyyy hh:mm:ss
+    value (UI-only -- no confirmed bulk-export column-name
+    correspondence exists yet for this module, see
+    utils/date_module_config.py's DATE_MODULE_CONFIG["whatsapp_messages"]
+    comment)."""
+    ensure_on_report_page(message_report_page)
+    verify_table_date_columns(message_report_page, "WhatsApp Messages", "whatsapp_messages")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Header Verification -- WhatsApp Messages. Reuses the shared
+# utils/header_verification.py engine (EXPECTED_HEADERS["whatsapp_messages"]
+# in utils/header_module_config.py is this module's single source of
+# truth for its real, confirmed UI headers) -- no per-module header
+# logic duplicated here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.regression
+def test_header_verification_ui(message_report_page):
+    """Verifies every expected WhatsApp Messages UI table header is
+    present (case-insensitive, presence-only -- this project's table
+    columns are user-toggleable) and that no header is unexpectedly
+    duplicated. No confirmed export header list exists yet for this
+    module (see utils/header_module_config.py's EXPECTED_HEADERS["whatsapp_messages"]
+    comment), so this degrades to UI-only verification, same convention
+    as this suite's Date/Date-Time Verification tests."""
+    ensure_on_report_page(message_report_page)
+    verify_module_headers(
+        message_report_page, "WhatsApp Messages", "whatsapp_messages",
+        click_export_csv=message_report_page.export_csv,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Date/Date-Time Verification — Message View popup (Timeline section)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_date_datetime_verification_message_view_popup(message_popup):
+    """Opens the Message View popup on the current first table row and
+    validates every populated Timeline date/date-time field against this
+    project's two accepted formats (dd-mm-yyyy hh:mm:ss / dd-mm-yyyy),
+    confirming each is also a real, calendar-valid date/time (not merely
+    format-shaped). The only Timeline fields CONFIRMED to exist in this
+    popup's real markup are Created, Sent, Delivered and Read (see this
+    module's own TC023-026 above, and WhatsAppMessageReportPage's class
+    docstring) -- there is no "Failed"/"Submitted"/"Received" Timeline
+    row here, so none is invented. Not hardcoded to a single field: every
+    one of the four real fields is captured and checked. Each Timeline
+    row is individually conditional in the popup's own template (per-row
+    Blade if-blocks, confirmed via a real DOM capture) -- a field the
+    message hasn't reached yet (e.g. "Delivered"/"Read" before that event
+    occurs) is simply absent from the popup's DOM, so
+    get_modal_timeline_field() returns None for it; that is normalized to
+    "" below so it is skipped as blank, never treated as a format
+    violation, same as every other popup-date test in this project.
+    Non-date fields (Contact Number, Category Type, Message Content,
+    Basic/WABA/Template/Campaign Information) are never touched by this
+    check at all. Reuses the SAME verify_popup_datetime_fields() utility
+    already used for the RCS Messages View popup, the RCS Campaign View
+    popup, and the RCS Campaign Report's Message View popup -- no new
+    date-parsing or popup-reading logic is introduced here."""
+    p, row = message_popup
+    fields = {
+        "Created": p.get_modal_timeline_field("Created") or "",
+        "Sent": p.get_modal_timeline_field("Sent") or "",
+        "Delivered": p.get_modal_timeline_field("Delivered") or "",
+        "Read": p.get_modal_timeline_field("Read") or "",
+    }
+    try:
+        normalized = verify_popup_datetime_fields(
+            "WhatsApp", "Messages", "Message View Popup", fields, field_kind="auto",
+        )
+    except DateFormatValidationError as exc:
+        pytest.fail(str(exc))
+    for field_name, value in fields.items():
+        if field_name in normalized:
+            print(f"[WhatsApp Messages / Message View Popup] {field_name}: Date/Date-Time Format Verification PASS ({value!r})")
+        else:
+            print(f"[WhatsApp Messages / Message View Popup] {field_name}: blank/not applicable -- skipped")

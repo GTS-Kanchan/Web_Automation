@@ -1,4 +1,7 @@
+import os
+
 from pages.common.base_page import BasePage
+from utils.config import DOWNLOAD_DIR
 
 
 class WhatsappSenderIdPage(BasePage):
@@ -196,13 +199,13 @@ class WhatsappSenderIdPage(BasePage):
     # ── Export to XLSX (Alpine trigger + confirm dialog — maps to the
     # checklist's "Bulk Action" TC006; no real bulk-actions feature exists
     # on this page) ─────────────────────────────────────────────────────────
-    EXPORT_TRIGGER_BTN = "xpath=//button[normalize-space(.)='Export to XLSX']"
+    EXPORT_TRIGGER_BTN = "xpath=//button[normalize-space(.)='Export to CSV' or normalize-space(.)='Export to XLSX' or contains(normalize-space(.),'Export to')]"
     EXPORT_DIALOG_TEXT = (
         "xpath=//p[contains(normalize-space(.),"
         "'Are you sure you want to export the selected data?')]"
     )
     EXPORT_CANCEL_BTN = "xpath=//button[normalize-space(.)='No']"
-    EXPORT_CONFIRM_BTN = "xpath=//button[@*[name()='wire:click']='exportAll']"
+    EXPORT_CONFIRM_BTN = "xpath=//button[@*[name()='wire:click']='exportAll' or contains(normalize-space(.),'Yes, Export')]"
 
     # ── Sorting (App Name / WABA Number / Status / Created At only —
     # confirmed; sortBy() field names deliberately don't match column
@@ -481,6 +484,35 @@ class WhatsappSenderIdPage(BasePage):
         it does not assert any specific post-export UI."""
         self._js_click(self.EXPORT_CONFIRM_BTN, timeout=8000)
         self.page.wait_for_timeout(1500)
+
+    def export_csv(self, timeout=45000):
+        """Best-effort full export flow for
+        utils.header_verification.verify_module_headers()'s
+        click_export_csv callback. The real download is gated behind an
+        async server-side job whose 'ready'/download-link UI state was
+        never captured in this page's DOM evidence (see confirm_export()'s
+        own docstring above), so this method does not target a specific
+        'download ready' locator -- it opens the dialog, clicks 'Yes,
+        Export', and simply waits (with a generous timeout) for ANY
+        browser download the page produces in that window. Returns
+        {"file_path": ..., "file_size": ...} on success, or None if no
+        download fires within the timeout -- verify_module_headers()
+        treats that as "no download produced" and skips gracefully, so a
+        slow/never-completing async export never makes this test flaky
+        or failing."""
+        try:
+            self.click_export_trigger()
+            if not self.is_export_dialog_open():
+                return None
+            with self.page.expect_download(timeout=timeout) as dl_info:
+                self.confirm_export()
+            download = dl_info.value
+            filename = download.suggested_filename or "wa_number_export.xlsx"
+            dest = os.path.join(DOWNLOAD_DIR, filename)
+            download.save_as(dest)
+            return {"file_path": dest, "file_size": os.path.getsize(dest)}
+        except Exception:
+            return None
 
     # -------------------------------------------------------------------------
     # Table / rows

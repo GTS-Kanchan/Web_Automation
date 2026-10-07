@@ -25,6 +25,8 @@ import copy
 
 import pytest
 
+from utils.dlr_helpers import verify_and_validate_dlr
+
 pytestmark = pytest.mark.sms
 
 
@@ -44,6 +46,34 @@ def test_send_msg_valid_query_params_returns_success(api_client, test_data, env_
     body = response.json()
     assert body.get("status", "").lower() in ("submitted", "queued")
     assert "ref_id" in body
+
+    # ── DLR Verification + DLR Format/Schema check -- ref_id IS this
+    #               endpoint's message_id equivalent for DLR lookup
+    #               (confirmed directly against the real DLR API, same
+    #               as test_sms_send_msg_dlr.py) ───────────────────────
+    ref_id = body["ref_id"]
+    record_property("ref_id", ref_id)
+    dlr_response, dlr_body, fields, format_result, correlation_result, report = verify_and_validate_dlr(
+        api_client, ref_id,
+    )
+    record_property("DLR Validation Report", report)
+    print("\n" + report)
+    assert dlr_response is not None and dlr_response.status_code == 200 and dlr_body is not None, (
+        f"DLR API could not be reached/did not return a valid body for "
+        f"ref_id={ref_id}. Response: {getattr(dlr_response, 'text', None)}"
+    )
+    assert fields["received"] is True, (
+        f"DLR was not received for ref_id={ref_id} "
+        f"(received={fields['received']!r}). Body: {dlr_body}"
+    )
+    assert format_result["passed"], (
+        f"DLR format/schema validation failed for ref_id={ref_id}: "
+        f"{format_result['failed_fields']}.\n{report}\nBody: {dlr_body}"
+    )
+    assert correlation_result["passed"], (
+        f"DLR correlation failed for ref_id={ref_id}: "
+        f"{correlation_result['detail']}.\n{report}\nBody: {dlr_body}"
+    )
 
 
 @pytest.mark.regression

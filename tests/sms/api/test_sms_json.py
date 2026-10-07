@@ -22,6 +22,8 @@ import copy
 
 import pytest
 
+from utils.dlr_helpers import verify_and_validate_dlrs_bulk
+
 pytestmark = pytest.mark.sms
 
 
@@ -53,6 +55,26 @@ def test_send_json_real_sample_payload(api_client, test_data, record_property):
             assert entry["status"] in ("queued", "submitted")
             assert "message_id" in entry
 
+        # ── DLR Verification + DLR Format/Schema check for every entry ──────
+        message_ids = [entry["message_id"] for entry in body["data"]]
+        record_property("message_ids", ", ".join(message_ids))
+        verify_response, verify_body, results, counts, failures, report = verify_and_validate_dlrs_bulk(
+            api_client, message_ids,
+        )
+        record_property("DLR Bulk Validation Report", report)
+        print("\n" + report)
+        assert counts["missing_dlrs"] == 0, (
+            f"{counts['missing_dlrs']} of {len(message_ids)} DLR(s) were never "
+            f"received.\n{report}\nFailures: {failures}"
+        )
+        assert counts["invalid_format"] == 0, (
+            f"{counts['invalid_format']} of {len(message_ids)} DLR(s) failed "
+            f"format/schema validation.\n{report}\nFailures: {failures}"
+        )
+        assert counts["message_id_mismatches"] == 0, (
+            f"DLR message_id correlation failed for one or more message(s).\n{report}\nFailures: {failures}"
+        )
+
 
 @pytest.mark.smoke
 def test_send_json_minimal_valid_payload(api_client, test_data, record_property):
@@ -74,6 +96,26 @@ def test_send_json_minimal_valid_payload(api_client, test_data, record_property)
         for entry in body["data"]:
             assert entry["status"] in ("queued", "submitted")
             assert "message_id" in entry
+
+        # ── DLR Verification + DLR Format/Schema check for every entry ──────
+        message_ids = [entry["message_id"] for entry in body["data"]]
+        record_property("message_ids", ", ".join(message_ids))
+        verify_response, verify_body, results, counts, failures, report = verify_and_validate_dlrs_bulk(
+            api_client, message_ids,
+        )
+        record_property("DLR Bulk Validation Report", report)
+        print("\n" + report)
+        assert counts["missing_dlrs"] == 0, (
+            f"{counts['missing_dlrs']} of {len(message_ids)} DLR(s) were never "
+            f"received.\n{report}\nFailures: {failures}"
+        )
+        assert counts["invalid_format"] == 0, (
+            f"{counts['invalid_format']} of {len(message_ids)} DLR(s) failed "
+            f"format/schema validation.\n{report}\nFailures: {failures}"
+        )
+        assert counts["message_id_mismatches"] == 0, (
+            f"DLR message_id correlation failed for one or more message(s).\n{report}\nFailures: {failures}"
+        )
 
 
 @pytest.mark.regression

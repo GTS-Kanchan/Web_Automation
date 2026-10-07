@@ -34,10 +34,8 @@ class SMSCampaignPage(BasePage):
         " | //button[.//svg[contains(@class,'refresh') or contains(@class,'arrow')]]"
     )
     INPUT_SEARCH        = (
-        "input[type='search'],"
-        "input[placeholder*='Search'],"
-        "input[placeholder*='search'],"
-        "input[placeholder*='Campaign']"
+        "xpath=//input[@placeholder='Search Campaign Name' or @*[name()='wire:model.live']='search']"
+        " | //input[contains(@placeholder,'Search Campaign')]"
     )
     NO_RECORDS          = (
         "xpath=//*[contains(text(),'No records') or contains(text(),'no records')"

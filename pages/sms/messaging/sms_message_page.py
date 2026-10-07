@@ -75,6 +75,28 @@ class SMSMessagePage(BasePage):
     # Sender ID filter: wire:model.live.debounce.500ms="filterComponents.sender_i_d"
     FILTER_SENDER_ID = "#sms_messages-filter-sender_i_d"
 
+    # DLT Template ID filter -- CONFIRMED from a real pasted DOM of this
+    # page's filter popover: a plain text input,
+    # wire:model.live.debounce.500ms="filterComponents.dlt_template",
+    # id="sms_messages-filter-dlt_template", label "DLT Template ID".
+    FILTER_DLT_TEMPLATE = "#sms_messages-filter-dlt_template"
+
+    # Received From/To -- CONFIRMED from the SAME real pasted DOM to be a
+    # RICHER widget than a single plain date/datetime input: each wrapper
+    # div (id="sms_messages-filter-created_from-wrapper" /
+    # "...-created_to-wrapper") contains an Alpine x-data component with
+    # a native <input type="date" x-model="date"> PLUS a separate,
+    # adjacent <select x-model="time"> offering 5-minute increments
+    # (00:00, 00:05, ..., 23:55) -- NOT bound directly via wire:model the
+    # way FILTER_FROM_DATE/FILTER_TO_DATE below assume. Both x-model
+    # fields feed updateDateTime(), which calls
+    # $wire.set('filterComponents.created_from'/'created_to', date+'T'+time)
+    # on change -- so setting these two controls (not FILTER_FROM_DATE/
+    # FILTER_TO_DATE) is how to actually drive this filter with both a
+    # date AND a time-of-day bound.
+    FILTER_FROM_WRAPPER = "#sms_messages-filter-created_from-wrapper"
+    FILTER_TO_WRAPPER = "#sms_messages-filter-created_to-wrapper"
+
     # Date range filters: <input type="datetime-local">
     FILTER_FROM_DATE = ("#sms_messages-filter-created_from, "
                          "input[wire\\:model\\.live\\.debounce\\.500ms='filterComponents.created_from']")
@@ -389,6 +411,104 @@ class SMSMessagePage(BasePage):
             self.page.wait_for_timeout(800)   # debounce 500ms
         except Exception:
             pass
+
+    def set_filter_dlt_template(self, value):
+        """DLT Template ID filter -- CONFIRMED real text input (see
+        FILTER_DLT_TEMPLATE's docstring). Same fill()+debounce-wait
+        pattern as set_filter_sender_id() (same
+        wire:model.live.debounce.500ms binding style)."""
+        try:
+            el = self.h.wait_for_element_clickable(self.FILTER_DLT_TEMPLATE, timeout=5000)
+            el.fill("")
+            el.fill(value)
+            self.page.wait_for_timeout(800)  # debounce 500ms
+        except Exception:
+            pass
+
+    def set_filter_status_multi(self, labels):
+        """Sets the Status filter to EXACTLY `labels` -- a list of real
+        option label strings from the confirmed set: 'Sent', 'Pending',
+        'DELIVRD', 'FAILED', 'REJECTED', 'INSUFF-BAL'. CONFIRMED from a
+        real pasted DOM: this is a custom Alpine checkbox dropdown
+        (customMultiSelectDropdown()) backed by a hidden
+        <select multiple id='sms_messages-filter-status'>, with a
+        'Clear' button and one checkbox <li> per status (its <span>
+        holds the exact label text). Each checkbox's toggle() handler
+        calls syncToNative(), which writes the real <option>.selected
+        flags and fires a native 'change' event that Livewire's
+        wire:model.live.debounce.250ms picks up -- so no separate
+        "Apply" step is needed once the checkboxes are set. Clears any
+        existing selection first (via the dropdown's own Clear button)
+        so the result is exactly `labels`, never a leftover union with
+        whatever was previously selected."""
+        self.open_filter_panel()
+        try:
+            trigger = self.h.wait_for_element_clickable(self.FILTER_STATUS_TRIGGER, timeout=8000)
+            trigger.click()
+            self.page.wait_for_timeout(400)
+        except Exception:
+            return
+        status_root = "xpath=//select[@id='sms_messages-filter-status']/.."
+        try:
+            clear_btn = self.page.locator(f"{status_root}//button[normalize-space()='Clear']").first
+            if clear_btn.count() > 0:
+                clear_btn.click(force=True)
+                self.page.wait_for_timeout(300)
+        except Exception:
+            pass
+        for label in labels:
+            try:
+                cb = self.page.locator(
+                    f"{status_root}//li[.//span[normalize-space()='{label}']]//input[@type='checkbox']"
+                ).first
+                cb.click(force=True)
+                self.page.wait_for_timeout(200)
+            except Exception:
+                pass
+        try:
+            self.page.keyboard.press("Escape")
+        except Exception:
+            pass
+        self.page.wait_for_timeout(600)
+
+    def _set_precise_date_time(self, wrapper_selector, date_str, time_str):
+        """date_str: 'YYYY-MM-DD'. time_str: 'HH:MM', MUST be one of the
+        real 5-minute-increment option values confirmed in the filter
+        panel's time <select> (00:00, 00:05, ..., 23:55) -- round to the
+        nearest 5 minutes before calling, an unmatched value silently
+        fails to select anything. CONFIRMED from a real pasted DOM: the
+        date <input type='date'> and the time <select> are both scoped
+        inside wrapper_selector (FILTER_FROM_WRAPPER/FILTER_TO_WRAPPER),
+        neither carries its own id -- only the wrapper div does."""
+        try:
+            date_input = self.page.locator(f"{wrapper_selector} input[type='date']").first
+            date_input.evaluate(
+                "(el, v) => { el.value = v; "
+                "el.dispatchEvent(new Event('input', {bubbles: true})); "
+                "el.dispatchEvent(new Event('change', {bubbles: true})); }",
+                date_str,
+            )
+            self.page.wait_for_timeout(300)
+        except Exception:
+            pass
+        try:
+            self.h.select_option(f"{wrapper_selector} select", value=time_str)
+            self.page.wait_for_timeout(300)
+        except Exception:
+            pass
+
+    def set_filter_received_range(self, from_date, from_time, to_date, to_time):
+        """Received From/To filter, set with BOTH a date and a time of
+        day. from_date/to_date: 'YYYY-MM-DD'. from_time/to_time: 'HH:MM'
+        snapped to a real 5-minute option (see _set_precise_date_time's
+        docstring). This targets the confirmed richer Alpine date+time
+        widget (FILTER_FROM_WRAPPER/FILTER_TO_WRAPPER), NOT the older
+        FILTER_FROM_DATE/FILTER_TO_DATE locators (kept below for
+        backward compatibility with set_filter_date_range(), which is
+        date-only)."""
+        self.open_filter_panel()
+        self._set_precise_date_time(self.FILTER_FROM_WRAPPER, from_date, from_time)
+        self._set_precise_date_time(self.FILTER_TO_WRAPPER, to_date, to_time)
 
     def set_filter_mobile(self, value):
         """Mobile number filter — uses the search box (page searches by mobile)."""
@@ -1010,6 +1130,16 @@ class SMSMessagePage(BasePage):
 
     def get_popup_template_name(self):
         return self._popup_text_by_label(["Template Name", "Template", "DLT Template"])
+
+    def get_popup_dlt_template_id(self):
+        """DLT Template ID, read from the message-details popup. Uses the
+        EXACT label text confirmed real from the Messages page's own
+        filter panel ("DLT Template ID") first, then falls back to the
+        looser keywords get_popup_template_name() already uses, via the
+        same already-confirmed, already-used generic
+        _popup_text_by_label() helper every other popup field getter in
+        this class is built on -- not a new/separately-verified locator."""
+        return self._popup_text_by_label(["DLT Template ID", "DLT Template", "Template ID", "Template"])
 
     def get_popup_message_id(self):
         return self._popup_text_by_label(["Message ID", "Msg ID", "MessageID"])

@@ -26,6 +26,7 @@ from utils.datetime_verification import (
     read_export_datetime_values,
     validate_date_values_format,
     validate_ui_export_dates,
+    verify_popup_datetime_fields,
 )
 from utils.file_validator import (
     EmptyFileError,
@@ -300,31 +301,47 @@ def test_date_datetime_verification_ui_vs_export(campaign_page):
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
-# Date/Date-Time Verification -- Campaign Details Popup. CONFIRMED via a
-# real pasted DOM: heading "Campaign Details", Basic Information shows
-# Created At/Updated At, Scheduling Details shows Scheduled At/Started
-# At/Completed At, each dd-mm-yyyy hh:mm:ss (e.g. "28-09-2026 17:01:28").
-# UI-only format check (no export correspondence for a detail popup),
-# reuses the same utils/datetime_verification.py used everywhere else in
-# this suite.
+# Date/Date-Time Verification -- RCS Campaign View Popup (Campaign
+# Details). CONFIRMED via a real pasted DOM: heading "Campaign Details",
+# Basic Information shows Created At/Updated At, Scheduling Details
+# shows Scheduled At/Started At/Completed At, each observed as
+# dd-mm-yyyy hh:mm:ss (e.g. "28-09-2026 17:01:28") -- field_kind left as
+# "auto" (not forced to "date-time") since this project's accepted-
+# format spec for this check allows EITHER dd-mm-yyyy hh:mm:ss OR a bare
+# dd-mm-yyyy. UI-only (no export correspondence for a detail popup).
+# Uses verify_popup_datetime_fields() -- the same shared, channel/
+# module/component-agnostic popup-field date utility already used for
+# the RCS Messages View popup (see
+# tests/rcs/messaging/test_rcs_message_flow.py), reusable as-is for RCS
+# Campaign Reports, RCS exports, or any other RCS module's named-field
+# date display, not just this one popup.
 # ════════════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.regression
 def test_date_datetime_verification_details_popup(campaign_page):
-    """Opens the first row's Campaign Details popup and validates its
-    Created At/Updated At/Scheduled At/Started At/Completed At date-time
-    fields are each a real, correctly formatted dd-mm-yyyy hh:mm:ss
-    value."""
+    """Opens the first row's Campaign View popup (Campaign Details) and
+    validates every populated date/date-time field -- Created At,
+    Updated At, Scheduled At, Started At, Completed At -- against this
+    project's two accepted formats (dd-mm-yyyy hh:mm:ss / dd-mm-yyyy),
+    confirming each is also a real, calendar-valid date/time (not merely
+    format-shaped). Not hardcoded to a single field: every date field
+    this popup renders is captured and checked; a field the current
+    campaign hasn't reached yet (e.g. "Started At"/"Completed At" before
+    the campaign runs) renders blank and is skipped, same as a
+    genuinely absent value anywhere else in this suite -- never treated
+    as a format violation. Non-date fields in the popup are never
+    touched by this check at all (only the five named date fields below
+    are read)."""
     campaign_page.load_campaign_list()
 
     row_count = len(campaign_page.get_table_rows())
     if row_count == 0:
-        pytest.skip("No RCS Campaign rows visible -- nothing to open a Campaign Details popup for.")
+        pytest.skip("No RCS Campaign rows visible -- nothing to open a Campaign View popup for.")
 
     if not campaign_page.click_view_icon_on_row(0):
         pytest.skip("No View icon on row 0 -- nothing to date-verify.")
     if not campaign_page.is_popup_open():
-        pytest.skip("Campaign Details popup did not open for row 0 -- nothing to date-verify.")
+        pytest.skip("Campaign View popup (Campaign Details) did not open for row 0 -- nothing to date-verify.")
 
     try:
         fields = {
@@ -334,18 +351,17 @@ def test_date_datetime_verification_details_popup(campaign_page):
             "Started At": campaign_page.get_popup_started_at(),
             "Completed At": campaign_page.get_popup_completed_at(),
         }
-        for column, value in fields.items():
-            if not value:
-                # Not every field applies to every campaign (e.g.
-                # "Scheduled At"/"Started At"/"Completed At" may not
-                # apply to a campaign that hasn't reached that stage) --
-                # not a format violation, nothing to check.
-                continue
-            try:
-                validate_date_values_format("Campaign Details Popup", column, [value], field_kind="date-time")
-            except DateFormatValidationError as exc:
-                pytest.fail(str(exc))
-            print(f"[Campaign Details Popup] {column}: Date/Date-Time Format Verification PASS ({value!r})")
+        try:
+            normalized = verify_popup_datetime_fields(
+                "RCS", "Campaign List", "Campaign View Popup", fields, field_kind="auto",
+            )
+        except DateFormatValidationError as exc:
+            pytest.fail(str(exc))
+        for field_name, value in fields.items():
+            if field_name in normalized:
+                print(f"[RCS Campaign List / Campaign View Popup] {field_name}: Date/Date-Time Format Verification PASS ({value!r})")
+            else:
+                print(f"[RCS Campaign List / Campaign View Popup] {field_name}: blank/not applicable -- skipped")
     finally:
         campaign_page.close_popup()
 

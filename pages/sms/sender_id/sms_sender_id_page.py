@@ -818,6 +818,21 @@ class SMSSenderIDPage(BasePage):
         return 3 <= len(sender_id) <= 12
 
     @staticmethod
+    def is_valid_entity_id(entity_id: str) -> bool:
+        """Client-side validation for the Entity ID (DLT) field, shown only
+        for India (IN) senders.
+
+        Rule: 10-19 numeric digits only (project owner, test-case spec
+        SID_012-SID_021) -- no existing validator for this field existed
+        before (only generate_random_entity_id(), a fixed-12-digit test-data
+        generator, which stays unchanged and is still a valid value under
+        this rule)."""
+        import re
+        if not entity_id:
+            return False
+        return bool(re.fullmatch(r"\d{10,19}", entity_id))
+
+    @staticmethod
     def generate_random_entity_id() -> str:
         """Mirrors Java SenderIdPage.generateRandomEntityId() — 12-digit numeric string."""
         import random

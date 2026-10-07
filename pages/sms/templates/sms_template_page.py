@@ -804,10 +804,11 @@ class SMSTemplatePage(BasePage):
     def fill_sample(self, value):
         self.h.clear_and_type(self.FORM_SAMPLE, value)
 
-    def click_save(self):
+    def click_save(self, wait_ms: int = 5000):
         # JS click bypasses any sidebar overlay that may intercept regular clicks
         self._js_click(self.BTN_SAVE)
-        self.page.wait_for_timeout(2000)
+        # Wait for the template creation/save operation to be completed by the server
+        self.page.wait_for_timeout(wait_ms)
 
     def click_form_cancel(self):
         # JS click bypasses any sidebar overlay that may intercept regular clicks
@@ -895,18 +896,26 @@ class SMSTemplatePage(BasePage):
 
     @staticmethod
     def is_valid_template_name(name: str) -> bool:
-        """Template name: 3–100 chars, no leading/trailing spaces."""
+        """Template name: 3-63 chars, no leading/trailing spaces.
+
+        CORRECTED (project owner, real test-case spec TC_07/TC_08/TC_21:
+        62/63 chars accepted, 64+ chars rejected) from an earlier 3-100
+        assumption."""
         if not name or not name.strip():
             return False
         name = name.strip()
-        return 3 <= len(name) <= 100
+        return 3 <= len(name) <= 63
 
     @staticmethod
     def is_valid_dlt_id(dlt_id: str) -> bool:
-        """DLT Template ID: 10–20 digits."""
+        """DLT Template ID: 12-25 digits.
+
+        CORRECTED (project owner, real test-case spec TC_05/TC_16/TC_17:
+        a 25-digit ID accepted, an 11-digit ID rejected) from an earlier
+        10-20 assumption."""
         if not dlt_id:
             return False
-        return dlt_id.isdigit() and 10 <= len(dlt_id) <= 20
+        return dlt_id.isdigit() and 12 <= len(dlt_id) <= 25
 
     @staticmethod
     def generate_dlt_id() -> str:
