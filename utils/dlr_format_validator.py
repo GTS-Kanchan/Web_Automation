@@ -178,7 +178,6 @@ _REQUIRED_NON_EMPTY_FIELDS = (
     "service",
     "sender",
     "mobile",
-    "entity_id",
 )
 _TIMESTAMP_FIELDS = ("submit_at", "dlr_received_at")
 
@@ -188,6 +187,20 @@ _TIMESTAMP_FIELDS = ("submit_at", "dlr_received_at")
 # can happen before a template is ever assigned, so template_id is only
 # required on a non-REJECTED DLR (see the dedicated "template_id"
 # branch in validate_dlr_format() below).
+#
+# entity_id moved OUT of _REQUIRED_NON_EMPTY_FIELDS (project owner,
+# live run 2026-10, test_send_json_real_sample_payload): NONE of that
+# payload's 6 entries supply an entity_id at all (config/sms_api/
+# test_data.yaml -- sms_json.real_sample_payload), yet 3 of the 6 real
+# DLRs still came back with entity_id populated anyway (apparently
+# auto-attached per-sender/account registration) while the other 3 came
+# back blank -- both are real, both DELIVERED. entity_id is therefore
+# NOT something a DLR always carries; it depends on whether the
+# sender/account has one registered, which this validator has no way
+# to know from the DLR body alone. Per project-owner decision, it is
+# now optional everywhere (see the dedicated "entity_id" branch in
+# validate_dlr_format() below) -- never required, whatever value is
+# present is still reported for visibility.
 _CONDITIONALLY_REQUIRED_FIELDS = ("template_id",)
 
 # Billing-only fields -- confirmed real behavior (project owner): by
@@ -383,6 +396,15 @@ def validate_dlr_format(
             else:
                 ok = not _is_blank(value)
                 detail = "PASS" if ok else "missing/empty template_id"
+        elif key == "entity_id":
+            # Optional everywhere (project owner decision, 2026-10 --
+            # see the comment above _REQUIRED_NON_EMPTY_FIELDS): whether
+            # a DLR carries an entity_id depends on sender/account
+            # registration, not on anything this validator can derive
+            # from the DLR body -- missing/blank always passes, a
+            # present value is still reported for visibility.
+            ok = True
+            detail = "PASS" if not _is_blank(value) else "Not Applicable (no entity_id attached)"
         elif key in _REQUIRED_NON_EMPTY_FIELDS:
             ok = not _is_blank(value)
             detail = "PASS" if ok else f"missing/empty {key}"
@@ -416,6 +438,19 @@ def validate_dlr_format(
         else:  # pragma: no cover - defensive, ALL_DLR_FIELDS is exhaustive above
             ok = not _is_blank(value)
             detail = "PASS" if ok else f"missing/empty {key}"
+
+        # Type check -- every field in the two confirmed baseline DLR
+        # payloads (module docstring) is a JSON STRING whenever it's
+        # present at all, including the numeric-looking ones (code
+        # "000"/"456", units "1") -- never a bare number or boolean.
+        # Whatever the field-specific check above decided, a non-blank
+        # value that isn't a str is still a format defect and fails
+        # here, even if that check itself passed (e.g. units="1" vs
+        # units=1 -- both numeric, only the first is a valid DLR
+        # value).
+        if ok and not _is_blank(value) and not isinstance(value, str):
+            ok = False
+            detail = f"{key}={value!r} is not a string (type={type(value).__name__})"
 
         fields[key] = {"status": "PASS" if ok else "FAIL", "value": value, "detail": detail}
         if not ok:
@@ -488,6 +523,8 @@ def build_dlr_validation_report(format_result: dict, correlation_result: dict) -
             value_text = "PASS / N/A (status DLR)"
         elif key == "template_id" and field["status"] == "PASS" and field["detail"] == "Not Applicable (REJECTED DLR)":
             value_text = "PASS / N/A (REJECTED DLR)"
+        elif key == "entity_id" and field["status"] == "PASS" and field["detail"] == "Not Applicable (no entity_id attached)":
+            value_text = "PASS / N/A (no entity_id attached)"
         else:
             value_text = field["status"]
         lines.append(f"{label.ljust(width)} : {value_text}")
@@ -505,18 +542,39 @@ def build_dlr_validation_report(format_result: dict, correlation_result: dict) -
 # Bulk POST /dlr/verify format/schema validation -- CONFIRMED REAL SHAPE
 # ---------------------------------------------------------------------------
 #
-# Confirmed real per-entry shape of a bulk /dlr/verify result (see module
-# docstring for how this was confirmed):
+# Real per-entry shape of a bulk /dlr/verify result, re-confirmed across
+# 10+ independent live runs (2026-10) spanning click-tracking, OTP,
+# transactional and promotional campaigns -- every single one, INCLUDING
+# the dedicated short-URL-click test (test_sms_campaign_short_url_click_
+# dlr.py), came back as:
 #
 #   {"message_id": "...:1", "received": true, "status": "DELIVERED",
 #    "provider_status": "DELIVRD", "status_code": "000",
 #    "source": "DEFAULT_SMS", "billed": false, "clicked": false,
-#    "matched": true}
+#    "dlr": {... classic single-DLR schema, same shape/nesting as the
+#            single-message GET /dlr/{id} endpoint's own "dlr" object ...}}
 #
-# This is a DIFFERENT, FLAT shape from the single-DLR schema above --
-# there is no nested "data" object, and none of service/sender/mobile/
-# entity_id/template_id/submit_at/dlr_received_at/units/correlation_id
-# exist here at all.
+# CORRECTED (2026-10): an earlier version of this module claimed
+# "matched": true was also part of this confirmed shape. It never once
+# appeared in any of the 10+ real responses above -- not even on the
+# click-specific test, where a real click-correlation flag would most
+# plausibly show up. Keeping it required made EVERY bulk-verify-based
+# DLR test in the suite fail on "matched" alone (format/schema otherwise
+# fully valid). "matched" is now optional everywhere (see the dedicated
+# "matched" branch in validate_bulk_verify_format() below) -- never
+# required, whatever value is present (if ever) is still reported.
+#
+# Also newly observed (not previously documented, and not yet validated
+# by this module): each real entry now nests a "dlr" object carrying the
+# classic single-DLR schema, just like the single-message GET /dlr/{id}
+# endpoint. This validator still only checks the FLAT fields below --
+# nothing here currently reads bulk_fields["dlr"] -- call out for a
+# follow-up if that nested object ever needs its own check here too.
+#
+# This is a DIFFERENT, FLAT (at this level) shape from the single-DLR
+# schema above -- none of service/sender/mobile/entity_id/template_id/
+# submit_at/dlr_received_at/units/correlation_id exist at the TOP level
+# here (they live one level down, inside "dlr", unused by this module).
 
 ALL_BULK_VERIFY_FIELDS = (
     "message_id",
@@ -540,11 +598,13 @@ _BULK_VERIFY_REQUIRED_NON_EMPTY_FIELDS = (
     "source",
 )
 
-# received/billed/clicked/matched are booleans in the real response --
-# format-checked for type, not for a specific value (billed/clicked are
+# received/billed/clicked are booleans in the real response -- format-
+# checked for type, not for a specific value (billed/clicked are
 # business-outcome flags, not format defects, except see require_billing
-# below).
-_BULK_VERIFY_BOOLEAN_FIELDS = ("received", "billed", "clicked", "matched")
+# below). "matched" is deliberately NOT in this tuple -- see the
+# dedicated "matched" branch in validate_bulk_verify_format(), which
+# treats it as optional (2026-10 correction, module docstring above).
+_BULK_VERIFY_BOOLEAN_FIELDS = ("received", "billed", "clicked")
 
 _BULK_VERIFY_REPORT_FIELD_ORDER = (
     ("message_id", "Message ID"),
@@ -579,6 +639,7 @@ def validate_bulk_verify_format(
     expected_status: Optional[str] = None,
     expected_code: Optional[str] = None,
     require_billing: Optional[bool] = None,
+    require_click_match: Optional[bool] = None,
 ) -> dict:
     """Validates one bulk-verify entry's fields against the CONFIRMED
     REAL bulk schema (see module docstring) -- NOT the single-DLR
@@ -604,6 +665,14 @@ def validate_bulk_verify_format(
     (default, status DLR) only checks `billed` is a real boolean,
     whatever its value. True (a test specifically targeting billing)
     additionally requires billed is True.
+
+    require_click_match: `matched` is OPTIONAL (2026-10 correction,
+    module docstring above) -- it never appeared in any of 10+ real
+    bulk-verify responses, including the dedicated short-URL-click test.
+    False/None (default) means missing/blank passes; a present value is
+    still type-checked as a boolean. True (a test specifically targeting
+    click-correlation, once/if a real `matched: true` response is ever
+    actually observed) additionally requires it be present and True.
 
     Returns the same shape as validate_dlr_format(): {"fields": {...},
     "passed": bool, "failed_fields": [...]}.
@@ -635,6 +704,20 @@ def validate_bulk_verify_format(
                 detail = "PASS" if ok else f"require_billing=True but billed={value!r}"
             else:
                 detail = "PASS" if ok else f"billed is not a boolean: {value!r}"
+        elif key == "matched":
+            # Optional everywhere by default -- see module docstring and
+            # this function's own docstring (2026-10 correction): never
+            # once observed in a real bulk-verify response. Missing/blank
+            # passes; a present value is still type-checked as a boolean.
+            if require_click_match:
+                ok = isinstance(value, bool) and value is True
+                detail = "PASS" if ok else f"require_click_match=True but matched={value!r}"
+            elif _is_blank(value):
+                ok = True
+                detail = "Not Applicable (not returned by this endpoint)"
+            else:
+                ok = isinstance(value, bool)
+                detail = "PASS" if ok else f"matched is not a boolean: {value!r}"
         elif key in _BULK_VERIFY_BOOLEAN_FIELDS:
             ok = isinstance(value, bool)
             detail = "PASS" if ok else f"{key} is not a boolean: {value!r}"
@@ -644,6 +727,16 @@ def validate_bulk_verify_format(
         else:  # pragma: no cover - defensive, ALL_BULK_VERIFY_FIELDS is exhaustive above
             ok = not _is_blank(value)
             detail = "PASS" if ok else f"missing/empty {key}"
+
+        # Type check -- same rule as validate_dlr_format(): every
+        # NON-boolean field in the confirmed real bulk-verify shape
+        # (message_id/status/provider_status/status_code/source) is a
+        # JSON string whenever present. received/billed/clicked/matched
+        # are excluded -- those are confirmed real booleans and are
+        # already type-checked above as booleans, not strings.
+        if ok and key not in _BULK_VERIFY_BOOLEAN_FIELDS and key != "matched" and not _is_blank(value) and not isinstance(value, str):
+            ok = False
+            detail = f"{key}={value!r} is not a string (type={type(value).__name__})"
 
         fields[key] = {"status": "PASS" if ok else "FAIL", "value": value, "detail": detail}
         if not ok:
@@ -702,6 +795,7 @@ def aggregate_bulk_dlr_validation(
     expected_code: Optional[str] = None,
     correlation_id_required: Optional[bool] = None,
     require_billing: Optional[bool] = None,
+    require_click_match: Optional[bool] = None,
 ):
     """Runs format + correlation validation for EVERY message_id in
     message_ids against its entry in results (a {message_id: <raw
@@ -780,6 +874,7 @@ def aggregate_bulk_dlr_validation(
             expected_status=expected_status,
             expected_code=expected_code,
             require_billing=require_billing,
+            require_click_match=require_click_match,
         )
         corr = validate_bulk_verify_correlation(bulk_fields, expected_message_id=mid)
 

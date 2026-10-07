@@ -318,31 +318,134 @@ def verify_and_validate_dlrs_bulk(
     timeout_seconds: int = DLR_POLL_TIMEOUT_SECONDS,
     interval_seconds: int = DLR_POLL_INTERVAL_SECONDS,
 ):
-    """Bulk DLR presence + format/schema verification for every id in
-    `message_ids`: polls POST {dlr_base_url}/api/v1/dlr/verify
-    (poll_bulk_dlr(), unchanged) then runs utils.dlr_format_validator's
-    aggregate_bulk_dlr_validation() over every result.
+    """DLR presence + format/schema verification for every id in
+    `message_ids`, one message at a time.
+
+    CHANGED (live failures, 2026-10): this used to poll the bulk
+    POST {dlr_base_url}/api/v1/dlr/verify endpoint once for the whole
+    list (poll_bulk_dlr() + aggregate_bulk_dlr_validation()), the same
+    way test_sms_campaign_dlr_bulk.py does for UI-campaign-originated
+    messages -- that path is confirmed working THERE. But every one of
+    this function's own call sites (test_sms_send.py,
+    test_campaign_send.py, test_sms_send_get.py, test_sms_json.py,
+    test_template_send.py) sends via a raw API call
+    (/api/sms/send, /api/sms/campaign/send, /api/sms/send (GET),
+    /api/sms/json, /api/sms/template/send) and started failing with
+    "N of N DLR(s) failed format/schema validation" for every one of
+    them, while the SIBLING single-message *_dlr.py test for each of
+    those same send endpoints (test_sms_send_dlr.py,
+    test_campaign_send_dlr.py, test_sms_send_get_dlr.py,
+    test_sms_json_dlr.py, test_sms_template_send_dlr.py -- all of which
+    poll GET {dlr_base_url}/api/v1/dlr/{message_id} per message instead)
+    keeps passing for the exact same sends. So the bulk /dlr/verify
+    schema (confirmed only against UI-campaign-originated messages) is
+    evidently not reliable for API-send-originated messages, while the
+    single-message GET /dlr/{id} schema is -- this function now takes
+    that as its reference and reuses it directly: for each message_id
+    it runs the SAME poll_for_dlr() + extract_full_dlr_fields() +
+    validate_dlr_format() + validate_dlr_correlation() sequence
+    verify_and_validate_dlr() (above) already uses, one call per
+    message_id, then aggregates every result into the same `counts`
+    keys the bulk path used to produce (missing_dlrs, invalid_format,
+    message_id_mismatches, mobile_mismatches, etc.) so every existing
+    call site's assertions keep working unchanged.
 
     expected_mobiles: optional {message_id: recipient} map for mobile
     correlation -- only pass keys for ids whose recipient field the
     test actually confirmed (e.g. a real "number"/"mobile" field in the
     send response), never a guessed one.
 
-    Returns (verify_response, verify_body, results, counts, failures,
-    report).
+    Returns (last_dlr_response, last_dlr_body, results, counts,
+    failures, report) -- `results` is {message_id: <extracted full DLR
+    fields dict>} (one call's worth, not the raw bulk-verify body,
+    since there no longer is one); `last_dlr_response`/`last_dlr_body`
+    are the final per-message GET /dlr/{id} call's response/body kept
+    for backward-compatible access, not a single bulk response.
     """
     from utils.dlr_format_validator import (
-        aggregate_bulk_dlr_validation,
         build_bulk_dlr_validation_report,
+        extract_full_dlr_fields,
+        validate_dlr_correlation,
+        validate_dlr_format,
     )
 
-    verify_response, verify_body, results = poll_bulk_dlr(
-        api_client, message_ids, expected_status=None, require_billing=None,
-        timeout_seconds=timeout_seconds, interval_seconds=interval_seconds,
-    )
-    results = results or {}
-    counts, failures = aggregate_bulk_dlr_validation(
-        message_ids, results, expected_mobiles=expected_mobiles,
-    )
+    expected_mobiles = expected_mobiles or {}
+    counts = {
+        "total_expected": len(message_ids),
+        "total_received": 0,
+        "valid_format": 0,
+        "invalid_format": 0,
+        "missing_required_fields": 0,
+        "invalid_timestamps": 0,
+        "message_id_mismatches": 0,
+        "mobile_mismatches": 0,
+        "invalid_status": 0,
+        "invalid_code": 0,
+        "missing_correlation_id": 0,
+        "duplicate_dlrs": 0,
+        "missing_dlrs": 0,
+    }
+    failures = []
+    results: dict = {}
+    seen_keys = set()
+    last_dlr_response = None
+    last_dlr_body = None
+
+    # Same schema facts validate_dlr_format() itself uses (module
+    # docstring there) -- inlined here only to bucket a failed field
+    # into the right sub-count, never to re-decide pass/fail.
+    _timestamp_fields = ("submit_at", "dlr_received_at")
+
+    for mid in message_ids:
+        recipient = expected_mobiles.get(mid)
+        dlr_response, dlr_body, fields = poll_for_dlr(
+            api_client, mid, timeout_seconds=timeout_seconds, interval_seconds=interval_seconds,
+        )
+        last_dlr_response, last_dlr_body = dlr_response, dlr_body
+
+        if not fields.get("received"):
+            counts["missing_dlrs"] += 1
+            failures.append((mid, recipient, "DLR not received (single-message poll) within timeout"))
+            continue
+
+        counts["total_received"] += 1
+        dlr_fields_full = extract_full_dlr_fields(dlr_body)
+        results[mid] = dlr_fields_full
+
+        dedup_key = dlr_fields_full.get("message_id") or mid
+        if dedup_key in seen_keys:
+            counts["duplicate_dlrs"] += 1
+            failures.append((mid, recipient, "duplicate DLR entry for this message_id"))
+        seen_keys.add(dedup_key)
+
+        fmt = validate_dlr_format(dlr_fields_full)
+        corr = validate_dlr_correlation(
+            dlr_fields_full, expected_message_id=mid, expected_mobile=recipient,
+        )
+
+        if fmt["passed"]:
+            counts["valid_format"] += 1
+        else:
+            counts["invalid_format"] += 1
+            failed = set(fmt["failed_fields"])
+            if failed & set(_timestamp_fields):
+                counts["invalid_timestamps"] += 1
+            if "status" in failed:
+                counts["invalid_status"] += 1
+            if "code" in failed:
+                counts["invalid_code"] += 1
+            if "correlation_id" in failed:
+                counts["missing_correlation_id"] += 1
+            if failed - set(_timestamp_fields) - {"status", "code", "correlation_id"}:
+                counts["missing_required_fields"] += 1
+            failures.append((mid, recipient, f"DLR format failed: {sorted(failed)}"))
+
+        if not corr["message_id_match"]:
+            counts["message_id_mismatches"] += 1
+            failures.append((mid, recipient, corr["detail"]))
+        if corr["mobile_match"] is False:
+            counts["mobile_mismatches"] += 1
+            failures.append((mid, recipient, corr["detail"]))
+
     report = build_bulk_dlr_validation_report(counts)
-    return verify_response, verify_body, results, counts, failures, report
+    return last_dlr_response, last_dlr_body, results, counts, failures, report

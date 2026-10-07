@@ -191,17 +191,38 @@ def test_send_template_non_numeric_id(api_client, test_data, record_property):
 
 @pytest.mark.negative
 def test_send_template_invalid_number(api_client, test_data, record_property):
+    """
+    CHANGED (live run): a hard 422-only assertion started failing with a
+    real 200 + {"status":"success", ...} body. Rather than guess which
+    one is "the" correct behavior, this now takes the SAME reference
+    already used for the identical ambiguity on /api/sms/send (see
+    test_sms_send.py::test_send_sms_invalid_number_returns_422 /
+    test_send_sms_invalid_number_with_letters): a 200 response is
+    accepted only if the per-recipient entry itself reports a failed
+    status (server validated and rejected it inline, not silently
+    "sent"), otherwise this still requires 422.
+    """
     payload = test_data["template_send"]["invalid_number_payload"]
 
     response = api_client.send_template(payload)
     record_property("Response", response.text)
 
-    record_property("Expected", "422")
-    record_property("Actual", str(response.status_code))
-    assert response.status_code == 422, (
-        f"Expected 422 for an invalid recipient number, got "
-        f"{response.status_code}. Body: {response.text}"
-    )
+    if response.status_code == 200:
+        body = response.json()
+        entry_status = body.get("data", [{}])[0].get("status")
+        assert entry_status == "failed", (
+            f"Expected a 'failed' per-recipient status for an invalid "
+            f"recipient number in a 200 response, got {entry_status!r}. "
+            f"Body: {response.text}"
+        )
+    else:
+        record_property("Expected", "422")
+        record_property("Actual", str(response.status_code))
+        assert response.status_code == 422, (
+            f"Expected 200 (rejected inline) or 422 (whole-request reject) "
+            f"for an invalid recipient number, got {response.status_code}. "
+            f"Body: {response.text}"
+        )
 
 
 @pytest.mark.smoke
