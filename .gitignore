@@ -4,7 +4,7 @@
 
 config/environments/*.env
 !config/environments/*.env.example
-reports/
+/reports/
 
 
 # Python

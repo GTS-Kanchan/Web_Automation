@@ -761,15 +761,26 @@ class TestNonIndiaCountryEntityId:
         _to_list(sender_id_page)
 
     @pytest.mark.regression
-    def test_entity_id_not_retained_after_country_switch(self, sender_id_page):
-        """SID_026: an Entity ID typed while India is selected is not
-        retained after switching away and back to India."""
+    def test_entity_id_retained_after_country_switch(self, sender_id_page):
+        """SID_026: an Entity ID typed while India is selected is RETAINED
+        (not wiped) after switching away and back to India.
+
+        CORRECTED (previously asserted the opposite, an unconfirmed
+        assumption): Entity ID is only hidden/shown based on country --
+        it's a plain visibility toggle, not a value reset -- and Entity ID
+        is not a required field for non-India countries in the first place
+        (see test_entity_id_hidden_for_non_india_country /
+        test_create_non_india_sender_without_entity_id), so there's no app
+        requirement to clear it when the country changes. Confirmed by a
+        real run: the typed value survives India -> United States -> India.
+        """
         _open_create_form(sender_id_page)
         try:
             sender_id_page.select_country("India")
         except Exception:
             pytest.skip("Could not select India — country dropdown locator needs update")
-        sender_id_page.fill_entity_id(SMSSenderIDPage.generate_random_entity_id())
+        entity_id_value = SMSSenderIDPage.generate_random_entity_id()
+        sender_id_page.fill_entity_id(entity_id_value)
         try:
             sender_id_page.select_country("United States")
         except Exception:
@@ -780,9 +791,9 @@ class TestNonIndiaCountryEntityId:
             pytest.skip("Could not re-select India — country dropdown locator needs update")
         sender_id_page.page.wait_for_timeout(500)
         current_value = sender_id_page.page.locator(SMSSenderIDPage.FORM_ENTITY_ID_INPUT).input_value()
-        assert not current_value, (
-            f"Entity ID should be cleared after switching country away and back, "
-            f"got {current_value!r}"
+        assert current_value == entity_id_value, (
+            f"Entity ID should be retained after switching country away and back "
+            f"to India, expected {entity_id_value!r}, got {current_value!r}"
         )
         _to_list(sender_id_page)
 

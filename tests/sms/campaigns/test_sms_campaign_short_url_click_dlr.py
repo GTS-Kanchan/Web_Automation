@@ -57,13 +57,25 @@ NUM_CLICKS times instead (5 by default) and asserts the real value after
 clicking is exactly `initial + NUM_CLICKS`, generalizing the same "no
 more, no less" check the spec applies to one click.
 
-Clicking the short URL (steps 11-13): opened in a NEW Playwright page in
-the same browser context (logged_in_page.context.new_page()) rather than
-navigating logged_in_page itself, so the authenticated dashboard session/
-tab is never disturbed. A genuine browser navigation (page.goto), not a
-raw HTTP request -- matches "click/open the short URL" and lets Playwright's
-own redirect-following confirm "the URL redirects successfully" via the
-final page.url differing from the short URL requested.
+Clicking the short URL (steps 11-13): opened in a dedicated, SEPARATE
+browser context (browser.new_context(ignore_https_errors=True)), not a
+new tab in logged_in_page's own context -- a real end user clicking this
+link from an SMS is anonymous traffic, never meant to carry the admin's
+authenticated session, so giving it its own context is more correct, not
+just a side-effect of the fix below. ignore_https_errors=True was added
+after a real pytest run (with the requestfailed-based diagnostics in
+_goto_with_cert_fallback) proved the short-link host serves a certificate
+that doesn't match its hostname (net::ERR_CERT_COMMON_NAME_INVALID) --
+confirmed as a cert-interstitial problem specifically, not a dead link,
+because manually pasting the same URL into a real Chrome tab (where a
+human can click through the "not private" warning) does increase the
+click count, while Playwright's automated browser has no human to click
+through that interstitial and fails the navigation instead. This context
+is closed right after the clicks, never reused for anything else. A
+genuine browser navigation (page.goto), not a raw HTTP request -- matches
+"click/open the short URL" and lets Playwright's own redirect-following
+confirm "the URL redirects successfully" via the final page.url differing
+from the short URL requested.
 
 DLR-after-click (step 16): re-checks the SAME message_id with
 utils/dlr_helpers.poll_for_dlr() (the standard single-id DLR poll used
@@ -272,7 +284,7 @@ def _read_click_count(report_page, summary, record_property, step_label):
 
 
 @pytest.mark.smoke
-def test_dlr_and_short_url_click_count(api_client, logged_in_page, record_property):
+def test_dlr_and_short_url_click_count(api_client, logged_in_page, browser, record_property):
     # Step 1 (template from .env only, same guard as the sibling test)
     if not TEMPLATE:
         _print_summary(record_property, [("Click Template", "<not set>"), ("Final Result", "FAIL")])
@@ -330,22 +342,46 @@ def test_dlr_and_short_url_click_count(api_client, logged_in_page, record_proper
     summary.append(("Initial click count", str(initial_click_count)))
     record_property("initial_click_count", str(initial_click_count))
 
-    # ── Steps 11-12: click/open the short URL NUM_CLICKS times, each in its
-    #                 own new tab (same browser context, so logged_in_page's
-    #                 session is undisturbed), verifying every single click
-    #                 actually redirects before moving to the next one ─────
+    # ── Steps 11-12: click/open the short URL NUM_CLICKS times. A real
+    #                 end user clicking this link from an SMS is anonymous
+    #                 traffic -- it was never meant to share logged_in_page's
+    #                 authenticated session, so each click now opens in its
+    #                 OWN, separate browser context (not just a new tab in
+    #                 the admin's context), with ignore_https_errors=True.
+    #
+    #                 WHY: a real pytest run proved the short-link host
+    #                 (stqa.gtls.in) serves a certificate that doesn't match
+    #                 its hostname (net::ERR_CERT_COMMON_NAME_INVALID,
+    #                 confirmed via Playwright's own requestfailed event --
+    #                 see _goto_with_cert_fallback's diagnostics). A real,
+    #                 interactive Chrome shows an interstitial warning for
+    #                 that and a human clicks "Proceed anyway" -- manually
+    #                 pasting the same link in a browser tab DOES increase
+    #                 the click count, confirming the link and backend are
+    #                 fine. Playwright's automated browser hits the exact
+    #                 same warning with no human to click through it, so
+    #                 Chromium substitutes its own chrome-error interstitial
+    #                 and the navigation "fails" -- the previous http://
+    #                 fallback never actually fixed this (the server
+    #                 upgrades right back to the same bad https:// cert).
+    #                 ignore_https_errors=True is Playwright's own supported
+    #                 way to do what "Proceed anyway" does: skip certificate
+    #                 validation for this context, scoped ONLY to the
+    #                 short-lived context created for these clicks -- it
+    #                 never touches logged_in_page's own context/session.
     click_target = _navigable_url(short_url)
     had_scheme = bool(re.match(r"^https?://", short_url))
     record_property("short_url_click_target", click_target)
 
-    for click_no in range(1, NUM_CLICKS + 1):
-        # ── Steps 11-12 (with retry) ─────────────────────────────────────
-        last_exc = None
-        used_target = None
-        final_url = None
-        for attempt in range(1, CLICK_NAV_RETRY_ATTEMPTS + 1):
-            click_page = logged_in_page.context.new_page()
-            try:
+    click_context = browser.new_context(ignore_https_errors=True)
+    try:
+        for click_no in range(1, NUM_CLICKS + 1):
+            # ── Steps 11-12 (with retry) ─────────────────────────────────
+            last_exc = None
+            used_target = None
+            final_url = None
+            for attempt in range(1, CLICK_NAV_RETRY_ATTEMPTS + 1):
+                click_page = click_context.new_page()
                 try:
                     used_target = _goto_with_cert_fallback(click_page, click_target, had_scheme)
                     if click_no == 1 and attempt == 1 and used_target != click_target:
@@ -355,35 +391,37 @@ def test_dlr_and_short_url_click_count(api_client, logged_in_page, record_proper
                     break
                 except Exception as exc:
                     last_exc = exc
-            finally:
-                click_page.close()
-            if attempt < CLICK_NAV_RETRY_ATTEMPTS:
-                time.sleep(CLICK_INTER_CLICK_DELAY_SECONDS)
+                finally:
+                    click_page.close()
+                if attempt < CLICK_NAV_RETRY_ATTEMPTS:
+                    time.sleep(CLICK_INTER_CLICK_DELAY_SECONDS)
 
-        if last_exc is not None:
-            summary.append((f"URL clicked ({click_no}/{NUM_CLICKS})", "FAIL"))
-            summary.append(("Final Result", "FAIL"))
-            _print_summary(record_property, summary)
-            pytest.fail(
-                f"Short URL '{short_url}' could not be opened on click {click_no} "
-                f"after {CLICK_NAV_RETRY_ATTEMPTS} attempt(s): {last_exc}"
-            )
+            if last_exc is not None:
+                summary.append((f"URL clicked ({click_no}/{NUM_CLICKS})", "FAIL"))
+                summary.append(("Final Result", "FAIL"))
+                _print_summary(record_property, summary)
+                pytest.fail(
+                    f"Short URL '{short_url}' could not be opened on click {click_no} "
+                    f"after {CLICK_NAV_RETRY_ATTEMPTS} attempt(s): {last_exc}"
+                )
 
-        if click_no == 1:
-            record_property("short_url_final_url", final_url)
-        if final_url.rstrip("/") == used_target.rstrip("/"):
-            summary.append((f"URL redirected ({click_no}/{NUM_CLICKS})", "FAIL"))
-            summary.append(("Final Result", "FAIL"))
-            _print_summary(record_property, summary)
-            pytest.fail(
-                f"Short URL '{short_url}' did not redirect on click {click_no} -- "
-                f"final page URL is identical to the short URL."
-            )
+            if click_no == 1:
+                record_property("short_url_final_url", final_url)
+            if final_url.rstrip("/") == used_target.rstrip("/"):
+                summary.append((f"URL redirected ({click_no}/{NUM_CLICKS})", "FAIL"))
+                summary.append(("Final Result", "FAIL"))
+                _print_summary(record_property, summary)
+                pytest.fail(
+                    f"Short URL '{short_url}' did not redirect on click {click_no} -- "
+                    f"final page URL is identical to the short URL."
+                )
 
-        # ── Step 13: wait for this click event to be processed, and give
-        #             the redirect service the confirmed-needed gap, before
-        #             firing the next click ────────────────────────────────
-        time.sleep(CLICK_INTER_CLICK_DELAY_SECONDS)
+            # ── Step 13: wait for this click event to be processed, and give
+            #             the redirect service the confirmed-needed gap, before
+            #             firing the next click ────────────────────────────────
+            time.sleep(CLICK_INTER_CLICK_DELAY_SECONDS)
+    finally:
+        click_context.close()
     summary.append(("URL clicked", f"PASS ({NUM_CLICKS}x)"))
     summary.append(("URL redirected", f"PASS ({NUM_CLICKS}x)"))
     record_property("clicks_performed", str(NUM_CLICKS))

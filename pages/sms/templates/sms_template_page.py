@@ -1,3 +1,4 @@
+import re
 import os
 import time
 
@@ -523,6 +524,84 @@ class SMSTemplatePage(BasePage):
             self.page.wait_for_timeout(1000)
             return True
         return False
+
+    def get_first_row_template_id(self):
+        """Return the numeric template id backing the first (top) row, read
+        from the row's Edit link (href=".../template/{id}/edit" or
+        data-tooltip-target="tooltip-edit-{id}"). Used to prove an "override"
+        updated the SAME underlying record rather than creating a new one
+        with a different id -- row count and content alone can't tell the
+        two apart if ids aren't compared. Returns None if no row/id found.
+
+        NOTE: this trusts "first row == the row you mean", which only holds
+        if the list isn't currently showing any OTHER row too (e.g. a
+        fuzzy/token-based search surfacing unrelated same-prefix rows).
+        Prefer get_rows_by_exact_name() + get_template_id_from_row() when
+        you need to be sure you're reading the right row's id.
+        """
+        links = self.page.locator(self.ROW_EDIT_BTN)
+        if links.count() == 0:
+            return None
+        href = links.first.get_attribute("href") or ""
+        m = re.search(r"/template/(\d+)(?:/edit)?", href)
+        if m:
+            return m.group(1)
+        tooltip = links.first.get_attribute("data-tooltip-target") or ""
+        m = re.search(r"tooltip-edit-(\d+)", tooltip)
+        if m:
+            return m.group(1)
+        return None
+
+    def get_rows_by_exact_name(self, name):
+        """Locator for <tr> rows that contain a <td> matching `name` exactly
+        (whitespace-normalized). Scoped exact-match guards against the
+        list's own search being fuzzy/token-based and surfacing OTHER rows
+        that merely share a prefix (e.g. many test runs' randomly generated
+        "AutoTmpl_xxxxxx" names all starting with "AutoTmpl_") -- a generic
+        row count or "first row" after search() can't tell those apart from
+        a real second row for THIS template."""
+        return self.page.locator(
+            f"xpath=//table//tbody//tr[td[normalize-space()='{name}']]"
+        )
+
+    def get_template_id_from_row(self, row):
+        """Extract the numeric template id from a SPECIFIC <tr> locator's
+        Edit link/tooltip-target -- scoped to that row, not a document-wide
+        first match. Pair with get_rows_by_exact_name() so the id read is
+        guaranteed to belong to the row you actually mean."""
+        link = row.locator(
+            "xpath=.//a[contains(@href,'/template/') and contains(@href,'/edit')]"
+        )
+        if link.count() > 0:
+            href = link.first.get_attribute("href") or ""
+            m = re.search(r"/template/(\d+)(?:/edit)?", href)
+            if m:
+                return m.group(1)
+        tooltip = row.locator("xpath=.//*[contains(@data-tooltip-target,'tooltip-edit-')]")
+        if tooltip.count() > 0:
+            t = tooltip.first.get_attribute("data-tooltip-target") or ""
+            m = re.search(r"tooltip-edit-(\d+)", t)
+            if m:
+                return m.group(1)
+        return None
+
+    def click_row_edit(self, row):
+        """Click/navigate the Edit action scoped to a SPECIFIC <tr> locator
+        (see get_rows_by_exact_name) rather than the document-wide first
+        Edit link, which a fuzzy/token-based search can make point at the
+        wrong row."""
+        link = row.locator(
+            "xpath=.//a[contains(@href,'/template/') and contains(@href,'/edit')]"
+        )
+        if link.count() == 0:
+            return False
+        href = link.first.get_attribute("href")
+        if href:
+            self.page.goto(href)
+        else:
+            link.first.click(force=True)
+        self.page.wait_for_timeout(2000)
+        return True
 
     def click_first_row_edit(self):
         """Navigate via href — same pattern as SenderID edit."""
