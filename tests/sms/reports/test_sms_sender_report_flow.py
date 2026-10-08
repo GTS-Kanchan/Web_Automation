@@ -291,11 +291,24 @@ def test_sender_report_TC15_table_loads(sender_report_page):
 @pytest.mark.smoke
 def test_sender_report_TC16_columns_present(sender_report_page):
     """TC_16: Expected columns (Duration, Sender, Product, Total Count,
-    etc.) are visible in the table header."""
+    etc.) are visible in the table header.
+
+    Column visibility is persisted client-side (sessionStorage-backed) per
+    account/session, so it can be left in an unexpected state by another
+    test (e.g. TC_14's uncheck/restore) or by a previous session on the
+    same account. Rather than trusting whatever state the session happens
+    to be in, explicitly ensure each expected column is checked in the
+    Columns dropdown before reading the table headers."""
     ensure_on_report_page(sender_report_page)
+    expected = ["duration", "sender", "product", "total count"]
+    not_found = sender_report_page.ensure_columns_checked(expected)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in sender_report_page.get_visible_column_headers()]
-    for expected in ["duration", "sender", "product", "total count"]:
-        assert any(expected in h for h in headers), f"Missing column: {expected}"
+    for expected_col in expected:
+        assert any(expected_col in h for h in headers), f"Missing column: {expected_col}"
 
 
 # ── TC_17-20 — Data Validation Columns (Counts) ──────────────────────────
@@ -467,6 +480,11 @@ def test_ui_default_table_headers_full(sender_report_page):
     EXPECTED_SMS_SENDER_REPORT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_report_page(sender_report_page)
+    not_found = sender_report_page.ensure_columns_checked(EXPECTED_SMS_SENDER_REPORT_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = sender_report_page.get_visible_column_headers()
     for col in EXPECTED_SMS_SENDER_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

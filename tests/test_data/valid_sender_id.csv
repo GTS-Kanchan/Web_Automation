@@ -1,4 +1,4 @@
-Sender ID,Entity ID,Country Code,Description
-AUTOT1,1701158046444780002,IN,Auto test sender 1
-AUTOT2,1701158046444780002,IN,Auto test sender 2
-AUTOTEST3,ENT002,SG,Auto test sender 3
+Sender_ID,Type,Country_Code,Entity_ID
+AUTOT1,Transactional,IN,'1701158046444780002'
+AUTOT2,OTP,IN,'1701158046444780002'
+AUTOTEST3,Promotional,SG,

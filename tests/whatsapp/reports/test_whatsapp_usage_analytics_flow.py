@@ -141,8 +141,14 @@ def test_usage_analytics_TC03_columns_displayed(usage_analytics_page):
     14 columns exist on this report (duration + 13 metrics, NO product/
     identifier columns)."""
     ensure_on_report_page(usage_analytics_page)
+    expected_columns = ["duration", "total", "sent", "delivered"]
+    not_found = usage_analytics_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in usage_analytics_page.get_visible_column_headers()]
-    for expected in ["duration", "total", "sent", "delivered"]:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 

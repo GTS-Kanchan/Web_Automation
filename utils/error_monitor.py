@@ -27,10 +27,12 @@ import os
 import re
 import datetime
 
-# Where error screenshots land
-ERROR_SCREENSHOT_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "reports", "Error_Screenshots"
-)
+from utils.config import REPORTS_DIR
+
+# Where error screenshots land -- <REPORTS_DIR>/Error_Screenshots, the same
+# instance-aware root every other reports/ subdirectory nests under (see
+# utils/config.py's module docstring).
+ERROR_SCREENSHOT_DIR = os.path.join(REPORTS_DIR, "Error_Screenshots")
 os.makedirs(ERROR_SCREENSHOT_DIR, exist_ok=True)
 
 

@@ -1,4 +1,4 @@
-Sender ID,Entity ID,Country Code,Description
-TEST!@#,1701158046444780002,IN,Special chars
-SID$%^&,1701158046444780002,IN,Special chars 2
-ID<>?/,1701158046444780002,IN,Special chars 3
+Sender_ID,Type,Country_Code,Entity_ID
+TEST!@#,Transactional,IN,'1701158046444780002'
+SID$%^&,Transactional,IN,'1701158046444780002'
+ID<>?/,Transactional,IN,'1701158046444780002'

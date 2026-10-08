@@ -1,6 +1,4 @@
-"""constants/email_message_headers.py — Single source of truth for Email Messages
-export CSV expected header names.
-"""
+
 
 EXPECTED_EMAIL_MESSAGE_HEADERS = [
     "To Email Address",

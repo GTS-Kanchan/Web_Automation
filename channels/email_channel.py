@@ -1,4 +1,4 @@
-"""channels/email_channel.py — Email channel composition."""
+
 from channels.base_channel import BaseChannel
 from utils.config import Config
 

@@ -1208,21 +1208,43 @@ class TestUploadEdgeCases:
         sender_id_page.page.wait_for_timeout(2000)
         success = sender_id_page.get_upload_success() or sender_id_page.is_success_toast_shown()
         error = sender_id_page.get_upload_error() or sender_id_page.get_toast_error()
+        # Log what the app actually said at import time -- previously this was
+        # checked only for truthiness (`success or error`) and then discarded,
+        # so a later "missing after import" failure had no record of whether
+        # the app reported success, a partial failure, or something else.
+        print(f"[UploadMixed] Import feedback -- success: {success!r}, error: {error!r}")
         assert success or error, "Mixed file should produce feedback — not silent failure"
         if sender_id_page.is_upload_popup_open():
             sender_id_page.click_cancel_upload()
 
-        sender_id_page.page.wait_for_timeout(2000)
+        # Poll instead of a single fixed wait: if this app processes CSV
+        # imports as a background job rather than inline, 2-4s may not be
+        # enough for valid rows to land in the list, and a prior run showed
+        # ALL three valid rows missing at once (not a partial miss), which
+        # looks more like "still processing" than "app rejected them" --
+        # each attempt only re-checks whatever is still missing so far.
         valid_ids = ["MIXVD1", "MIXVALID2", "MIXVALID3"]
         invalid_ids = ["AB", "TEST!@#"]
-        missing_valid = [sid for sid in valid_ids if not sender_id_page.is_sender_id_present_in_list(sid)]
+        missing_valid = list(valid_ids)
+        max_attempts = 4
+        poll_interval_ms = 4000
+        for attempt in range(1, max_attempts + 1):
+            missing_valid = [sid for sid in missing_valid if not sender_id_page.is_sender_id_present_in_list(sid)]
+            if not missing_valid:
+                break
+            print(f"[UploadMixed] Attempt {attempt}/{max_attempts}: still missing {missing_valid}, "
+                  f"{'retrying' if attempt < max_attempts else 'giving up'}")
+            if attempt < max_attempts:
+                sender_id_page.page.wait_for_timeout(poll_interval_ms)
+
         still_invalid = [sid for sid in invalid_ids if sender_id_page.is_sender_id_present_in_list(sid)]
         if still_invalid:
             print(f"[UploadMixed] Note: invalid row(s) also found in list (no reliable "
                   f"reject signal from this upload path — see class docstring): {still_invalid}")
         assert not missing_valid, (
-            f"Valid sender ID(s) from mixed_valid_invalid.csv NOT found in list after import: "
-            f"{missing_valid}"
+            f"Valid sender ID(s) from mixed_valid_invalid.csv NOT found in list after import "
+            f"(even after {max_attempts} attempts over ~{(max_attempts - 1) * poll_interval_ms / 1000:.0f}s): "
+            f"{missing_valid}. Import feedback at the time was success={success!r}, error={error!r}."
         )
 
     @pytest.mark.regression

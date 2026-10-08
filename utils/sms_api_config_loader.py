@@ -12,9 +12,20 @@ to "switch instances" — either by:
 Auth tokens are resolved with this priority (highest first), so CI/CD
 pipelines never need the token committed to the repo:
 
-  1. Environment variable  SMS_API_TOKEN_<ENVNAME>   (e.g. SMS_API_TOKEN_TESTQA)
-  2. Generic fallback env var  SMS_API_TOKEN
-  3. `auth_token` value in environments.yaml
+  1. The UI's selected-ENV-mapped secret (utils.config.SECRET_ENV_MAPPING,
+     e.g. SMS_API_TOKEN_QA when the real ENV env var is "qa") -- ONLY when
+     ENV is actually set to a mapped value, so the UI and the API/DLR
+     client can never silently resolve a different environment's token
+     from each other (the historical "UI=QA, API=dev" risk -- see
+     scripts/validate_config.py's _VERIFIED_ENV_NAME_PAIRINGS). A
+     standalone API-only run that sets ENV_NAME (not ENV) to something
+     else (e.g. production/malaysia/testqa) is untouched by this -- ENV
+     being unset means this priority level is skipped entirely.
+  2. Environment variable  SMS_API_TOKEN_<ENVNAME>   (e.g. SMS_API_TOKEN_TESTQA)
+  3. Generic fallback env var  SMS_API_TOKEN
+  4. `auth_token` value in environments.yaml (legacy escape hatch -- this
+     should no longer hold a real token; see environments.yaml's own
+     comments)
 """
 
 from __future__ import annotations
@@ -25,6 +36,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from utils.config import SECRET_ENV_MAPPING
+from utils.config import Config as _UIConfig
 
 # Namespaced under config/sms_api/ (not config/environments/, which the
 # main UI suite's utils/config.py already owns for its own .env-per-ENV
@@ -97,10 +111,20 @@ def load_environment_config(cli_env: str | None = None) -> EnvironmentConfig:
 
     env = envs[env_name]
 
-    # Token resolution: per-env var > generic var > yaml value
+    # Token resolution -- see this module's own docstring for the full
+    # priority order. `ui_token` is only even attempted when the real ENV
+    # env var is explicitly set to a SECRET_ENV_MAPPING key (qa/staging):
+    # Config.SMS_API_TOKEN always resolves to SOMETHING (it has its own
+    # legacy fallback), so gating on the raw ENV var -- not on whether
+    # Config.SMS_API_TOKEN happened to be truthy -- is what keeps a
+    # standalone API-only run (ENV unset, only ENV_NAME=production set)
+    # from accidentally picking up a QA/staging secret meant for the UI.
+    explicit_ui_env = os.environ.get("ENV", "").strip().lower()
+    ui_token = _UIConfig.SMS_API_TOKEN if explicit_ui_env in SECRET_ENV_MAPPING else ""
     token_env_var = f"SMS_API_TOKEN_{env_name.upper()}"
     auth_token = (
-        os.environ.get(token_env_var)
+        ui_token
+        or os.environ.get(token_env_var)
         or os.environ.get("SMS_API_TOKEN")
         or env.get("auth_token", "")
     )
@@ -108,8 +132,13 @@ def load_environment_config(cli_env: str | None = None) -> EnvironmentConfig:
     if not auth_token:
         raise ValueError(
             f"No auth token found for environment '{env_name}'. Set "
-            f"{token_env_var} (or SMS_API_TOKEN) as an env var, or fill "
-            f"'auth_token' in environments.yaml."
+            f"SMS_API_TOKEN_{explicit_ui_env.upper()} (when ENV={explicit_ui_env!r}) or "
+            f"{token_env_var} as an environment variable -- never in "
+            f"environments.yaml."
+            if explicit_ui_env in SECRET_ENV_MAPPING else
+            f"No auth token found for environment '{env_name}'. Set "
+            f"{token_env_var} (or SMS_API_TOKEN) as an environment variable -- "
+            f"never in environments.yaml."
         )
 
     base_url = env["base_url"].rstrip("/")

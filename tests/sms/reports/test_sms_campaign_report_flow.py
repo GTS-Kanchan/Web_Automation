@@ -321,8 +321,14 @@ def test_campaign_report_TC17_columns_present(campaign_report_page):
     """TC_17: Expected columns (Duration, Campaign Name, Sender, Product, etc.)
     are visible in the table header."""
     ensure_on_report_page(campaign_report_page)
+    expected_columns = ["duration", "campaign name", "sender", "product"]
+    not_found = campaign_report_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in campaign_report_page.get_visible_column_headers()]
-    for expected in ["duration", "campaign name", "sender", "product"]:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 
@@ -567,6 +573,11 @@ def test_ui_default_table_headers_full(campaign_report_page):
     EXPECTED_SMS_CAMPAIGN_REPORT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_report_page(campaign_report_page)
+    not_found = campaign_report_page.ensure_columns_checked(EXPECTED_SMS_CAMPAIGN_REPORT_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = campaign_report_page.get_visible_column_headers()
     for col in EXPECTED_SMS_CAMPAIGN_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

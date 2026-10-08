@@ -1,7 +1,4 @@
-# test_data.yaml
-# Sample payloads used by the test suite. Keep secrets (real phone numbers,
-# tokens) out of this file if it's committed to a shared/public repo —
-# override sensitive values via env vars in CI instead.
+
 
 sms_send:
   valid_payload:
@@ -14,8 +11,6 @@ sms_send:
     template_id: "123456789012"
     entity_id: "23423423423423"
 
-  # Mirrors a real GTS staging payload — longer entity_id/template_id
-  # than the doc's sample, sent from GTS's own adapter.
   valid_payload_gts_adapter:
     from: "DUMMY"
     to:

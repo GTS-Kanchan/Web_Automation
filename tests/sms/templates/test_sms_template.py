@@ -632,17 +632,48 @@ class TestTemplateOverride:
             template_page.click_save(wait_ms=5000)
             template_page.page.wait_for_timeout(3000)
 
+        def _assert_save_succeeded(step_label):
+            """Both saves were previously trusted blind -- only the SECOND
+            one got any success check at all, and even that check
+            (is_success_toast_shown() or is_template_list_page()) can't
+            distinguish "saved fine" from "validation failed but we're
+            still/again on a page whose URL contains 'template'". Check
+            explicitly for a toast/inline validation error FIRST (the
+            authoritative signal when present), and only fall back to the
+            toast-or-list-page heuristic when no error is visible -- for
+            either save, not just the second. This is what will surface
+            whether a sender (e.g. "dummy") silently requires a DLT ID
+            that use_dlt=False never fills in, instead of that failure
+            only showing up later as a confusing "found 0 rows"."""
+            toast_error = template_page.get_toast_error()
+            validation_errors = template_page.get_validation_errors()
+            if toast_error or validation_errors:
+                pytest.fail(
+                    f"{step_label} save for sender={sender_id!r} name={name!r} "
+                    f"was rejected by the app -- toast error: {toast_error!r}, "
+                    f"inline validation errors: {validation_errors!r}. "
+                    f"(If this is the 'dummy' sender, it may require a DLT/Entity "
+                    f"ID that use_dlt=False never fills in -- see this test's own "
+                    f"docstring.)"
+                )
+            success = template_page.is_success_toast_shown() or template_page.is_template_list_page()
+            assert success, (
+                f"{step_label} save for sender={sender_id!r} name={name!r} did not "
+                f"show a success toast or return to the template list, and no "
+                f"explicit validation/toast error was detected either -- unclear "
+                f"failure, needs investigation."
+            )
+
         # -- First create --
         _to_list(template_page)
         _fill_and_save(original_content)
+        _assert_save_succeeded("First (create)")
         _created.append(name)
 
         # -- Second create: SAME sender + SAME name, different content --
         _to_list(template_page)
         _fill_and_save(updated_content)
-
-        success = template_page.is_success_toast_shown() or template_page.is_template_list_page()
-        assert success, f"Re-submitting sender={sender_id!r} + name={name!r} should succeed (override)"
+        _assert_save_succeeded("Second (override)")
 
         # -- Verify exactly ONE row for this name (override, not a duplicate) --
         _to_list(template_page)

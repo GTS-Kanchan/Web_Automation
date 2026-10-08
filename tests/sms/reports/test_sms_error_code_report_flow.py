@@ -524,6 +524,11 @@ def test_ui_default_table_headers_full(error_code_report_page):
     EXPECTED_SMS_ERROR_CODE_REPORT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_report_page(error_code_report_page)
+    not_found = error_code_report_page.ensure_columns_checked(EXPECTED_SMS_ERROR_CODE_REPORT_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = error_code_report_page.get_visible_column_headers()
     for col in EXPECTED_SMS_ERROR_CODE_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

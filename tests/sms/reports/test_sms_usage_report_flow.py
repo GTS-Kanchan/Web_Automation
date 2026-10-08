@@ -330,8 +330,14 @@ def test_usage_report_TC17_columns_present(usage_report_page):
     """TC_17: Expected columns (Duration, Total Count, Submitted Count,
     etc.) are visible in the table header."""
     ensure_on_report_page(usage_report_page)
+    expected_columns = ["duration", "total count", "submitted count"]
+    not_found = usage_report_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in usage_report_page.get_visible_column_headers()]
-    for expected in ["duration", "total count", "submitted count"]:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 
@@ -577,6 +583,11 @@ def test_ui_default_table_headers_full(usage_report_page):
     EXPECTED_SMS_USAGE_REPORT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_report_page(usage_report_page)
+    not_found = usage_report_page.ensure_columns_checked(EXPECTED_SMS_USAGE_REPORT_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = usage_report_page.get_visible_column_headers()
     for col in EXPECTED_SMS_USAGE_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

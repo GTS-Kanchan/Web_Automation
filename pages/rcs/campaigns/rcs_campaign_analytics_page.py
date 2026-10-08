@@ -340,6 +340,104 @@ class RcsCampaignAnalyticsPage(BasePage):
             self.page.wait_for_timeout(800)
         return True
 
+    def get_column_toggles(self):
+        """Return list of (label_text, checkbox_locator, is_checked) for
+        every checkbox in the Columns panel, scoped to this table's own
+        `{TABLE_NAME}-columnSelect-*` wire:key wrappers (so the select-all
+        toggle and any other page's checkboxes are never included).
+
+        Label text is resolved the same way as the other report pages'
+        column-toggle readers: `for=` attribute on a sibling <label>, an
+        enclosing <label>, a following sibling span/label, and finally
+        the checkbox's own `value` attribute as a last resort -- never
+        assumes a checkbox has no usable label.
+        """
+        self.open_columns_dropdown()
+        result = []
+        try:
+            checkboxes = self.page.locator(self.COLUMN_CHECKBOXES)
+            count = checkboxes.count()
+        except Exception:
+            return result
+        for i in range(count):
+            cb = checkboxes.nth(i)
+            label_text = ""
+            try:
+                cb_id = cb.get_attribute("id") or ""
+                if cb_id:
+                    lbl = self.page.locator(f"label[for='{cb_id}']").first
+                    if lbl.count() > 0:
+                        label_text = lbl.inner_text().strip()
+            except Exception:
+                pass
+            if not label_text:
+                try:
+                    lbl = cb.locator("xpath=ancestor::label[1]").first
+                    label_text = lbl.inner_text().strip()
+                except Exception:
+                    pass
+            if not label_text:
+                try:
+                    lbl = cb.locator(
+                        "xpath=following-sibling::span[1] | following-sibling::label[1]"
+                    ).first
+                    label_text = lbl.inner_text().strip()
+                except Exception:
+                    pass
+            if not label_text:
+                val = cb.get_attribute("value") or ""
+                label_text = val.replace("_", " ").replace("-", " ").title()
+            try:
+                is_checked = cb.is_checked()
+            except Exception:
+                is_checked = False
+            result.append((label_text, cb, is_checked))
+        return result
+
+    def ensure_columns_checked(self, labels):
+        """Make sure each column named in `labels` (case-insensitive,
+        substring match against the Columns panel's label text) is
+        checked, checking it if it is currently unchecked.
+
+        This exists so report-content assertions don't depend on
+        whatever column-visibility state another test left behind in
+        this account's session (sessionStorage-backed, so it survives a
+        plain navigate_to_report() -- see check_column()). Returns the
+        list of requested labels that could not be found/checked, so
+        callers can surface a clear failure instead of asserting blind.
+
+        A label with no matching checkbox at all (a mandatory/always-on
+        column with no toggle) is NOT reported as not-found -- only a
+        checkbox that was found unchecked but could not be clicked is.
+        """
+        wanted = [(label, label.strip().lower()) for label in labels]
+        not_found = []
+        for original_label, needle in wanted:
+            toggles = self.get_column_toggles()
+            match = None
+            for label_text, cb, is_checked in toggles:
+                if needle in label_text.strip().lower():
+                    match = (cb, is_checked)
+                    break
+            if match is None:
+                # No checkbox for this label at all -- it's either a
+                # mandatory/always-visible column (no toggle exists for
+                # it) or a naming mismatch. Either way this method's job
+                # is only to make sure TOGGLEABLE columns are turned on;
+                # whether the column actually appears in the table is
+                # for the caller's own header assertion to decide, so
+                # this is not treated as a failure here.
+                continue
+            cb, is_checked = match
+            if not is_checked:
+                try:
+                    cb.scroll_into_view_if_needed()
+                    cb.click(force=True)
+                    self.page.wait_for_timeout(800)
+                except Exception:
+                    not_found.append(original_label)
+        return not_found
+
     # ── Export ────────────────────────────────────────────────────────────────
 
     def click_export_csv(self, timeout_ms=30000):

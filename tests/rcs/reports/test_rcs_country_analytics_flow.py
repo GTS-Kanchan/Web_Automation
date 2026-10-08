@@ -172,9 +172,15 @@ def test_country_analytics_TC03_columns_displayed(country_analytics_page):
     since the QA sheet's expected result ("All columns are correct") gives
     no literal list to check against."""
     ensure_on_report_page(country_analytics_page)
+    expected_columns = ["duration", "product", "agent", "country code",
+                     "total count", "total charges"]
+    not_found = country_analytics_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in country_analytics_page.get_visible_column_headers()]
-    for expected in ["duration", "product", "agent", "country code",
-                     "total count", "total charges"]:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 
@@ -688,6 +694,11 @@ def test_ui_default_table_headers_full(country_analytics_page):
     EXPECTED_RCS_COUNTRY_ANALYTICS_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     country_analytics_page.navigate_to_report()
+    not_found = country_analytics_page.ensure_columns_checked(EXPECTED_RCS_COUNTRY_ANALYTICS_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = country_analytics_page.get_visible_column_headers()
     for col in EXPECTED_RCS_COUNTRY_ANALYTICS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

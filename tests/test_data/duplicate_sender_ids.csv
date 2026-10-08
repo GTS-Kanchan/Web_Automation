@@ -1,5 +1,5 @@
-Sender ID,Entity ID,Country Code,Description
-DUPTS1,1701158046444780002,IN,Duplicate test 1
-DUPTS1,1701158046444780002,IN,Duplicate test 1 again
-DUPTS2,1701158046444780002,IN,Duplicate test 2
-DUPTEST2,ENT002,SG,Duplicate test 2 again
+Sender_ID,Type,Country_Code,Entity_ID
+DUPTS1,Transactional,IN,'1701158046444780002'
+DUPTS1,Transactional,IN,'1701158046444780002'
+DUPTS2,OTP,IN,'1701158046444780002'
+DUPTEST2,Promotional,SG,

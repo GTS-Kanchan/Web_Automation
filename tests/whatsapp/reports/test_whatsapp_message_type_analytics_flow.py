@@ -125,8 +125,14 @@ def test_message_type_analytics_TC03_columns_displayed(message_type_analytics_pa
     """TC_03: All expected columns are visible and aligned in the table
     header. Asserts against the confirmed live <thead> column set."""
     ensure_on_report_page(message_type_analytics_page)
+    expected_columns = ['duration', 'product', 'waba number', 'message type', 'total']
+    not_found = message_type_analytics_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in message_type_analytics_page.get_visible_column_headers()]
-    for expected in ['duration', 'product', 'waba number', 'message type', 'total']:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 

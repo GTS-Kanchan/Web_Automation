@@ -322,8 +322,14 @@ def test_country_report_TC18_columns_present(country_report_page):
     """TC_18: Expected columns (Duration, Country Code, Product, Total
     Count, etc.) are visible in the table header."""
     ensure_on_report_page(country_report_page)
+    expected_columns = ["duration", "country code", "product", "total count"]
+    not_found = country_report_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in country_report_page.get_visible_column_headers()]
-    for expected in ["duration", "country code", "product", "total count"]:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 
@@ -547,6 +553,11 @@ def test_ui_default_table_headers_full(country_report_page):
     EXPECTED_SMS_COUNTRY_REPORT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_report_page(country_report_page)
+    not_found = country_report_page.ensure_columns_checked(EXPECTED_SMS_COUNTRY_REPORT_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = country_report_page.get_visible_column_headers()
     for col in EXPECTED_SMS_COUNTRY_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

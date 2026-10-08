@@ -380,6 +380,12 @@ def test_tc21_expected_columns_present(status_analytics_page):
     """TC_21: Columns like Duration, Product, Agent, Status, Total Count
     should be visible (CONFIRMED live <thead>)."""
     ensure_on_report_page(status_analytics_page)
+    expected_columns = ["duration", "product", "agent", "status", "total count"]
+    not_found = status_analytics_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = status_analytics_page.get_visible_column_headers()
     joined = " ".join(headers).lower()
     assert "duration" in joined
@@ -562,6 +568,11 @@ def test_ui_default_table_headers_full(status_analytics_page):
     EXPECTED_RCS_STATUS_ANALYTICS_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     status_analytics_page.navigate_to_report()
+    not_found = status_analytics_page.ensure_columns_checked(EXPECTED_RCS_STATUS_ANALYTICS_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = status_analytics_page.get_visible_column_headers()
     for col in EXPECTED_RCS_STATUS_ANALYTICS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

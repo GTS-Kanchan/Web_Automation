@@ -128,8 +128,14 @@ def test_usage_analytics_TC03_columns_displayed(usage_analytics_page):
     """TC_03: All expected columns are visible and aligned in the table
     header (CONFIRMED live <thead>, 14 columns)."""
     ensure_on_report_page(usage_analytics_page)
+    expected_columns = ["duration", "total count", "sent count", "delivered count"]
+    not_found = usage_analytics_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in usage_analytics_page.get_visible_column_headers()]
-    for expected in ["duration", "total count", "sent count", "delivered count"]:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 
@@ -596,6 +602,11 @@ def test_ui_default_table_headers_full(usage_analytics_page):
     EXPECTED_RCS_USAGE_ANALYTICS_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     usage_analytics_page.navigate_to_report()
+    not_found = usage_analytics_page.ensure_columns_checked(EXPECTED_RCS_USAGE_ANALYTICS_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = usage_analytics_page.get_visible_column_headers()
     for col in EXPECTED_RCS_USAGE_ANALYTICS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

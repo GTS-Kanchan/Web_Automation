@@ -1,41 +1,4 @@
-"""
-channels/base_channel.py — the Channel abstraction.
 
-    BaseChannel
-        |
-        +-- SMSChannel
-        +-- WhatsAppChannel
-        +-- RCSChannel
-        +-- EmailChannel
-        +-- <FutureChannel>
-
-What this is (and isn't)
--------------------------
-This suite is 100% UI (Playwright) automation today — there is no existing
-HTTP API client layer for it to wrap. BaseChannel is therefore a
-COMPOSITION point, not a network abstraction: it centralizes the handful of
-things every channel test genuinely needs and would otherwise duplicate --
-
-  * channel-scoped config (credentials, base URL, channel-specific test data
-    like sender IDs / template names, pulled from the single Config class)
-  * worker-safe unique naming, prefixed per-channel (SMS_CAMPAIGN_...,
-    WHATSAPP_CAMPAIGN_..., ...) so two channels' parallel workers can never
-    produce a colliding name even if they happened to use the same prefix
-  * a structured logger pre-tagged with this channel's name
-  * the channel's test-data directory
-
-It does NOT reimplement authentication, waiting, retry, or Playwright
-context handling — those already live in utils/helpers.py (the `Helpers`
-class every page object composes via `self.h`) and conftest.py's
-`module_logged_in_page` / `logged_in_page` fixtures, and BaseChannel does
-not duplicate them. A channel object is handed a Playwright `Page` (already
-logged in) by a fixture; it does not create its own.
-
-Adding a new channel = subclass BaseChannel, set NAME/DATA_SUBDIR, add any
-channel-specific config accessors it needs. See channels/sms_channel.py for
-the reference implementation, and docs/ADDING_A_CHANNEL.md for the full
-walkthrough.
-"""
 from abc import ABC
 import os
 

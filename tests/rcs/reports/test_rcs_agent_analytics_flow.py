@@ -142,9 +142,15 @@ def test_agent_analytics_TC03_columns_displayed(agent_analytics_page):
     """TC_03: All expected columns are visible and aligned in the table
     header."""
     ensure_on_report_page(agent_analytics_page)
+    expected_columns = ["duration", "product", "agent",
+                     "total count", "total charges"]
+    not_found = agent_analytics_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in agent_analytics_page.get_visible_column_headers()]
-    for expected in ["duration", "product", "agent",
-                     "total count", "total charges"]:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 
@@ -600,6 +606,11 @@ def test_ui_default_table_headers_full(agent_analytics_page):
     EXPECTED_RCS_AGENT_ANALYTICS_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     agent_analytics_page.navigate_to_report()
+    not_found = agent_analytics_page.ensure_columns_checked(EXPECTED_RCS_AGENT_ANALYTICS_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = agent_analytics_page.get_visible_column_headers()
     for col in EXPECTED_RCS_AGENT_ANALYTICS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

@@ -1,6 +1,4 @@
-"""constants/email_message_ui_headers.py — Single source of truth for Email Messages
-list page's expected ON-SCREEN (UI) table column header labels.
-"""
+
 
 EXPECTED_EMAIL_MESSAGE_UI_HEADERS = [
     "Action",

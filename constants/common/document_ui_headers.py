@@ -1,6 +1,4 @@
-"""constants/document_ui_headers.py — Single source of truth for the Documents
-page's table column headers and known documents.
-"""
+
 
 EXPECTED_DOCUMENT_UI_HEADERS = [
     "Actions",

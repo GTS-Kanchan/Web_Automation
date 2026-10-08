@@ -106,6 +106,13 @@ def test_tc_sum_003_table_columns(flow_summary_report_page):
     dropped, per this suite's "never guess / never trim confirmed data"
     convention."""
     ensure_on_report_page(flow_summary_report_page)
+    not_found = flow_summary_report_page.ensure_columns_checked(
+        EXPECTED_FLOW_SUMMARY_REPORT_UI_HEADERS
+    )
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = flow_summary_report_page.get_visible_column_headers()
     for col in EXPECTED_FLOW_SUMMARY_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
@@ -643,6 +650,18 @@ def test_ui_default_table_headers_full(flow_summary_report_page):
     this suite's established case-insensitive substring-per-header
     convention."""
     ensure_on_report_page(flow_summary_report_page)
+    not_found = flow_summary_report_page.ensure_columns_checked(
+        EXPECTED_FLOW_SUMMARY_REPORT_UI_HEADERS
+    )
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
+    not_found = flow_summary_report_page.ensure_columns_checked(EXPECTED_FLOW_SUMMARY_REPORT_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = flow_summary_report_page.get_visible_column_headers()
     for col in EXPECTED_FLOW_SUMMARY_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

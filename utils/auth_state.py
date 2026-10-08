@@ -93,12 +93,28 @@ import time
 from utils.config import Config
 from utils.parallel import worker_id
 
-_DEFAULT_STATE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "reports", ".auth", "state.json"
-)
-# Overridable per requirement #14 (AUTH_STATE_PATH env var); defaults to the
-# existing reports/ convention already used for screenshots/logs/downloads.
-STATE_PATH = os.path.abspath(os.getenv("AUTH_STATE_PATH", _DEFAULT_STATE_PATH))
+def _default_state_path() -> str:
+    """reports/.auth/state.json, exactly as before INSTANCE existed --
+    UNLESS Config.INSTANCE is set, in which case the path is scoped to
+    reports/.auth/<ENV>/<INSTANCE>/state.json instead (requirement #8 of
+    the Environment and Instance Configuration work: staging-01's
+    authentication cookies must never be reused against staging-02 or
+    another instance/environment). This is deliberately gated on
+    INSTANCE alone, not on ENV: an ENV-only run (no INSTANCE) must keep
+    writing to the exact same flat path it always has, so existing local
+    and CI invocations that only ever set ENV (or nothing at all) are
+    completely unaffected -- only the new, opt-in INSTANCE layer changes
+    this path at all."""
+    base = os.path.join(os.path.dirname(__file__), "..", "reports", ".auth")
+    if Config.INSTANCE:
+        return os.path.join(base, Config.ENV or "default", Config.INSTANCE, "state.json")
+    return os.path.join(base, "state.json")
+
+
+# Overridable per requirement #14 (AUTH_STATE_PATH env var) -- this always
+# wins over the env/instance-scoped default above, exactly like every
+# other Config value's "runtime env var beats everything" rule.
+STATE_PATH = os.path.abspath(os.getenv("AUTH_STATE_PATH", "") or _default_state_path())
 _LOCK_PATH = STATE_PATH + ".lock"
 # Written (atomically, lock-held) if the one real login attempt itself
 # fails -- see ensure_authenticated_state / reauthenticate_if_still_stale.

@@ -19,8 +19,17 @@ except ImportError:
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "tests", "test_data")
 
-# Column headers for Sender ID import template
-SENDER_ID_HEADERS = ["Sender ID", "Entity ID", "Country Code", "Description"]
+# Column headers for Sender ID import template -- CONFIRMED from a real
+# sample file provided by the user (Sender_ID, Type, Country_Code,
+# Entity_ID). This used to be a DIFFERENT, wrong/guessed schema
+# (["Sender ID", "Entity ID", "Country Code", "Description"]) with no
+# "Type" column at all -- Type (Transactional/OTP/Promotional) is a real
+# required field on the live app's own create-sender-id form
+# (SmsSenderIdPage.select_type()/FORM_TYPE_DROPDOWN), so every CSV built
+# with the old headers was missing a mandatory column. That's the most
+# likely reason rows uploaded via these generators reported upload-level
+# "success" but never actually appeared in the Sender ID list afterwards.
+SENDER_ID_HEADERS = ["Sender_ID", "Type", "Country_Code", "Entity_ID"]
 
 # Column headers for the Template bulk-upload file — must match the live
 # app's actual import format exactly (confirmed against a real sample
@@ -128,14 +137,13 @@ def gen_valid_sender_id_csv(rows):
     _write_csv("valid_sender_id.csv", rows[:3], SENDER_ID_HEADERS)
 
 
-# Column headers for sender_id_sample.csv -- CONFIRMED from a real sample
-# file (Sender_ID, Type, Country_Code, Entity_ID). This is a DIFFERENT
-# schema from SENDER_ID_HEADERS above (that one matches this app's own
-# bulk-import TEMPLATE headers; sender_id_sample.csv is a separate,
-# hand-provided real upload sample used specifically by
-# tests/sms/sender_id/test_sms_sender_id.py's
-# TestUploadSenderIds.test_upload_csv_and_verify_in_list).
-SENDER_ID_SAMPLE_HEADERS = ["Sender_ID", "Type", "Country_Code", "Entity_ID"]
+# sender_id_sample.csv uses the SAME real, confirmed header schema as
+# every other sender-ID upload file now that SENDER_ID_HEADERS itself has
+# been corrected to match it -- kept as its own name (rather than being
+# replaced everywhere by SENDER_ID_HEADERS) only because
+# TestUploadSenderIds.test_upload_csv_and_verify_in_list already refers to
+# it by this name.
+SENDER_ID_SAMPLE_HEADERS = SENDER_ID_HEADERS
 
 
 def sender_id_sample_csv_path():
@@ -237,14 +245,14 @@ def gen_large_file_xlsx():
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(",".join(SENDER_ID_HEADERS) + "\n")
             for i in range(80000):
-                f.write(f"SID{i:06d},ENT001,IN,Description {i}\n")
+                f.write(f"SID{i:06d},Transactional,IN,'1701158046444780002'\n")
         os.replace(tmp_path, final_path)
         return
     wb = Workbook(write_only=True)
     ws = wb.create_sheet()
     ws.append(SENDER_ID_HEADERS)
     for i in range(80000):
-        ws.append([f"SID{i:06d}", "ENT001", "IN", f"Description {i}"])
+        ws.append([f"SID{i:06d}", "Transactional", "IN", "'1701158046444780002'"])
     wb.save(tmp_path)
     os.replace(tmp_path, final_path)
 
@@ -262,7 +270,7 @@ def gen_special_chars_sender_ids_csv(rows):
 
 
 def gen_missing_entity_id_col_csv(rows):
-    incomplete_headers = ["Sender ID", "Country Code", "Description"]
+    incomplete_headers = ["Sender_ID", "Type", "Country_Code"]
     _write_csv("missing_entity_id_col.csv", rows, incomplete_headers)
 
 
@@ -390,46 +398,55 @@ def generate_all(include_large=True):
     # IN requires EXACTLY 6 alphanumeric chars; International (SG/MY/etc.)
     # is 3-12. "AUTOTEST1"/"AUTOTEST2"/"MIXVALID1" (9 chars) used to be
     # tagged IN despite failing that exact-6 rule -- fixed to 6-char IDs.
+    # Entity_ID below follows the REAL confirmed upload format: quoted
+    # (e.g. "'170115804644479'") for India rows, where it's the account's
+    # real DLT-registered entity ID and is required; left BLANK for
+    # non-India rows, where the field doesn't apply at all (CONFIRMED --
+    # the real sample row for a US sender ID has no Entity_ID value
+    # whatsoever, not even a placeholder). Every row also now carries a
+    # real Type value (Transactional/OTP/Promotional), the column that
+    # was missing from this dict entirely before.
+    _IN_ENTITY_ID = "'1701158046444780002'"
     sid = {
         "valid": [
-            ["AUTOT1",   "1701158046444780002", "IN", "Auto test sender 1"],
-            ["AUTOT2",   "1701158046444780002", "IN", "Auto test sender 2"],
-            ["AUTOTEST3", "ENT002", "SG", "Auto test sender 3"],
-            ["AUTOTEST4", "ENT002", "SG", "Auto test sender 4"],
-            ["AUTOTEST5", "ENT003", "MY", "Auto test sender 5"],
+            ["AUTOT1",    "Transactional", "IN", _IN_ENTITY_ID],
+            ["AUTOT2",    "OTP",           "IN", _IN_ENTITY_ID],
+            ["AUTOTEST3", "Promotional",   "SG", ""],
+            ["AUTOTEST4", "Transactional", "SG", ""],
+            ["AUTOTEST5", "OTP",           "MY", ""],
         ],
         "invalid_length": [
-            ["AB",            "1701158046444780002", "IN", "Too short (2 chars)"],
-            ["A",             "1701158046444780002", "IN", "Too short (1 char)"],
-            ["TOOLONGSIDXX",  "1701158046444780002", "IN", "Too long for India (12 chars, needs exactly 6)"],
-            ["VERYLONGID123", "1701158046444780002", "IN", "Too long (13 chars)"],
+            ["AB",            "Transactional", "IN", _IN_ENTITY_ID],
+            ["A",             "Transactional", "IN", _IN_ENTITY_ID],
+            ["TOOLONGSIDXX",  "Transactional", "IN", _IN_ENTITY_ID],
+            ["VERYLONGID123", "Transactional", "IN", _IN_ENTITY_ID],
         ],
         "invalid_chars": [
-            ["TEST!@#", "1701158046444780002", "IN", "Special chars"],
-            ["SID$%^&", "1701158046444780002", "IN", "Special chars 2"],
-            ["ID<>?/",  "1701158046444780002", "IN", "Special chars 3"],
+            ["TEST!@#", "Transactional", "IN", _IN_ENTITY_ID],
+            ["SID$%^&", "Transactional", "IN", _IN_ENTITY_ID],
+            ["ID<>?/",  "Transactional", "IN", _IN_ENTITY_ID],
         ],
         "duplicates": [
-            ["DUPTS1", "1701158046444780002", "IN", "Duplicate test 1"],
-            ["DUPTS1", "1701158046444780002", "IN", "Duplicate test 1 again"],
-            ["DUPTS2", "1701158046444780002", "IN", "Duplicate test 2"],
-            ["DUPTEST2", "ENT002", "SG", "Duplicate test 2 again"],
+            ["DUPTS1",   "Transactional", "IN", _IN_ENTITY_ID],
+            ["DUPTS1",   "Transactional", "IN", _IN_ENTITY_ID],
+            ["DUPTS2",   "OTP",           "IN", _IN_ENTITY_ID],
+            ["DUPTEST2", "Promotional",   "SG", ""],
         ],
         "mixed": [
-            ["MIXVD1",   "1701158046444780002", "IN", "Valid row"],
-            ["MIXVALID2", "ENT001", "SG", "Valid row"],
-            ["AB",        "1701158046444780002", "IN", "Invalid — too short"],
-            ["TEST!@#",   "1701158046444780002", "IN", "Invalid — special chars"],
-            ["MIXVALID3", "ENT002", "MY", "Valid row"],
+            ["MIXVD1",    "Transactional", "IN", _IN_ENTITY_ID],
+            ["MIXVALID2", "Promotional",   "SG", ""],
+            ["AB",        "Transactional", "IN", _IN_ENTITY_ID],
+            ["TEST!@#",   "Transactional", "IN", _IN_ENTITY_ID],
+            ["MIXVALID3", "OTP",           "MY", ""],
         ],
         "missing_col": [
-            ["MISSCOL1", "IN", "Missing entity ID"],
-            ["MISSCOL2", "SG", "Missing entity ID 2"],
+            ["MISSCOL1", "Transactional", "IN"],
+            ["MISSCOL2", "Promotional",   "SG"],
         ],
         "invalid_country": [
-            ["CNTTEST1", "1701158046444780002", "XX", "Invalid country XX"],
-            ["CNTTEST2", "1701158046444780002", "ZZ", "Invalid country ZZ"],
-            ["CNTTEST3", "1701158046444780002", "99", "Invalid country 99"],
+            ["CNTTEST1", "Transactional", "XX", ""],
+            ["CNTTEST2", "Transactional", "ZZ", ""],
+            ["CNTTEST3", "Transactional", "99", ""],
         ],
     }
     # Real bulk-upload rows in the live app's actual import format (provided

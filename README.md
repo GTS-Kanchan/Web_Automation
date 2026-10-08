@@ -372,6 +372,279 @@ pytest tests/sms --headed
 
 ---
 
+## Environment and Instance Configuration
+
+```bash
+# Existing behavior -- unchanged
+pytest tests/sms
+
+# Environment
+ENV=staging pytest tests/sms
+
+# Environment + instance
+ENV=staging INSTANCE=staging-01 pytest tests/sms
+
+# Parallel (the officially supported path for env/instance-scoped reports -- see below)
+ENV=staging INSTANCE=staging-01 \
+PLAYWRIGHT_WORKERS=8 \
+python scripts/run_tests.py tests/sms
+```
+
+Windows PowerShell:
+```powershell
+$env:ENV="staging"
+$env:INSTANCE="staging-01"
+pytest tests\sms
+```
+
+**INSTANCE is additive and opt-in.** Every invocation that predates it --
+plain `pytest tests/sms`, or `ENV=<x> pytest tests/sms` -- keeps working
+exactly as it always has, writing to the exact same flat `reports/`
+directory and `reports/.auth/state.json` it always did. Only an explicit
+`INSTANCE` opts into anything new below. Nothing here requires creating
+an instance file just to run locally with your own `.env`.
+
+### What INSTANCE is for
+
+A real environment (dev/qa/staging) can have more than one deployed
+instance -- two staging servers, two tenants, whatever your team actually
+runs:
+
+```
+DEV
+ ├── dev-01
+ └── dev-02
+
+QA
+ ├── qa-01
+ └── qa-02
+
+STAGING
+ ├── staging-01
+ └── staging-02
+```
+
+`INSTANCE=staging-01` layers `config/instances/staging-01.env` on top of
+`config/environments/staging.env` on top of the root `.env` -- see
+"Configuration precedence" below. A new instance is added through
+configuration only: drop a `config/instances/<name>.env` file containing
+just the values that differ (`BASE_URL`/`API_URL`/`DLR_URL` at minimum --
+never a real password/token/secret in this committed file), and
+`INSTANCE=<name>` picks it up immediately. No test file, page object, or
+pipeline YAML needs to change.
+
+### Configuration precedence
+
+```text
+1. Process/runtime environment variables   (highest)
+2. config/instances/<INSTANCE>.env          -- only when INSTANCE is set
+3. config/environments/<ENV>.env            -- only when ENV is set
+4. root .env
+5. Config's own hardcoded defaults          (lowest)
+```
+
+Each layer is loaded with python-dotenv's `override=False`, so a layer
+can only fill in a value nothing higher-priority already set -- a real
+runtime env var always wins over everything else. Example:
+
+Root `.env`: `BASE_URL=https://default.example.com`
+`config/environments/staging.env`: `BASE_URL=https://testqa.cpaas.globeteleservices.com`
+`config/instances/staging-01.env`: `BASE_URL=https://staging-01.example.com`
+
+```bash
+BASE_URL=https://temporary.example.com \
+ENV=staging INSTANCE=staging-01 pytest tests/sms
+```
+resolves `Config.BASE_URL` to `https://temporary.example.com` -- the
+runtime variable always wins. Drop it and `Config.BASE_URL` resolves to
+the instance file's `https://staging-01.example.com` instead; drop
+`INSTANCE` too and it falls to the environment file's
+`https://testqa.cpaas.globeteleservices.com`; drop `ENV` as well and it
+falls all the way to root `.env`.
+
+`Config` exposes (every existing attribute is unchanged; `INSTANCE` and
+`DLR_URL` are the two new ones):
+```python
+Config.ENV
+Config.INSTANCE
+Config.BASE_URL
+Config.API_URL
+Config.DLR_URL
+Config.VALID_EMAIL
+Config.VALID_PASSWORD
+Config.SMS_API_TOKEN
+Config.HEADLESS
+Config.PLAYWRIGHT_WORKERS
+```
+
+`Config.VALID_EMAIL`/`Config.VALID_PASSWORD`/`Config.SMS_API_TOKEN` are
+resolved from environment variables, never from a committed file -- see
+"Secrets" below.
+
+`Config.DLR_URL` is new and additive -- it does NOT replace or touch
+`utils/sms_api_config_loader.py`'s own, separate `ENV_NAME`-keyed
+`dlr_base_url` resolution (`config/sms_api/environments.yaml`), which the
+SMS API client already used before this feature existed and still
+resolves exactly as it always did. The two systems are independent;
+`config/environments/<ENV>.env` now also sets `ENV_NAME=<matching value>`
+(see that file for which pairing was verified against real hosts) purely
+so `ENV=<x>` keeps the UI and the API-DLR client pointed at the same real
+backend -- a runtime `ENV_NAME` you set yourself always overrides that.
+
+### Validating configuration before a run
+
+```bash
+python scripts/validate_config.py
+ENV=staging INSTANCE=staging-01 python scripts/validate_config.py
+ENV=staging INSTANCE=staging-01 python scripts/validate_config.py --show   # also prints every resolved value
+```
+
+Checks (fails fast, before any browser/Playwright starts): the selected
+environment's config file exists (if `ENV` was explicitly set), the
+selected instance's config file exists (if `INSTANCE` was explicitly
+set) and is non-empty, `BASE_URL` is set, and every secret required for
+the selected `ENV` (email, password, SMS API token -- see "Secrets"
+below) is actually set -- naming the exact missing variable(s), e.g.
+`Missing required secrets for environment 'qa': QA_EMAIL, SMS_API_TOKEN_QA`,
+never a value. `scripts/run_tests.py` runs this automatically before
+launching pytest and aborts the whole run on failure -- see its own
+printed `Configuration validation: PASSED/FAILED` banner. `--show` prints
+every resolved `Config` attribute with secrets masked -- any variable
+NAME containing `PASSWORD`, `TOKEN`, `SECRET`, `KEY`, `AUTH`, or `COOKIE`
+(case-insensitive) always prints as `****`, never a partial or real
+value, regardless of what's actually configured (`utils.config.
+is_secret_name`/`mask_value`).
+
+### Secrets
+
+Login credentials and the SMS API token are **never** stored in
+`config/environments/*.env` (or anywhere else committed to git) -- they
+come from real environment variables: a developer's own shell or root
+`.env` locally, Bitbucket **secured repository variables** in CI. One
+mapping (`utils.config.SECRET_ENV_MAPPING`) is used by both the UI login
+flow and the SMS API/DLR client, so the two can never resolve a
+different environment's secret from each other:
+
+| `ENV` | Email | Password | SMS API token |
+|---|---|---|---|
+| `qa` | `QA_EMAIL` | `QA_PASSWORD` | `SMS_API_TOKEN_QA` |
+| `staging` | `STAGING_EMAIL` | `STAGING_PASSWORD` | `SMS_API_TOKEN_STAGING` |
+
+Local development: set these in your shell or root `.env` as usual. The
+legacy `VALID_EMAIL`/`VALID_PASSWORD`/`SMS_API_TOKEN` names (no `QA_`/
+`STAGING_` prefix) still work too, as a fallback checked only when the
+`ENV`-specific variable above isn't set -- an existing developer `.env`
+keeps working unchanged.
+
+CI (Bitbucket): configure `QA_EMAIL`, `QA_PASSWORD`, `SMS_API_TOKEN_QA`,
+`STAGING_EMAIL`, `STAGING_PASSWORD`, `SMS_API_TOKEN_STAGING` as
+Bitbucket **secured** repository variables (Repository settings >
+Repository variables, "Secured" checkbox). `bitbucket-pipelines.yml`
+reads them directly (plus a bash-level early guard and
+`scripts/ci_preflight.py`, a standalone check that prints only
+`[OK] <VAR> is set` / `[MISSING] <VAR> is not set` -- never a value) --
+nothing is ever written into this file.
+
+Never commit a real credential or token anywhere in this repo --
+`config/environments/*.env` (the real files, not the committed
+`*.env.example` templates), `bitbucket-pipelines.yml`, Python source, and
+test files must never contain one.
+
+### Authentication and report isolation
+
+Each instance gets its own authentication state, so staging-01's login
+cookies are never reused against staging-02 (or any other
+environment/instance):
+```text
+reports/.auth/
+├── state.json                  -- unchanged flat path, used whenever INSTANCE is unset
+├── staging/staging-01/state.json
+├── staging/staging-02/state.json
+├── dev/dev-01/state.json
+└── qa/qa-01/state.json
+```
+`AUTH_STATE_PATH` (if you set it yourself) always overrides this,
+exactly as it already did before INSTANCE existed.
+
+Reports (HTML report, screenshots, downloads, logs) nest under the same
+instance-aware root the moment `INSTANCE` is set:
+```text
+reports/
+├── test_report.html                        -- flat, used whenever INSTANCE is unset (unchanged)
+└── staging/
+    └── staging-01/
+        ├── test_report.html                -- only when run via scripts/run_tests.py (see below)
+        ├── junit.xml
+        ├── summary.json
+        ├── screenshots/gw0/ gw1/ ...
+        ├── downloads/gw0/ gw1/ ...
+        └── logs/gw0.jsonl gw1.jsonl ...
+```
+Existing worker isolation (`worker_scoped_dir()`/`worker_id()`, the
+`gw0`/`gw1`/... subfolders) is unchanged -- it now just nests one level
+deeper under the instance-aware root instead of directly under the flat
+`reports/`.
+
+**Why `scripts/run_tests.py` is the documented path for a per-run
+timestamp folder** (`reports/staging/staging-01/20261007_164500/`):
+pytest-xdist forks its workers as separate OS processes, and every
+worker needs to agree on the SAME run folder from the moment it starts --
+there's no reliable way to compute and broadcast a fresh run-id from
+inside a conftest.py hook once those workers already exist. `run_tests.py`
+computes the run-id once, before even launching pytest, and exports it
+(`REPORT_RUN_ID`) so every worker inherits the same value from process
+start. Running pytest directly (no `run_tests.py`) with `INSTANCE` set
+still gets full environment/instance isolation for auth state,
+screenshots, downloads, logs, and the HTML report/junit.xml -- just
+without the extra per-run timestamp subfolder.
+
+`summary.json` is written at the end of every run (any channel -- SMS,
+RCS, WhatsApp, Email, Common, Chatbot, or the full suite -- never
+hardcoded to one), with real collected/executed counts aggregated from
+pytest's own `terminalreporter.stats` (xdist-safe, the same source the
+HTML report's own pass-rate banner uses):
+```json
+{
+  "environment": "staging",
+  "instance": "staging-01",
+  "channel": "sms",
+  "total": 831,
+  "passed": 810,
+  "failed": 15,
+  "skipped": 6,
+  "duration_seconds": 1842.3,
+  "workers": 8
+}
+```
+
+### CI (Bitbucket Pipelines)
+
+The same code path works locally and in CI -- no separate CI-only test
+code. Set these as pipeline variables:
+```text
+ENV
+INSTANCE
+PLAYWRIGHT_WORKERS
+HEADLESS
+```
+and run exactly the same `python scripts/run_tests.py tests/<channel>`
+command a developer would run locally.
+
+### `INSTANCE`'s other, pre-existing meaning
+
+`scripts/run_tests.py` already used `INSTANCE` before this feature
+existed, for a narrower purpose: a shorthand (`INSTANCE=staging` /
+`INSTANCE=qa`) that sets both `ENV` and the separate SMS-API client's
+`ENV_NAME` to a single, real, CONFIRMED-matching pair (see that script's
+own module docstring for the full history/evidence). That shorthand still
+works completely unchanged. The two meanings never collide in practice --
+every per-environment instance name has a `-NN` suffix
+(`staging-01`, `dev-02`, ...), so `scripts/run_tests.py` checks for a
+matching `config/instances/<INSTANCE>.env` file FIRST, and only falls
+back to the legacy bare-name shorthand when no such file exists.
+
+---
+
 ## HTML Report
 
 After every run, open:
@@ -382,6 +655,50 @@ Same layout as the Selenium suite's report: pass-rate banner, marker
 badges, colour-coded durations, and an embedded screenshot on every
 failure (plus a red banner if the platform error monitor detects a
 500/Whoops/Livewire-exception page during the run).
+
+---
+
+## Reporting System
+
+Every test run produces two kinds of output: an **executive report** for people, and **machine-readable files** for anything else (CI, Slack, Jira, a future dashboard). The machine-readable files are the source of truth -- the HTML dashboard is a presentation layer built from them, not the other way around.
+
+### Executive report
+
+- `reports/current/test_report.html` -- the existing pytest-html report (markers, durations, screenshots-on-failure, platform-error capture). Unchanged from before.
+- `reports/current/dashboard.html` -- a new, additional dashboard: pass rate, channel/feature breakdowns, a filterable/searchable failure list with collapsible stack traces, new/recurring/recovered failures, flaky tests, slowest tests, platform health, and a DLR summary when DLR tests ran. No server or database needed -- open the file directly in a browser.
+
+### Machine-readable
+
+- `reports/current/summary.json` -- run identity (environment, instance, channel, test_type, git commit/branch, CI build number, timestamps, workers, browser) plus real pass/fail/skip counts and pass rate. Never contains secrets.
+- `reports/current/failures.json` -- one entry per failed test: category (ASSERTION/TIMEOUT/DLR/PLATFORM_ERROR/...), a stable fingerprint, whether it's new/recurring, the error, and a link to its screenshot/log. For DLR failures specifically, the recipient phone number inside the error text and stack trace is masked (only the last 4 digits stay visible) before it's ever written to `failures.json` or the dashboard -- never the raw number.
+- `reports/current/junit.xml` -- standard JUnit XML (`pytest.ini`'s `--junitxml`), for any CI system that reads it.
+
+A future Slack/Jira/email/dashboard integration only ever needs to read `summary.json`/`failures.json` -- never the HTML.
+
+### History
+
+`reports/history/*.json` -- one file per run, summary/result metadata only (no screenshots). Used to compute **new / recurring / recovered** failures and **flaky tests** (a test needs at least 3 recorded runs with both a pass and a fail before it's flagged). Comparisons only ever happen between runs with the same environment, instance, channel, and test type -- a QA run is never compared against a Staging run. Kept to the last `REPORT_HISTORY_LIMIT` runs (default 100).
+
+### Run artifacts
+
+`reports/runs/<run-id>/` -- everything from one specific run (`test_report.html`, `dashboard.html`, `summary.json`, `failures.json`, `junit.xml`, and only the screenshots/logs that run actually produced), kept indefinitely. `reports/current/` always mirrors the *latest* run, for anything that doesn't care about a specific run id. `RUN_ID` (`Config.RUN_ID`) is `<timestamp>_<git-short-commit>` when git info is available, else `<timestamp>_<random>` -- the same value for every pytest-xdist worker in one run.
+
+`reports/.auth/` (authentication state) is never copied into any of the above, and is never a CI artifact.
+
+### Local usage
+
+No change -- reporting is automatic:
+
+```bash
+pytest tests/sms
+ENV=staging PLAYWRIGHT_WORKERS=5 python scripts/run_tests.py tests/sms
+```
+
+### CI usage
+
+In Bitbucket, the artifacts step already publishes `reports/test_report.html`, `reports/screenshots/**`, `reports/logs/**`, `reports/junit.xml`, and `reports/summary.json` (never `reports/.auth/**`) -- the same files now also exist under `reports/current/` and `reports/runs/<run-id>/`, with `failures.json` and `dashboard.html` alongside them. `BITBUCKET_BUILD_NUMBER`/`BITBUCKET_COMMIT`/`BITBUCKET_BRANCH`/`BITBUCKET_PR_ID` are captured into `summary.json` automatically when present, and show as `"Not available"` locally.
+
+A failed test run still fails the pipeline -- report generation can never turn a failure into a reported success, and a report-generation error never hides the real test result (it's printed as `REPORT_GENERATION_FAILED` and swallowed).
 
 ---
 
@@ -499,7 +816,10 @@ cpaas_playwright_tests/
 │   └── test_data_generator.py       # Generates the files under tests/test_data/
 │
 ├── scripts/
-│   └── run_tests.py                 # PLAYWRIGHT_WORKERS/ENV -> real pytest -n/--dist flags (see below)
+│   ├── run_tests.py                 # PLAYWRIGHT_WORKERS/ENV -> real pytest -n/--dist flags (see below)
+│   ├── warm_auth.py                  # One real UI login up front; writes the disk-persisted storage_state (see "Running tests")
+│   ├── validate_auth_lock.py         # Sanity-checks the warm_auth lock/session-state file
+│   └── diagnose_short_url_click.py   # Standalone short-URL network-log capture (see "SMS Campaign DLR & Short URL Click Tracking")
 │
 └── reports/                         # HTML report + screenshots after each run
 ```
@@ -717,6 +1037,74 @@ channel/feature by swapping the expected-header list:
 validate_file_headers(rcs_file, EXPECTED_RCS_CAMPAIGN_HEADERS)  # implemented — see "RCS Channel" below
 validate_file_headers(email_file, EXPECTED_EMAIL_HEADERS)       # not implemented yet
 ```
+
+---
+
+## SMS Campaign DLR & Short URL Click Tracking
+
+`tests/sms/campaigns/test_sms_campaign_short_url_click_dlr.py`
+(`test_dlr_and_short_url_click_count`) launches a campaign built from the
+dedicated `SMS_URL_CLICK_TEMPLATE` template, verifies DLRs for every
+recipient the same way the sibling transaction/OTP DLR tests do (steps
+1-9, via `utils/campaign_dlr.verify_campaign_dlrs()` — nothing
+reimplemented here), then goes further: it opens the message's short URL
+`NUM_CLICKS` (5) times and asserts both the campaign report's click count
+and that the DLR is still retrievable after the click.
+
+**Click loop behavior (steps 11-13).** Each click opens the short URL in
+its own new page in the authenticated browser context (so
+`logged_in_page`'s own session/page is left undisturbed), waits
+`CLICK_INTER_CLICK_DELAY_SECONDS` (6s) before the next click, and retries
+a failed navigation once more (`CLICK_NAV_RETRY_ATTEMPTS = 2`) on a fresh
+page before failing the test outright. This exists because of two
+confirmed real behaviors of the short-link redirect service, found from
+live failures rather than assumed:
+
+- It does not reliably resolve two clicks fired back-to-back — the
+  original 2s gap caused every real run to fail on exactly click #2 of 5,
+  with the navigation interrupted by Chromium's own
+  `chrome-error://chromewebdata/` page. Raising the gap to 6s and adding
+  one retry (fresh page, since the failed one may be left showing the
+  internal error page) eliminated the hard failures.
+- A click can legitimately be counted more than once server-side even
+  when the test only intended one real navigation per `click_no`. Real
+  network logs captured from inside the authenticated test (see
+  `scripts/diagnose_short_url_click.py` below for why a *standalone*
+  capture doesn't work) showed click #2's first attempt completing a
+  genuine successful navigation (full redirect chain, real `200`
+  response) before Playwright's own `wait_until="load"` promise gets
+  interrupted by further activity on the destination page — the retry
+  logic (which exists to recover from an actually-failed navigation)
+  then fires a second real hit for that same logical click. One real
+  click getting double-counted this way is indistinguishable, from the
+  test's side, from the redirect service genuinely crediting a click
+  twice.
+
+**Pass criterion (steps 14-15).** Because of the second behavior above,
+`NUM_CLICKS` is treated as a *minimum* number of click attempts, not a
+count the server must echo back exactly: the test polls the reloaded
+campaign report (bounded by `CLICK_COUNT_POLL_TIMEOUT_SECONDS`) and
+passes once `final_click_count >= initial_click_count + NUM_CLICKS`,
+rather than requiring an exact match. A real regression that drops clicks
+entirely is still caught — the test still fails whenever the count comes
+back at or below where it started, or never reaches at least `NUM_CLICKS`
+more within the poll timeout.
+
+**`scripts/diagnose_short_url_click.py`** — a standalone, non-pytest
+Playwright script (`python scripts/diagnose_short_url_click.py
+"stqa.gtls.in/DUMMY/PpA/XXXXXX"`) that opens a short URL once in a fresh
+headed browser and prints every request/response Chromium makes. It was
+written to investigate the click-count discrepancy above, but a fresh
+browser has none of the app's session cookies, and the short-link host
+redirects a cookie-less request to a generic Microsoft login page instead
+of reaching real tracked content — confirmed from a real run against a
+live short URL. It is kept in the repo as a general-purpose diagnostic
+for a context where session cookies aren't required, but it was NOT how
+the actual root cause above was found; that required adding the same
+request/response logging directly inside the real test's own
+authenticated click loop (since `logged_in_page.context.new_page()`
+shares that session), which has since been removed again once the root
+cause was confirmed.
 
 ---
 
@@ -1012,22 +1400,27 @@ revisitable.
 
 | Module | Page objects | Test files | Tests collected |
 |---|---|---|---|
-| Core (Login, Dashboard, Forgot Password) | 3 | 3 | — |
-| SMS | 18 | 20 | 643 |
-| RCS | 19 | 20 | 689 |
-| WhatsApp | 12 | 12 | 402 |
-| Email | 5 | 5 | 136 |
-| Contacts, Segmentation, Tags, Communication Flow | 4 | 3 (no dedicated Communication Flow test) | — |
-| Shared (`base_page.py`) | 1 | — | — |
-| Pre-existing scratch/debug (`test_temp_dump*.py`) | — | 2 | 2 |
-| **Total** | **62** | **65** | **1,946** |
+| Common (Login, Dashboard, Forgot Password, Contacts, Segmentation, Tags, Communication Flow, Activities, Documents, Flow Summary Report, Monthly Usage) | 12 | 10 | 305 |
+| SMS | 20 | 38 | 831 |
+| RCS | 20 | 21 | 743 |
+| WhatsApp | 24 | 23 | 689 |
+| Email | 6 | 6 | 201 |
+| Chatbot | 4 | 4 | 250 |
+| Unit (no browser — `tests/unit/`) | — | 2 | 49 |
+| **Total** | **86** | **104** | **3,068** |
 
-(Test-collected counts above are from a real `pytest --collect-only -q`
-run against this working tree, not estimates — re-run it yourself with
-`pytest tests/<channel> --collect-only -q` any time to reconfirm.)
-
-(Core + Contacts/Segmentation/Tags/Communication Flow together make up
-`tests/common/`'s 6 test files and 74 collected tests.)
+(Table last reconfirmed 2026-10-07 from a real `pytest --collect-only -q`
+run per channel against this working tree, not estimates — re-run it
+yourself with `pytest tests/<channel> --collect-only -q`, or
+`pytest tests/ --collect-only -q` for the grand total, any time to
+reconfirm. This replaces the previous Core/Common split and the
+`test_temp_dump*.py` scratch-file row from an earlier snapshot of this
+table: those scratch files are gone, `base_page.py` lives inside
+`pages/common/` and is already counted in Common's page-object count
+rather than broken out separately, and a new Chatbot channel plus
+`tests/unit/` have been added since. `pages/common/` also now includes
+`communication_flow_page.py`, so "Communication Flow" has a page object
+but — same as before — no dedicated top-level test file of its own.)
 
 All page objects follow the same conversion patterns established from the
 first pilot suites: plain-string locators (`"xpath=..."` prefix for

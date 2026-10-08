@@ -1,4 +1,4 @@
-"""channels/rcs_channel.py — RCS channel composition."""
+
 from channels.base_channel import BaseChannel
 from utils.config import Config
 from utils.parallel import short_unique_tag

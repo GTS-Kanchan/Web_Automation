@@ -330,6 +330,12 @@ def test_tc18_expected_columns_present(status_report_page):
     """TC_18: Columns like Duration, Status, Product, Total Count should
     be visible."""
     ensure_on_report_page(status_report_page)
+    expected_columns = ["duration", "status", "product", "total count"]
+    not_found = status_report_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = status_report_page.get_visible_column_headers()
     joined = " ".join(headers).lower()
     assert "duration" in joined
@@ -442,6 +448,11 @@ def test_ui_default_table_headers_full(status_report_page):
     EXPECTED_SMS_STATUS_REPORT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_report_page(status_report_page)
+    not_found = status_report_page.ensure_columns_checked(EXPECTED_SMS_STATUS_REPORT_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = status_report_page.get_visible_column_headers()
     for col in EXPECTED_SMS_STATUS_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

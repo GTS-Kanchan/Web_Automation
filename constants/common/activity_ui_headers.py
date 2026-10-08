@@ -1,6 +1,4 @@
-"""constants/activity_ui_headers.py — Column headers, filter options, and metadata
-for the Activities page (/activities).
-"""
+
 
 EXPECTED_ACTIVITY_UI_HEADERS = [
     "Action",
@@ -18,7 +16,6 @@ ALL_ACTIVITY_COLUMNS = [
     "Created at",
 ]
 
-# Selectable column keys in Columns dropdown
 COLUMN_KEYS = [
     "action",
     "user",

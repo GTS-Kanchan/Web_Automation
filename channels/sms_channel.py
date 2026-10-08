@@ -1,5 +1,4 @@
-"""channels/sms_channel.py — SMS channel composition. Reference
-implementation; copy this file's shape for a new channel."""
+
 from channels.base_channel import BaseChannel
 from utils.config import Config
 

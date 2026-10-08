@@ -24,7 +24,9 @@ import html
 import json
 import platform
 import datetime
+import subprocess
 import sys
+import time
 
 import pytest
 
@@ -39,6 +41,13 @@ from utils.error_monitor import check_page_for_errors, ERROR_SCREENSHOT_DIR
 from utils.helpers import goto_with_retry
 from utils.parallel import worker_id, worker_scoped_dir
 from pages.common.login_page import LoginPage
+
+from reporting import collector as _reporting_collector
+from reporting import summary as _reporting_summary
+from reporting import history as _reporting_history
+from reporting import trend as _reporting_trend
+from reporting import artifacts as _reporting_artifacts
+from reporting import html_report as _reporting_html
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Channel/fixture plugin registration — see fixtures/*.py. These add
@@ -62,7 +71,11 @@ pytest_plugins = [
 # two workers at once) can never collide. worker_id() is "master" outside
 # of -n, so a plain single-process `pytest` run is laid out exactly as
 # before, just one directory level deeper.
-SCREENSHOT_DIR = worker_scoped_dir(os.path.join(os.path.dirname(__file__), "reports", "screenshots"))
+# <REPORTS_DIR>/screenshots/<worker> -- REPORTS_DIR is the instance-aware
+# root (utils/config.py): the flat "reports/screenshots" path unless
+# INSTANCE is set, in which case it nests under reports/<env>/<instance>/
+# [<run-id>]/screenshots instead.
+SCREENSHOT_DIR = worker_scoped_dir(os.path.join(Config.REPORTS_DIR, "screenshots"))
 os.makedirs(ERROR_SCREENSHOT_DIR, exist_ok=True)
 
 # Populated in pytest_configure from the --browser CLI flag, used in the
@@ -81,6 +94,180 @@ _browser_name = "chromium"
 # controller from every worker's forwarded reports, so it's correct with
 # or without -n.
 _final_stats = {"passed": 0, "failed": 0, "skipped": 0}
+
+# Wall-clock start of this pytest invocation (controller process) --
+# used only for the summary.json "duration_seconds" field (Environment
+# and Instance Configuration work, requirement #14). Set in
+# pytest_configure, read back in pytest_sessionfinish.
+_RUN_START_TIME = time.time()
+
+# Advanced Reporting work -- populated by the new pytest_runtest_logreport
+# hook below (xdist-safe: on the controller, xdist replays each worker's
+# report through this SAME hook -- see worker_testreport() in
+# xdist/dsession.py, which sets report.node before calling
+# pytest_runtest_logreport -- so this list is only ever meaningfully
+# populated in the controller process; a worker process's own copy is
+# never read). Consumed by pytest_sessionfinish -> _build_reporting_context
+# -> (stashed) -> pytest_unconfigure -> _finalize_reports.
+_reporting_records = []
+
+# Platform-error captures (utils.error_monitor.ErrorCapture), appended
+# from the existing error-monitor block in pytest_runtest_makereport
+# below -- feeds reporting.summary.platform_health(). Same xdist-safety
+# reasoning as _reporting_records.
+_platform_error_captures = []
+
+# Set by pytest_sessionfinish, consumed by pytest_unconfigure (file I/O --
+# history/HTML/artifact copying -- is deferred to pytest_unconfigure so it
+# runs AFTER pytest-html and the junitxml plugin have both finished
+# writing their own files; see _finalize_reports()'s docstring).
+_final_report_context = None
+
+
+def _report_worker_id(report) -> str:
+    """"gw0"/"gw1"/... under -n, "master" otherwise -- NOT the same as
+    utils.parallel.worker_id() when called from the CONTROLLER process
+    (that always returns "master" there; the actual worker that ran this
+    particular test is only recoverable from the report object itself,
+    via the WorkerController xdist attaches as report.node before
+    replaying the hook on the controller -- see worker_testreport() in
+    xdist/dsession.py)."""
+    node = getattr(report, "node", None)
+    gateway = getattr(node, "gateway", None)
+    gw_id = getattr(gateway, "id", None)
+    return gw_id or worker_id()
+
+
+def _report_exc_type_and_message(report):
+    """Best-effort (exc_type, message) from a failed/skipped report's
+    longrepr. Never raises -- worst case returns ("", str(longrepr))."""
+    longrepr = getattr(report, "longrepr", None)
+    if longrepr is None:
+        return "", ""
+    crash = getattr(longrepr, "reprcrash", None)
+    full = getattr(crash, "message", None) if crash else None
+    if full is None:
+        full = str(longrepr)
+    if ":" in full:
+        exc_type, message = full.split(":", 1)
+        return exc_type.strip(), message.strip()
+    return "", full.strip()
+
+
+def _report_status(report) -> str:
+    """passed/failed/skipped, upgraded to xfailed/xpassed when pytest
+    marked the report as an xfail outcome (requirement #29: "the
+    collector must correctly handle ... xfail/xpass")."""
+    if getattr(report, "wasxfail", None) is not None or report.keywords.get("xfail"):
+        if report.skipped:
+            return "xfailed"
+        if report.passed:
+            return "xpassed"
+    if report.failed:
+        return "failed"
+    if report.skipped:
+        return "skipped"
+    return "passed"
+
+
+def pytest_runtest_logreport(report):
+    """Collects ONE canonical record per test (requirement #29/#30):
+      - "call" phase: the normal pass/fail/skip/xfail/xpass outcome.
+      - "setup" phase: ONLY when it itself failed or skipped (a fixture
+        error, or a skip decided before the test body ever ran) -- a
+        passing setup is not a separate test outcome.
+      - "teardown" phase: ONLY when it itself failed -- recorded as an
+        ADDITIONAL record (teardown failing after a passing call is a
+        real, distinct problem worth surfacing, not a duplicate of the
+        call-phase result).
+    xdist-safe: see _reporting_records' own comment above."""
+    if report.when == "call":
+        pass
+    elif report.when == "setup" and (report.failed or report.skipped):
+        pass
+    elif report.when == "teardown" and report.failed:
+        pass
+    else:
+        return
+
+    status = _report_status(report)
+    exc_type, message = ("", "")
+    longrepr_text = ""
+    if status in ("failed", "skipped"):
+        exc_type, message = _report_exc_type_and_message(report)
+        longrepr_text = str(getattr(report, "longrepr", "") or "")
+
+    worker = _report_worker_id(report)
+    screenshot = getattr(report, "_screenshot_rel", None)
+    log_rel = os.path.join("logs", f"{worker}.jsonl")
+    log_path = log_rel if os.path.isfile(os.path.join(Config.REPORTS_DIR, log_rel)) else None
+
+    record = _reporting_collector.build_record(
+        nodeid=report.nodeid,
+        status=status,
+        duration=getattr(report, "duration", 0.0),
+        when=report.when,
+        marker=getattr(report, "_marker", "-"),
+        worker=worker,
+        exc_type=exc_type,
+        message=message,
+        longrepr_text=longrepr_text,
+        screenshot=screenshot,
+        log=log_path,
+    )
+    _reporting_records.append(record)
+
+
+
+def _git_commit_short():
+    """Short git commit hash for the current checkout, or None if this
+    isn't a git checkout / git isn't available -- never raises, since a
+    missing commit/build number is explicitly optional (requirement #13:
+    "if available")."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            commit = result.stdout.strip()
+            return commit or None
+    except Exception:
+        pass
+    return None
+
+
+def _channel_from_args(config):
+    """Best-effort channel label for summary.json (requirement #14: "Use
+    the actual collected/executed test counts... must work for SMS, RCS,
+    WhatsApp, Email, Common, Chatbot, Full suite... do not make it
+    SMS-specific"). Derived from whatever path(s) were given on the
+    pytest command line -- `pytest tests/sms` -> "sms", `pytest
+    tests/sms tests/rcs` -> "sms+rcs", no path / `pytest tests` -> "full
+    suite". Purely a label for the summary file; never used to change
+    test SELECTION, which is entirely pytest's own job."""
+    args = [a for a in getattr(config, "args", []) if not a.startswith("-")]
+    if not args:
+        return "full suite"
+    channels = []
+    for a in args:
+        norm = a.replace("\\", "/").strip("/")
+        parts = norm.split("/")
+        if parts[0] == "tests" and len(parts) > 1:
+            channels.append(parts[1])
+        elif norm == "tests":
+            return "full suite"
+        else:
+            channels.append(os.path.basename(norm) or norm)
+    # de-dupe while preserving order
+    seen = []
+    for c in channels:
+        if c not in seen:
+            seen.append(c)
+    return "+".join(seen) if seen else "full suite"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -400,13 +587,25 @@ def pytest_configure(config):
     meta = getattr(config, "_metadata", None)
     if meta is not None:
         meta["Project"]    = "CPaaS+ Playwright Automation"
+        # Environment and Instance Configuration work, requirement #13:
+        # show which real environment/instance this run targeted, right
+        # in the HTML report's own metadata table -- never a secret (see
+        # utils.config.is_secret_name/mask_value; none of these fields are
+        # ever masked because none of their NAMES match a secret marker).
+        meta["Environment"] = Config.ENV
+        meta["Instance"]    = Config.INSTANCE or "(none)"
         meta["Target URL"] = Config.BASE_URL
         meta["Browser"]    = _browser_name.capitalize()
         meta["Headless"]   = str(Config.HEADLESS)
+        workers = config.getoption("numprocesses", default=None) if hasattr(config.option, "numprocesses") else None
+        meta["Workers"]    = str(workers) if workers else "1 (no -n)"
         meta["Python"]     = sys.version.split()[0]
         meta["Platform"]   = platform.platform()
         meta["Run date"]   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         meta["Tester"]     = os.getenv("TESTER_NAME", "Automation Suite")
+        git_commit = _git_commit_short()
+        if git_commit:
+            meta["Git commit"] = git_commit
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -602,6 +801,11 @@ def pytest_runtest_makereport(item, call):
         try:
             error_capture = check_page_for_errors(pw_page, test_name=item.name)
             if error_capture:
+                _platform_error_captures.append({
+                    "pattern": error_capture.pattern,
+                    "test": item.name,
+                    "url": error_capture.url,
+                })
                 # Build the embedded-image block (same style as failure screenshots)
                 img_tag = ""
                 try:
@@ -660,6 +864,14 @@ def pytest_runtest_makereport(item, call):
                 safe     = "".join(c if c.isalnum() or c in "-_" else "_" for c in item.name)
                 path     = os.path.join(SCREENSHOT_DIR, f"{safe}_{ts}{attempt_tag}.png")
                 pw_page.screenshot(path=path)
+                # Advanced Reporting work -- relative to REPORTS_DIR, so the
+                # dashboard HTML (which lives under reports/current/ and
+                # reports/runs/<run-id>/, both siblings of screenshots/) can
+                # link to it portably instead of embedding an absolute path.
+                try:
+                    report._screenshot_rel = os.path.relpath(path, Config.REPORTS_DIR)
+                except ValueError:
+                    report._screenshot_rel = None
 
                 with open(path, "rb") as f:
                     b64 = base64.b64encode(f.read()).decode()
@@ -743,6 +955,295 @@ def pytest_sessionfinish(session, exitstatus):
     _final_stats["failed"]  = len(stats.get("failed", [])) + len(stats.get("error", []))
     _final_stats["skipped"] = len(stats.get("skipped", []))
 
+    _write_summary_json(session)
+
+    # Advanced Reporting work -- build the context now (while we still
+    # have `session`), but defer actually WRITING any of it to disk until
+    # pytest_unconfigure (see _finalize_reports()'s docstring for why).
+    global _final_report_context
+    try:
+        _final_report_context = _build_reporting_context(session)
+    except Exception as exc:  # noqa: BLE001 -- never let reporting break the run
+        print(f"[reporting] REPORT_GENERATION_FAILED (context build): {exc}", file=sys.stderr)
+        _final_report_context = None
+
+
+def pytest_unconfigure(config):
+    """Fires once per process, LAST -- including after pytest-html and
+    the junitxml plugin have both finished writing their own files. A
+    worker process under xdist also calls this; `_final_report_context`
+    is only ever non-None in the controller (it's set from
+    pytest_sessionfinish, itself gated on the same terminalreporter-
+    is-None check every other controller-only step in this file uses),
+    so a worker's call here is always a no-op."""
+    ctx = globals().get("_final_report_context")
+    if not ctx:
+        return
+    _finalize_reports(ctx)
+
+
+def _derive_test_type(config) -> str:
+    """Derived from the actual `-m` marker expression pytest was invoked
+    with (never hardcoded, never a second selection mechanism -- this is
+    a LABEL only, read back from pytest's own already-applied selection).
+    "full" when no -m was given, matching scripts/run_tests.py's own
+    smoke/regression/full vocabulary (CI/CD work, requirement #14;
+    Advanced Reporting work, requirement #4)."""
+    markexpr = (config.getoption("markexpr", default="") or "").strip()
+    if not markexpr:
+        return "full"
+    return markexpr
+
+
+def _git_branch():
+    """Short-circuits to BITBUCKET_BRANCH when set (CI/CD work,
+    Advanced Reporting requirement #25) -- a detached-HEAD checkout (the
+    normal state for a CI runner) has no real local branch name, so the
+    CI-provided value is authoritative there; falls back to a real git
+    lookup for local runs, then to None."""
+    ci_branch = os.environ.get("BITBUCKET_BRANCH", "").strip()
+    if ci_branch:
+        return ci_branch
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            branch = result.stdout.strip()
+            return branch or None
+    except Exception:
+        pass
+    return None
+
+
+def _ci_metadata() -> dict:
+    """Advanced Reporting work, requirement #25: capture Bitbucket's own
+    CI variables ONLY IF they're actually present -- "Not available"
+    (never a crash, never a fabricated value) when running locally, where
+    none of these exist. The SAME reporting code must work identically
+    both places."""
+    def _env_or_na(name):
+        value = os.environ.get(name, "").strip()
+        return value or "Not available"
+
+    return {
+        "pipeline_id": _env_or_na("BITBUCKET_PR_ID"),
+        "build_number": _env_or_na("BITBUCKET_BUILD_NUMBER"),
+        "repo_slug": _env_or_na("BITBUCKET_REPO_SLUG"),
+    }
+
+
+def _build_reporting_context(session):
+    """Assembles everything the Advanced Reporting work's HTML/JSON
+    artifacts need, from the records _reporting_records/
+    _platform_error_captures already collected during the run, PLUS
+    history/trend lookups against reports/history/ (filesystem-based,
+    requirement #22). Does NOT write any file -- see _finalize_reports(),
+    called later from pytest_unconfigure, for why that's deferred.
+
+    Returns None (and the caller skips finalization entirely) when this
+    isn't the controller process -- callers already only reach this point
+    after the same terminalreporter-is-None xdist-worker guard every
+    other session-finish step in this file already relies on."""
+    workers = session.config.getoption("numprocesses", default=None) \
+        if hasattr(session.config.option, "numprocesses") else None
+    test_type = _derive_test_type(session.config)
+    channel = _channel_from_args(session.config)
+    started_at_iso = datetime.datetime.fromtimestamp(_RUN_START_TIME).isoformat(timespec="seconds")
+    finished_at_iso = datetime.datetime.now().isoformat(timespec="seconds")
+    ci = _ci_metadata()
+
+    meta = {
+        "run_id": Config.RUN_ID,
+        "environment": Config.ENV,
+        "instance": Config.INSTANCE or None,
+        "channel": channel,
+        "test_type": test_type,
+        "git_commit": _git_commit_short() or "Not available",
+        "git_branch": _git_branch() or "Not available",
+        "pipeline_id": ci["pipeline_id"],
+        "build_number": ci["build_number"],
+        "started_at": started_at_iso,
+        "finished_at": finished_at_iso,
+        "duration_seconds": round(time.time() - _RUN_START_TIME, 1),
+        "workers": workers or 1,
+        "browser": (globals().get("_browser_name") or "chromium"),
+        "headless": bool(Config.HEADLESS),
+    }
+
+    # Snapshot the records list NOW -- nothing else appends to it after
+    # sessionfinish, but copying defensively costs nothing and protects
+    # against a future hook ordering change.
+    records = list(_reporting_records)
+
+    summary_doc = _reporting_summary.build_summary(records, meta)
+    channel_summary = _reporting_summary.group_by(records, "channel")
+    feature_summary = _reporting_summary.group_by(records, "feature")
+    slowest = _reporting_summary.slowest(records)
+    duration_stats = _reporting_summary.duration_stats(records)
+    platform_health = _reporting_summary.platform_health(_platform_error_captures)
+    dlr_summary = _reporting_summary.dlr_summary(records)
+
+    current_tests = {r["test"]: r["status"] for r in records}
+    previous = _reporting_history.load_previous_comparable(
+        Config.REPORTS_DIR, meta["environment"], meta["instance"],
+        meta["channel"], meta["test_type"], exclude_run_id=meta["run_id"],
+    )
+    trend_result = _reporting_trend.compute_new_recurring_recovered(current_tests, previous)
+    history_records = _reporting_history.load_all_comparable(
+        Config.REPORTS_DIR, meta["environment"], meta["instance"],
+        meta["channel"], meta["test_type"], exclude_run_id=meta["run_id"],
+    )
+    flaky = _reporting_trend.compute_flaky(history_records, current_tests)
+
+    failures_json = []
+    new_set = set(trend_result["new"])
+    recurring_set = set(trend_result["recurring"])
+    for r in records:
+        if r["status"] != "failed":
+            continue
+        entry = dict(r)
+        entry["is_new"] = r["test"] in new_set
+        entry["is_recurring"] = r["test"] in recurring_set
+        failures_json.append(entry)
+
+    return {
+        "meta": meta,
+        "records": records,
+        "summary": summary_doc,
+        "channel_summary": channel_summary,
+        "feature_summary": feature_summary,
+        "slowest": slowest,
+        "duration_stats": duration_stats,
+        "platform_health": platform_health,
+        "dlr_summary": dlr_summary,
+        "trend": trend_result,
+        "flaky": flaky,
+        "failures_json": failures_json,
+    }
+
+
+def _finalize_reports(ctx: dict) -> None:
+    """Writes every Advanced Reporting artifact to disk. Deliberately
+    called from pytest_unconfigure (not pytest_sessionfinish) so it runs
+    AFTER pytest-html and the junitxml plugin have both finished writing
+    reports/test_report.html and reports/junit.xml -- copying those files
+    any earlier risks copying a not-yet-finalized version.
+
+    requirement #31: report generation must never hide a test failure --
+    this function cannot change pytest's exit status (pytest_unconfigure
+    has no such hook), so any exception here is caught, logged as
+    REPORT_GENERATION_FAILED, and swallowed; it can never flip a failed
+    run into a reported "success"."""
+    try:
+        reports_root = Config.REPORTS_DIR
+        run_id = ctx["meta"]["run_id"]
+
+        # 1. summary.json + failures.json -- the source of truth
+        #    (requirement #5/#21), written to BOTH reports/current/ and
+        #    reports/runs/<run_id>/.
+        run_dir = _reporting_artifacts.run_dir(reports_root, run_id)
+        current_dir = _reporting_artifacts.current_dir(reports_root)
+        for target_dir in (run_dir, current_dir):
+            with open(os.path.join(target_dir, "summary.json"), "w", encoding="utf-8") as fh:
+                json.dump(ctx["summary"], fh, indent=2)
+            with open(os.path.join(target_dir, "failures.json"), "w", encoding="utf-8") as fh:
+                json.dump(ctx["failures_json"], fh, indent=2)
+
+        # 2. Advanced dashboard HTML -- presentation layer only, built
+        #    entirely from the dicts already written above (requirement:
+        #    "make summary.json/failures.json the source of truth").
+        dashboard_html = _reporting_html.render_html({
+            "summary": ctx["summary"],
+            "channel_summary": ctx["channel_summary"],
+            "feature_summary": ctx["feature_summary"],
+            "failures": ctx["records"],
+            "trend": ctx["trend"],
+            "flaky": ctx["flaky"],
+            "slowest": ctx["slowest"],
+            "duration_stats": ctx["duration_stats"],
+            "platform_health": ctx["platform_health"],
+            "dlr_summary": ctx["dlr_summary"],
+        })
+        for target_dir in (run_dir, current_dir):
+            with open(os.path.join(target_dir, "dashboard.html"), "w", encoding="utf-8") as fh:
+                fh.write(dashboard_html)
+
+        # 3. Copy the EXISTING pytest-html / junitxml outputs alongside
+        #    the new artifacts (requirement #33: backward compatibility --
+        #    reports/test_report.html keeps being generated exactly as
+        #    before; this only additionally copies it next to the new
+        #    per-run artifacts, never replaces it).
+        _reporting_artifacts.publish_files(reports_root, run_id, {
+            "test_report.html": os.path.join(reports_root, "test_report.html"),
+            "junit.xml": os.path.join(reports_root, "junit.xml"),
+        })
+
+        # 4. screenshots/ + logs -- ONLY the specific files this run's own
+        #    records reference (never the whole, long-lived
+        #    reports/screenshots//reports/logs/ trees, which accumulate
+        #    across every run ever executed -- see
+        #    publish_referenced_files()'s docstring for why a whole-tree
+        #    copy here would grow reports/runs/ without bound). Copied
+        #    into reports/runs/<run_id>/ ONLY, never into reports/current/
+        #    or reports/history/ (requirement #22/#26). reports/.auth/ is
+        #    never referenced here at all.
+        referenced = [r.get("screenshot") for r in ctx["records"]] + [r.get("log") for r in ctx["records"]]
+        _reporting_artifacts.publish_referenced_files(reports_root, run_id, referenced)
+
+        # 5. History (requirement #22) -- summary/result metadata only,
+        #    never screenshots -- used by the NEXT run's trend/flaky
+        #    computation.
+        _reporting_history.save_history(reports_root, ctx["summary"], ctx["records"])
+    except Exception as exc:  # noqa: BLE001 -- see docstring: never raise from here
+        print(f"[reporting] REPORT_GENERATION_FAILED: {exc}", file=sys.stderr)
+
+
+def _write_summary_json(session):
+    """reports/<...>/summary.json -- machine-readable run summary
+    (Environment and Instance Configuration work, requirement #14). Uses
+    the SAME aggregated, xdist-safe counts _final_stats above was just
+    populated from (real collected/executed totals, never hardcoded), and
+    works identically for every channel (SMS/RCS/WhatsApp/Email/Common/
+    Chatbot) or the full suite -- see _channel_from_args()."""
+    passed  = _final_stats["passed"]
+    failed  = _final_stats["failed"]
+    skipped = _final_stats["skipped"]
+    total   = passed + failed + skipped
+
+    workers = session.config.getoption("numprocesses", default=None) \
+        if hasattr(session.config.option, "numprocesses") else None
+
+    test_type = _derive_test_type(session.config)
+
+    summary = {
+        "environment": Config.ENV,
+        "instance": Config.INSTANCE or None,
+        "channel": _channel_from_args(session.config),
+        "test_type": test_type,
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "duration_seconds": round(time.time() - _RUN_START_TIME, 1),
+        "workers": workers or 1,
+        "status": "passed" if failed == 0 else "failed",
+        "git_commit": _git_commit_short(),
+        "pipeline_build_number": os.environ.get("BITBUCKET_BUILD_NUMBER") or None,
+        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+    }
+    try:
+        path = os.path.join(Config.REPORTS_DIR, "summary.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2)
+    except OSError:
+        pass  # a failure writing the summary must never fail the test run itself
+
 
 def pytest_html_results_summary(prefix, summary, postfix):
     passed  = _final_stats["passed"]
@@ -778,6 +1279,15 @@ def pytest_html_results_summary(prefix, summary, postfix):
         "<div style=\"font-size:11px;color:#64748b\">TOTAL</div></div>"
         "</div>"
         f"<div style=\"margin-left:auto;font-size:12px;color:#94a3b8\">"
+        # Environment and Instance Configuration work, requirement #13:
+        # this banner (unlike config._metadata above, which this plugin
+        # version combination doesn't actually render -- confirmed by
+        # testing: even pre-existing fields like "Project"/"Target URL"
+        # never appear in the generated HTML) is the one place already
+        # CONFIRMED to render real values into the report, so Environment/
+        # Instance go here too rather than only in the silently-dropped
+        # metadata table.
+        f"Env: {Config.ENV} | Instance: {Config.INSTANCE or '(none)'} | "
         f"{run_time} | {browser_str} | {Config.BASE_URL}"
         "</div></div>"
     )

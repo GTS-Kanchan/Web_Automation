@@ -1,0 +1,252 @@
+#
+# bitbucket-pipelines.yml
+#
+# Runs the EXISTING CPaaS Playwright SMS automation on a Bitbucket
+# self-hosted runner. This file does not introduce any new way to pick an
+# environment or a test type -- it only sets the SAME environment
+# variables (ENV, PLAYWRIGHT_WORKERS) the framework already reads
+# (utils/config.py, scripts/run_tests.py), and forwards pytest's own `-m`
+# marker expression, exactly as a developer already would on their own
+# machine:
+#
+#   pytest tests/sms
+#   ENV=qa pytest tests/sms
+#   ENV=staging pytest tests/sms
+#   python scripts/run_tests.py tests/sms
+#   ENV=staging PLAYWRIGHT_WORKERS=5 python scripts/run_tests.py tests/sms
+#
+# All of those keep working unchanged, locally, whether or not this file
+# exists.
+#
+# Runner requirement
+# -------------------
+# Every step below targets a Bitbucket SELF-HOSTED runner via `runs-on`
+# labels. `self.hosted` and `linux` are Bitbucket's own reserved labels;
+# `cpaas-automation` is a custom label -- it must match whatever label(s)
+# you assign when you register the runner on the dedicated Linux server
+# (Repository settings > Runners > Add runner). See docs/CICD_SETUP.md
+# for the one-time server setup (Python 3.12, Playwright browsers +
+# system deps, persistent venv, runner registration).
+#
+# No `image:` here on purpose -- every step runs on the self-hosted
+# runner's own host, using the Python/Playwright already installed there
+# per docs/CICD_SETUP.md, not a Docker image. No Docker is introduced
+# anywhere in this file.
+#
+# Secrets
+# -------
+# QA_EMAIL / QA_PASSWORD / STAGING_EMAIL / STAGING_PASSWORD are Bitbucket
+# **secured repository variables** (Repository settings > Repository
+# variables, "Secured" checkbox) -- never written into this file or into
+# config/environments/*.env. The script below maps whichever pair
+# matches the selected ENV onto VALID_EMAIL/VALID_PASSWORD (the names
+# utils/config.py already reads), via shell export, never via Python and
+# never echoed. Bitbucket also redacts any secured variable's value if it
+# ever appears in step output.
+#
+# No `git pull` of any kind appears anywhere below -- the runner's own
+# checkout step controls exactly which commit runs.
+#
+
+definitions:
+  steps:
+    - step: &run-sms-tests
+        name: Run SMS tests
+        runs-on:
+          - "self.hosted"
+          - "linux"
+          - "cpaas-automation"
+        script:
+          # 1. Validate repo -- confirm we're where we think we are, on
+          #    the commit Bitbucket checked out (no git pull here -- the
+          #    runner's checkout step controls the commit, not this
+          #    script).
+          - |
+            echo "[ci] Repository: $BITBUCKET_REPO_FULL_NAME @ $BITBUCKET_COMMIT"
+            test -f pytest.ini || { echo "[ci] ERROR - pytest.ini not found, wrong working directory"; exit 1; }
+            test -f scripts/run_tests.py || { echo "[ci] ERROR - scripts/run_tests.py not found"; exit 1; }
+
+          # 2. Validate Python -- the server's persistent venv must exist
+          #    (one-time server prep per docs/CICD_SETUP.md; this step
+          #    only activates it, never creates it).
+          - |
+            export VENV_PATH="${VENV_PATH:-$HOME/cpaas_venv}"
+            test -d "$VENV_PATH" || { echo "[ci] ERROR - venv not found at $VENV_PATH, see docs/CICD_SETUP.md"; exit 1; }
+            source "$VENV_PATH/bin/activate"
+            python3 --version
+
+          # 3. Install/update dependencies -- the same requirements.txt a
+          #    developer installs locally; no second dependency source.
+          - pip install --quiet -r requirements.txt
+
+          # 4. Verify Playwright browsers are present. System deps
+          #    (`--with-deps`, needs sudo) are installed once as part of
+          #    server setup, not here.
+          - python3 -m playwright install chromium
+
+          # 5. Resolve ENV -> credentials. ENV is the SAME variable
+          #    utils/config.py already reads (config/environments/<ENV>.env).
+          #    QA_EMAIL/QA_PASSWORD/SMS_API_TOKEN_QA and
+          #    STAGING_EMAIL/STAGING_PASSWORD/SMS_API_TOKEN_STAGING are
+          #    Bitbucket secured repository variables -- already visible
+          #    to this step as env vars without anything below, since
+          #    utils/config.py's SECRET_ENV_MAPPING resolves them
+          #    directly by name. The VALID_EMAIL/VALID_PASSWORD export
+          #    below is kept ONLY as an extra early guard (a clear bash-
+          #    level failure before Python/venv activation even matters)
+          #    and for any code path that still reads the legacy
+          #    VALID_EMAIL/VALID_PASSWORD names -- it is not a second
+          #    resolver, both paths read the exact same secured
+          #    variables. Values are exported/checked for presence only,
+          #    never printed.
+          - |
+            export ENV="${ENV:-qa}"
+            if [ "$ENV" = "qa" ]; then
+              export VALID_EMAIL="$QA_EMAIL"
+              export VALID_PASSWORD="$QA_PASSWORD"
+              SMS_TOKEN_VAR_NAME="SMS_API_TOKEN_QA"
+              SMS_TOKEN_VALUE="$SMS_API_TOKEN_QA"
+            elif [ "$ENV" = "staging" ]; then
+              export VALID_EMAIL="$STAGING_EMAIL"
+              export VALID_PASSWORD="$STAGING_PASSWORD"
+              SMS_TOKEN_VAR_NAME="SMS_API_TOKEN_STAGING"
+              SMS_TOKEN_VALUE="$SMS_API_TOKEN_STAGING"
+            else
+              echo "[ci] ERROR - unsupported ENV [$ENV], expected qa or staging"
+              exit 1
+            fi
+            if [ -z "$VALID_EMAIL" ] || [ -z "$VALID_PASSWORD" ]; then
+              echo "[ci] ERROR - credentials for ENV=$ENV are not configured as secured repository variables"
+              exit 1
+            fi
+            if [ -z "$SMS_TOKEN_VALUE" ]; then
+              echo "[ci] ERROR - $SMS_TOKEN_VAR_NAME is not configured as a secured repository variable"
+              exit 1
+            fi
+            python3 scripts/ci_preflight.py
+
+          # 6. Validate environment configuration -- fail fast, before
+          #    Playwright/auth starts. Also prints the required safety
+          #    banner (Environment/Channel/Test Type/Workers/Headless --
+          #    never a secret) and hard-fails on a UI/API/DLR environment
+          #    mismatch (scripts/validate_config.py).
+          - |
+            export TEST_TYPE="${TEST_TYPE:-smoke}"
+            export PLAYWRIGHT_WORKERS="${PLAYWRIGHT_WORKERS:-5}"
+            case "$TEST_TYPE" in
+              smoke)      MARKER="smoke" ;;
+              regression) MARKER="regression" ;;
+              full)       MARKER="" ;;
+              *) echo "[ci] ERROR - unsupported TEST_TYPE [$TEST_TYPE], expected smoke, regression or full"; exit 1 ;;
+            esac
+            echo "$MARKER" > /tmp/cpaas_marker.txt
+            if [ -n "$MARKER" ]; then
+              python3 scripts/validate_config.py --channel sms --test-type "$TEST_TYPE" --workers "$PLAYWRIGHT_WORKERS"
+            else
+              python3 scripts/validate_config.py --channel sms --test-type full --workers "$PLAYWRIGHT_WORKERS"
+            fi
+
+          # 7. Warm authentication -- ONE real login before any
+          #    pytest-xdist worker exists (scripts/warm_auth.py already
+          #    guarantees this via utils/auth_state.py's cross-process
+          #    lock; running it here just removes the race window
+          #    entirely, per its own docstring).
+          - python3 scripts/warm_auth.py
+
+          # 8. Execute tests -- via the EXISTING scripts/run_tests.py,
+          #    never a hand-rolled pytest command. No `|| true` -- a test
+          #    failure must fail this step, and therefore this pipeline.
+          - |
+            MARKER="$(cat /tmp/cpaas_marker.txt)"
+            if [ -n "$MARKER" ]; then
+              python3 scripts/run_tests.py tests/sms -m "$MARKER"
+            else
+              python3 scripts/run_tests.py tests/sms
+            fi
+        after-script:
+          # 9. Generate reports / collect artifacts -- after-script always
+          #    runs, on success AND on failure, so a failed run still
+          #    leaves reports/test_report.html, junit.xml and
+          #    summary.json behind for the artifacts step below.
+          - |
+            echo "[ci] Test step finished with exit code $BITBUCKET_EXIT_CODE - collecting reports/ for artifact upload"
+            test -f reports/summary.json && cat reports/summary.json || echo "[ci] WARNING - reports/summary.json not found"
+        artifacts:
+          # 10. Artifacts -- exactly these, never reports/.auth/** (that
+          #     would publish authentication/storage state as a pipeline
+          #     artifact, which must never happen).
+          - reports/test_report.html
+          - reports/screenshots/**
+          - reports/logs/**
+          - reports/junit.xml
+          - reports/summary.json
+          # Advanced reporting: dashboard.html/failures.json plus the
+          # per-run copies under reports/runs/<run-id>/ (screenshots/logs
+          # scoped to only what that run produced -- see reporting/artifacts.py).
+          - reports/current/**
+          - reports/runs/**
+
+pipelines:
+  # Automatic: every pull request -> SMS Smoke @ QA.
+  pull-requests:
+    "**":
+      - step:
+          <<: *run-sms-tests
+          name: "SMS Smoke - QA (PR)"
+      # ENV/TEST_TYPE/PLAYWRIGHT_WORKERS are not set here, so the step's
+      # own script defaults apply: ENV=qa, TEST_TYPE=smoke, WORKERS=5.
+
+  # Automatic: push to main -> SMS Smoke @ QA.
+  branches:
+    main:
+      - step:
+          <<: *run-sms-tests
+          name: "SMS Smoke - QA (main)"
+
+  # Manual and scheduled runs both live under `custom:` -- Bitbucket
+  # Pipelines YAML has no native `schedule:` key, so the nightly run is
+  # wired up from the Bitbucket repo UI (Pipelines > Schedules), pointing
+  # at the `sms-nightly-staging-regression` pipeline below, not here.
+  custom:
+    # Manual: any ENV / TEST_TYPE / PLAYWRIGHT_WORKERS combination, picked
+    # from Bitbucket's "Run pipeline" UI -- no YAML edit needed for a
+    # normal run.
+    sms-manual-run:
+      - variables:
+          - name: ENV
+            default: "qa"
+            allowed-values:
+              - "qa"
+              - "staging"
+          - name: TEST_TYPE
+            default: "smoke"
+            allowed-values:
+              - "smoke"
+              - "regression"
+              - "full"
+          - name: PLAYWRIGHT_WORKERS
+            default: "5"
+      - step:
+          <<: *run-sms-tests
+          name: "SMS Manual Run"
+
+    # Scheduled nightly (configure in Pipelines > Schedules: pipeline =
+    # this one, branch = main, frequency = nightly). Fixed at Staging
+    # regression, 8 workers -- the single allowed-values entry on each
+    # variable means this pipeline can never be pointed at a different
+    # ENV/TEST_TYPE, even if run manually. Never targets production.
+    sms-nightly-staging-regression:
+      - variables:
+          - name: ENV
+            default: "staging"
+            allowed-values:
+              - "staging"
+          - name: TEST_TYPE
+            default: "regression"
+            allowed-values:
+              - "regression"
+          - name: PLAYWRIGHT_WORKERS
+            default: "8"
+      - step:
+          <<: *run-sms-tests
+          name: "SMS Regression - Staging (Nightly)"

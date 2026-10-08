@@ -1134,6 +1134,12 @@ class SMSCampaignPage(BasePage):
 
     def select_sender_id(self, value):
         self._wireui_select(self.DROPDOWN_SENDER_ID, value)
+        # The Template dropdown's option list is repopulated by Livewire
+        # in reaction to the Sender ID change (template availability can
+        # depend on the selected sender). Selecting a template immediately
+        # after this call could race that re-render, so give Livewire a
+        # moment to settle before the caller moves on to select_template().
+        self.page.wait_for_timeout(1500)
 
     def select_template(self, value):
         self._wireui_select(self.DROPDOWN_TEMPLATE, value)

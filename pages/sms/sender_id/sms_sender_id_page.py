@@ -840,14 +840,28 @@ class SMSSenderIDPage(BasePage):
 
     def is_sender_id_present_in_list(self, sender_id: str) -> bool:
         """
-        Navigate to the Sender ID list and confirm that an exact row exists
-        for sender_id.  Mirrors Java:
+        Navigate to the Sender ID list and confirm that a row exists for
+        sender_id. Originally mirrored the Java exact-match locator only:
             By.xpath("//td[normalize-space()='" + senderId + "']")
+
+        STRENGTHENED: exact-only matching was producing false negatives for
+        sender IDs that a manual search in the live app clearly showed as
+        present (confirmed directly against the real app) -- most likely
+        because the real <td> isn't a bare text node (a status badge,
+        wrapping span, or extra whitespace around the ID changes what
+        normalize-space() returns for the whole cell). The analogous,
+        already-proven lookup for Templates
+        (SmsTemplatePage.is_template_present_in_list) hit the exact same
+        problem and was fixed with a contains() fallback ("handles
+        whitespace / badge wrapping") -- mirroring that same fix here
+        rather than inventing a new approach.
 
         Strategy:
           1. Hard-reload the list page so we're not looking at a stale DOM.
-          2. Check if the exact <td> is already visible (first page).
-          3. If not, use the search box to narrow the results, then check again.
+          2. Check if an exact OR contains() <td> match is already visible
+             (first page).
+          3. If not, use the search box to narrow the results, then check
+             both match styles again.
 
         IMPORTANT: do NOT fall back to has_records() — that returns True whenever
         ANY rows exist and would make every check pass regardless of content.
@@ -856,19 +870,24 @@ class SMSSenderIDPage(BasePage):
         self.page.wait_for_timeout(2000)
         self._close_sidebar_overlay()
 
-        # Exact <td> match (mirrors Java locator)
-        by_td = f"xpath=//td[normalize-space()='{sender_id}']"
+        # Exact <td> match (mirrors Java locator) plus a contains() fallback
+        # for a cell that isn't a bare text node (badge/whitespace wrapping).
+        by_exact = f"xpath=//td[normalize-space()='{sender_id}']"
+        by_contains = f"xpath=//td[contains(normalize-space(),'{sender_id}')]"
 
         # 1. Check without search (covers first page of results)
-        if self.is_element_present(by_td, timeout=5000):
+        if self.is_element_present(by_exact, timeout=5000):
+            return True
+        if self.is_element_present(by_contains, timeout=2000):
             return True
 
-        # 2. Search to narrow results, then check for exact match
+        # 2. Search to narrow results, then check both match styles again
         try:
             self.search(sender_id)
             self.page.wait_for_timeout(1500)
-            # Only confirm if the specific <td> is visible — NOT just any row
-            return self.is_element_present(by_td, timeout=5000)
+            if self.is_element_present(by_exact, timeout=5000):
+                return True
+            return self.is_element_present(by_contains, timeout=2000)
         except Exception:
             return False
 

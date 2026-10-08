@@ -3,9 +3,8 @@
 .env.*
 
 config/environments/*.env
+!config/environments/*.env.example
 reports/
-
-scripts/
 
 
 # Python
@@ -28,4 +27,10 @@ htmlcov/
 # Temporary files
 _to_delete/
 *.old
+
+# Stray top-level pytest-html/debug dumps (reports/ already covers the
+# real report output dir -- these two have shown up loose at repo root
+# from ad-hoc runs and should never be committed).
+/report.html
+/tc*_fail.html
 *.b64

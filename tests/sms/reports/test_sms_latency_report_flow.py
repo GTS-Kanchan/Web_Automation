@@ -307,6 +307,12 @@ def test_tc15_verify_column_headers(latency_report_page):
     if "Select Dimensions" not in label:
         latency_report_page.reset_group_by_dimensions()
         latency_report_page.navigate_to_report()
+    expected_columns = ["duration", "product", "delivered 0-5 sec", "delivered 5-10 sec"]
+    not_found = latency_report_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = latency_report_page.get_visible_column_headers()
     joined = " ".join(headers).lower()
     assert "duration" in joined
@@ -444,6 +450,11 @@ def test_ui_default_table_headers_full(latency_report_page):
     EXPECTED_SMS_LATENCY_REPORT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_report_page(latency_report_page)
+    not_found = latency_report_page.ensure_columns_checked(EXPECTED_SMS_LATENCY_REPORT_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = latency_report_page.get_visible_column_headers()
     for col in EXPECTED_SMS_LATENCY_REPORT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

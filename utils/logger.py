@@ -18,9 +18,14 @@ import os
 import sys
 import threading
 
+from utils.config import REPORTS_DIR
 from utils.parallel import worker_id
 
-_LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "reports", "logs")
+# <REPORTS_DIR>/logs -- REPORTS_DIR is the same instance-aware root
+# DOWNLOAD_DIR nests under (utils/config.py): the flat "reports/logs" path
+# unless INSTANCE is set, in which case it's reports/<env>/<instance>/
+# [<run-id>]/logs instead. See utils/config.py's module docstring.
+_LOG_DIR = os.path.join(REPORTS_DIR, "logs")
 _lock = threading.Lock()
 
 

@@ -186,9 +186,15 @@ def test_template_analytics_TC03_columns_displayed(template_analytics_page):
     """TC_03: All expected columns are visible and aligned in the table
     header. Asserts against the confirmed live <thead> column set."""
     ensure_on_report_page(template_analytics_page)
+    expected_columns = ["duration", "product", "agent", "template name",
+                     "total count", "total charges"]
+    not_found = template_analytics_page.ensure_columns_checked(expected_columns)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = [h.lower() for h in template_analytics_page.get_visible_column_headers()]
-    for expected in ["duration", "product", "agent", "template name",
-                     "total count", "total charges"]:
+    for expected in expected_columns:
         assert any(expected in h for h in headers), f"Missing column: {expected}"
 
 
@@ -679,6 +685,11 @@ def test_ui_default_table_headers_full(template_analytics_page):
     EXPECTED_RCS_TEMPLATE_ANALYTICS_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     template_analytics_page.navigate_to_report()
+    not_found = template_analytics_page.ensure_columns_checked(EXPECTED_RCS_TEMPLATE_ANALYTICS_UI_HEADERS)
+    assert not not_found, (
+        "Could not find/check these columns in the Columns dropdown: "
+        f"{not_found}"
+    )
     headers = template_analytics_page.get_visible_column_headers()
     for col in EXPECTED_RCS_TEMPLATE_ANALYTICS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

@@ -1,6 +1,4 @@
-"""constants/monthly_usage_ui_headers.py — Column headers, filter options,
-and metadata for the Monthly Usage billing page (/billing/monthly/usage-details).
-"""
+
 
 EXPECTED_MONTHLY_USAGE_UI_HEADERS = [
     "Month",

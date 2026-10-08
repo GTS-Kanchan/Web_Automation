@@ -1,5 +1,5 @@
-Sender ID,Entity ID,Country Code,Description
-AB,1701158046444780002,IN,Too short (2 chars)
-A,1701158046444780002,IN,Too short (1 char)
-TOOLONGSIDXX,1701158046444780002,IN,"Too long for India (12 chars, needs exactly 6)"
-VERYLONGID123,1701158046444780002,IN,Too long (13 chars)
+Sender_ID,Type,Country_Code,Entity_ID
+AB,Transactional,IN,'1701158046444780002'
+A,Transactional,IN,'1701158046444780002'
+TOOLONGSIDXX,Transactional,IN,'1701158046444780002'
+VERYLONGID123,Transactional,IN,'1701158046444780002'
