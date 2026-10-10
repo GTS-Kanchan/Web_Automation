@@ -174,6 +174,14 @@ CLICKABLE_REPORT_CARDS = [
         ],
     },
     {
+        # CONFIRMED (2026-10-10, explicit real-UI correction): DLR
+        # Awaited is genuinely DIFFERENT from Total Messages/Submitted/
+        # Delivered/Failed -- it has NO "DLR Received At" column (makes
+        # sense: a DLR-awaited message hasn't received its DLR yet, so
+        # there is nothing to show there). Do not "fix" this back to the
+        # 7-column set without a fresh, explicit instruction confirming
+        # the app has changed -- an earlier guess that it matched the
+        # other 4 cards was wrong and was reverted.
         "name": "DLR Awaited",
         "headers": [
             "CONTACT",
@@ -556,6 +564,15 @@ def verify_ui_total_messages_vs_export(ui_total_messages, export_total_messages)
 def report_page(module_logged_in_page):
     listing = SMSCampaignPage(module_logged_in_page)
     listing.open_campaign_list()
+    # Real-run fix (2026-10-10): the list's default "Created" filter is a
+    # 1-day (today-only) window -- see
+    # SMSCampaignPage.ensure_records_visible_with_previous_day_fallback's
+    # docstring. Widen to include yesterday whenever the table is empty,
+    # before relying on there being a first row at all.
+    try:
+        listing.ensure_records_visible_with_previous_day_fallback()
+    except Exception:
+        pass
     navigated = listing.click_reports_link_on_first_row()
     assert navigated, (
         "Could not open an SMS Campaign message report page from the "
@@ -567,6 +584,27 @@ def report_page(module_logged_in_page):
     p.wait_for_table_load(timeout=15000)
     cid = p.remember_campaign_id()
     assert cid, "Could not determine the campaign id (UUID) from the report page URL"
+
+    # Real-run fix (2026-10-10): confirmed via a real Chrome screenshot
+    # showing CONTACT present vs. an automated chromium run missing both
+    # CONTACT and SMS UNITS on this same "Total Messages" table -- this
+    # is the same column-visibility-leak already diagnosed/fixed for
+    # utils/campaign_dlr.py's TC045 flow. This report's table
+    # (TABLE_NAME = "sms_messages") is the EXACT SAME Livewire table
+    # component as pages/sms/messaging/sms_message_page.py's SMS
+    # Messages list -- column visibility is that table's own persisted
+    # state, not scoped to one page's URL, so a column a Messages-page
+    # test left hidden leaks in here too. Self-heal once up front, before
+    # any of TC03-TC09's header assertions run, rather than reacting
+    # per-test.
+    try:
+        from pages.sms.sms_message_page import SMSMessagePage
+        SMSMessagePage(p.page).restore_default_columns()
+        p.page.reload()
+        p.wait_for_table_load(timeout=15000)
+    except Exception:
+        pass
+
     return p
 
 

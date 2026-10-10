@@ -61,23 +61,38 @@ class SMSDownloadCenterPage(BasePage):
     )
 
     # Row action buttons
+    # NOTE: a real pasted screenshot (2026-10-10) confirms the row action
+    # tooltips read "Delete Report" (and presumably "View Report"/
+    # "Download Report" by the same naming convention), not the bare
+    # "View"/"Download"/"Delete" these locators originally assumed --
+    # switched to contains() so the primary locator matches directly
+    # instead of relying on the positional-cell fallback in
+    # _action_btn_for_row().
     ROW_VIEW_ICON = (
-        "xpath=(//button[@title='View' or @aria-label='View' or @data-tooltip='View'"
-        "  or contains(@class,'view')])[1]"
-        " | (//a[@title='View' or @aria-label='View'])[1]"
+        "xpath=(//button[contains(@title,'View') or contains(@aria-label,'View')"
+        "  or contains(@data-tooltip,'View') or contains(@class,'view')])[1]"
+        " | (//a[contains(@title,'View') or contains(@aria-label,'View')])[1]"
     )
     ROW_DOWNLOAD_ICON = (
-        "xpath=(//button[@title='Download' or @aria-label='Download'"
-        "  or @data-tooltip='Download'])[1]"
-        " | (//a[@title='Download' or @aria-label='Download'"
+        "xpath=(//button[contains(@title,'Download') or contains(@aria-label,'Download')"
+        "  or contains(@data-tooltip,'Download')])[1]"
+        " | (//a[contains(@title,'Download') or contains(@aria-label,'Download')"
         "       or (contains(@href,'download') and not(contains(@href,'center')))])[1]"
     )
     ROW_DELETE_ICON = (
-        "xpath=(//button[@title='Delete' or @aria-label='Delete' or @data-tooltip='Delete'"
+        "xpath=(//button[contains(@title,'Delete') or contains(@aria-label,'Delete')"
+        "  or contains(@data-tooltip,'Delete')"
         "  or contains(@class,'delete') or contains(@class,'trash')])[1]"
     )
 
-    # Delete confirmation: SweetAlert2
+    # Delete confirmation: this is a NATIVE browser confirm() dialog --
+    # CONFIRMED via a real pasted screenshot (2026-10-10) showing a
+    # plain browser-chrome "<host> says: Are you sure you want to delete
+    # this report?" prompt with OK/Cancel, not a styled SweetAlert2
+    # popup. The SweetAlert2 locators below are kept only as a
+    # best-effort fallback in case a different environment/build uses a
+    # styled modal instead -- click_delete_icon()/confirm_delete()/
+    # is_delete_modal_visible() all check the native dialog path first.
     DELETE_CONFIRM_BTN = "button.swal2-confirm, .swal2-actions .swal2-confirm"
     DELETE_CANCEL_BTN  = "button.swal2-cancel, .swal2-actions .swal2-cancel"
     SWAL2_CONTAINER    = ".swal2-container, .swal2-popup"
@@ -142,16 +157,64 @@ class SMSDownloadCenterPage(BasePage):
     def __init__(self, page):
         super().__init__(page)
         self._downloaded_paths = []
+        # Real-run fix (2026-10-10): a real run showed wait_for_download()
+        # returning None (timeout) even though the failure message's own
+        # network capture proved the click DID land on a real download
+        # link and the browser DID receive a 200 response for the actual
+        # file bytes (an S3 object URL, not a status-poll endpoint) --
+        # i.e. the download genuinely happened at the network level, but
+        # something after that was never recorded. _on_download below used
+        # to swallow any exception from download.save_as() silently
+        # ("except Exception: pass"), which would produce exactly this
+        # symptom: Playwright's 'download' event DOES fire (so the browser
+        # really did download it), but if save_as() ever throws, nothing
+        # is appended to _downloaded_paths and no trace of the failure
+        # survives anywhere. These counters/lists make that distinction
+        # observable instead of invisible: _download_events_seen proves
+        # whether the event fired at all; _download_errors captures
+        # exactly why a save attempt failed, if it did.
+        self._download_events_seen = 0
+        self._download_errors = []
         self.page.on("download", self._on_download)
 
     def _on_download(self, download):
+        self._download_events_seen += 1
         try:
+            os.makedirs(DOWNLOAD_DIR, exist_ok=True)
             filename = download.suggested_filename or f"sms_report_{int(time.time() * 1000)}.csv"
             dest = os.path.join(DOWNLOAD_DIR, filename)
             download.save_as(dest)
             self._downloaded_paths.append(dest)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._download_errors.append(f"{type(exc).__name__}: {exc}")
+            # save_as() failing doesn't mean the download itself failed --
+            # Playwright keeps the completed download at its own internal
+            # temp path (download.path()) regardless of whether save_as()
+            # could copy it to DOWNLOAD_DIR. Try that as a fallback before
+            # giving up entirely, so a save_as()-specific problem (a bad
+            # destination path, a permissions issue, ...) doesn't also
+            # cost us the file itself.
+            try:
+                internal_path = download.path()
+                if internal_path:
+                    self._downloaded_paths.append(internal_path)
+            except Exception as exc2:
+                self._download_errors.append(
+                    f"fallback download.path() also failed: "
+                    f"{type(exc2).__name__}: {exc2}"
+                )
+
+    def get_download_diagnostics(self):
+        """Real evidence for a wait_for_download() timeout's failure
+        message: distinguishes "the browser's download event never fired
+        at all" (events_seen == 0 -- a real locator/click/network problem)
+        from "it fired but something after that went wrong" (events_seen
+        > 0, errors non-empty -- see _download_errors for exactly what)."""
+        return {
+            "events_seen": self._download_events_seen,
+            "errors": list(self._download_errors),
+            "saved_paths": list(self._downloaded_paths),
+        }
 
     # -------------------------------------------------------------------------
     # Navigation
@@ -524,7 +587,7 @@ class SMSDownloadCenterPage(BasePage):
             for attr_val in attr_values.get(icon_type, []):
                 for attr in ("title", "aria-label", "data-tooltip"):
                     try:
-                        el = row.locator(f"[{attr}='{attr_val}']").first
+                        el = row.locator(f"xpath=.//*[contains(@{attr},'{attr_val}')]").first
                         if el.count() > 0 and el.is_visible():
                             return el
                     except Exception:
@@ -728,7 +791,16 @@ class SMSDownloadCenterPage(BasePage):
                     pass
 
         if clicked:
-            self.page.wait_for_timeout(600)
+            # Poll for the native dialog instead of a single fixed sleep --
+            # this row's delete action is a Livewire wire:click.confirm,
+            # and a real run showed the confirm() prompt can take longer
+            # than a flat 600ms to appear (same class of timing issue
+            # already fixed elsewhere in this project via poll/retry
+            # rather than a single fixed wait). Exits early as soon as the
+            # dialog is captured.
+            end_time = time.time() + 3.0
+            while not self._pending_native_dialog and time.time() < end_time:
+                self.page.wait_for_timeout(150)
         self.page.wait_for_timeout(200)
 
     def confirm_delete(self):

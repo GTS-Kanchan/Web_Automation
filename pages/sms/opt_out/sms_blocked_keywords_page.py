@@ -108,6 +108,18 @@ class SmsBlockedKeywordsPage(BasePage):
         "#keyword, input[wire\\:model='keyword'], input[wire\\:model\\.defer='keyword'], "
         "input[name='keyword']"
     )
+    # Status <select> on the Add Keyword modal -- CONFIRMED from a real
+    # pasted DOM dump: <select wire:model.defer="status" ...> with
+    # <option value="1">Active</option> / <option value="0">Inactive</option>,
+    # no id/name of its own (the wire:model binding is the only reliable
+    # handle). Scoped to #modal-container so this never matches the
+    # DIFFERENT status <select> on the Filters popover
+    # (STATUS_FILTER_SELECT above, wire:model.LIVE not .defer, and only
+    # present when the modal is closed).
+    MODAL_STATUS_SELECT = (
+        "#modal-container select[wire\\:model\\.defer='status'], "
+        "#modal-container select[wire\\:model='status']"
+    )
     MODAL_SAVE_BTN = (
         "xpath=//div[@id='modal-container']//button[@type='submit'] "
         "| //div[@id='modal-container']//button[contains(normalize-space(.),'Save') "
@@ -344,6 +356,85 @@ class SmsBlockedKeywordsPage(BasePage):
         self._js_click(self.COLUMNS_BUTTON, timeout=10000)
         self.page.wait_for_timeout(500)
 
+    def get_column_toggles(self):
+        """Return list of (label_text, checkbox_locator, is_checked) for
+        every checkbox in the Columns panel, scoped to this table's own
+        wire:key wrappers. Label resolution mirrors every other report
+        page in this project: for= attribute on a sibling <label>, an
+        enclosing <label>, a following sibling span/label, and finally
+        the checkbox's own `value` attribute as a last resort."""
+        self.open_columns_dropdown()
+        result = []
+        try:
+            checkboxes = self.page.locator(self.COLUMN_CHECKBOXES)
+            count = checkboxes.count()
+        except Exception:
+            return result
+        for i in range(count):
+            cb = checkboxes.nth(i)
+            label_text = ""
+            try:
+                cb_id = cb.get_attribute("id") or ""
+                if cb_id:
+                    lbl = self.page.locator(f"label[for='{cb_id}']").first
+                    if lbl.count() > 0:
+                        label_text = lbl.inner_text().strip()
+            except Exception:
+                pass
+            if not label_text:
+                try:
+                    lbl = cb.locator("xpath=ancestor::label[1]").first
+                    label_text = lbl.inner_text().strip()
+                except Exception:
+                    pass
+            if not label_text:
+                try:
+                    lbl = cb.locator(
+                        "xpath=following-sibling::span[1] | following-sibling::label[1]"
+                    ).first
+                    label_text = lbl.inner_text().strip()
+                except Exception:
+                    pass
+            if not label_text:
+                val = cb.get_attribute("value") or ""
+                label_text = val.replace("_", " ").replace("-", " ").title()
+            try:
+                is_checked = cb.is_checked()
+            except Exception:
+                is_checked = False
+            result.append((label_text, cb, is_checked))
+        return result
+
+    def ensure_columns_checked(self, labels):
+        """Make sure each column named in `labels` (case-insensitive,
+        substring match against the Columns panel's label text) is
+        checked, checking it if currently unchecked. Self-heal so a
+        UI header check doesn't depend on whatever column-visibility
+        state an earlier test in this module-scoped session left behind
+        -- same convention as every other report page in this project.
+        Returns the list of requested labels that could not be
+        found/checked."""
+        wanted = [(label, label.strip().lower()) for label in labels]
+        not_found = []
+        for original_label, needle in wanted:
+            toggles = self.get_column_toggles()
+            match = None
+            for label_text, cb, is_checked in toggles:
+                if needle in label_text.strip().lower():
+                    match = (cb, is_checked)
+                    break
+            if match is None:
+                continue
+            cb, is_checked = match
+            if not is_checked:
+                try:
+                    cb.scroll_into_view_if_needed()
+                    cb.click(force=True)
+                    self.page.wait_for_timeout(800)
+                except Exception:
+                    not_found.append(original_label)
+        return not_found
+
     # ── Add Keyword (modal) ──────────────────────────────────────────────────
 
     def click_add_keyword(self):
@@ -359,17 +450,33 @@ class SmsBlockedKeywordsPage(BasePage):
     def is_add_keyword_modal_open(self):
         return self.is_element_present(self.KEYWORD_INPUT, timeout=8000)
 
-    def add_keyword(self, keyword):
+    def add_keyword(self, keyword, status=None):
+        """status: None (leave the modal's own default, which the real
+        wire:snapshot confirms is "status":1 i.e. Active) or 'Active' /
+        'Inactive' to explicitly select that option (matched by visible
+        option text -- confirmed real values are "1"/"0", but matching by
+        label keeps this resilient to that changing)."""
         inp = self.h.clear_and_type(self.KEYWORD_INPUT, keyword)
         try:
             inp.evaluate("(el) => { el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); }")
         except Exception:
             pass
+        if status is not None:
+            self.set_status_on_add_modal(status)
         self.page.wait_for_timeout(1000)  # Wait for Livewire sync
         btn = self.page.locator(self.MODAL_SAVE_BTN).first
         btn.wait_for(state="visible", timeout=5000)
         btn.click(force=True)
         self.page.wait_for_timeout(3000)
+
+    def set_status_on_add_modal(self, status):
+        """status: 'Active' or 'Inactive' (matched by visible option
+        text). wire:model.defer means the value is only sent to the
+        server on submit, not per-change -- select_option() alone is
+        enough, no extra dispatch needed."""
+        select = self.h.wait_for_element_visible(self.MODAL_STATUS_SELECT)
+        select.select_option(label=status)
+        self.page.wait_for_timeout(300)
 
     def click_cancel_on_add_modal(self):
         btn = self.page.locator(self.MODAL_CANCEL_BTN).first

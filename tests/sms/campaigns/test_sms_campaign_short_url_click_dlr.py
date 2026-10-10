@@ -106,6 +106,7 @@ from utils.dlr_format_validator import (
     validate_dlr_format,
 )
 from utils.dlr_helpers import DLR_POLL_TIMEOUT_SECONDS, poll_for_dlr
+from utils.helpers import STEALTH_INIT_SCRIPT, real_user_context_kwargs
 
 pytestmark = [pytest.mark.sms, pytest.mark.campaign]
 
@@ -373,7 +374,20 @@ def test_dlr_and_short_url_click_count(api_client, logged_in_page, browser, reco
     had_scheme = bool(re.match(r"^https?://", short_url))
     record_property("short_url_click_target", click_target)
 
-    click_context = browser.new_context(ignore_https_errors=True)
+    # Real-run fix (2026-10-10): HEADLESS=true-only failure -- the click
+    # navigates and redirects fine either way, but the backend's click
+    # COUNTER only increments for traffic that doesn't look like headless
+    # automation (this project's pinned playwright==1.47.0 still launches
+    # OLD-mode headless Chromium, whose User-Agent literally contains
+    # "HeadlessChrome"). Give this dedicated click context a normal desktop
+    # Chrome UA (see utils/helpers.py's real_user_context_kwargs /
+    # desktop_user_agent docstrings for the full evidence) so it's counted
+    # the same as a real user's click; no-op under headed runs.
+    click_context_kwargs = {"ignore_https_errors": True}
+    if Config.HEADLESS:
+        click_context_kwargs.update(real_user_context_kwargs(browser))
+    click_context = browser.new_context(**click_context_kwargs)
+    click_context.add_init_script(STEALTH_INIT_SCRIPT)
     try:
         for click_no in range(1, NUM_CLICKS + 1):
             # ── Steps 11-12 (with retry) ─────────────────────────────────

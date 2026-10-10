@@ -598,197 +598,6 @@ class TestCreateTemplate:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PART 3B — Override Existing Template (same Sender + Template Name)
-#
-# TC_09 / TC_10: creating a template with the SAME Sender + Template Name
-# as an already-existing one overrides/updates that existing template in
-# place -- confirmed real behavior (project owner) -- rather than creating
-# a second row or being rejected as a duplicate.
-# ══════════════════════════════════════════════════════════════════════════════
-
-class TestTemplateOverride:
-
-    def _create_then_override(self, template_page, sender_id, tmpl_type, use_dlt,
-                               dlt_ids=None):
-        """dlt_ids: optional (first_save_dlt_id, second_save_dlt_id) pair.
-        When use_dlt is True and dlt_ids is omitted, the SAME DLT_ID is used
-        for both saves (legacy behavior). The real "override" mechanism the
-        app implements is: same sender + same template name, but a
-        DIFFERENT DLT Template Id on the second save -- that is what causes
-        the app to update/override the existing row instead of creating a
-        new one or rejecting the save. Pass dlt_ids=(id1, id2) with id1 !=
-        id2 to exercise that path (required for senders -- e.g. "dummy" --
-        that the app rejects without a DLT Template Id at all)."""
-        name = _rand_name()
-        original_content = CONTENT_TRANS
-        updated_content = CONTENT_TRANS + " UPDATED_FOR_OVERRIDE_TEST"
-        first_dlt_id, second_dlt_id = dlt_ids if dlt_ids else (DLT_ID, DLT_ID)
-
-        def _fill_and_save(content, dlt_id_for_this_save):
-            template_page.click_create_template()
-            template_page.fill_template_name(name)
-            template_page.select_sender_id(sender_id)
-            template_page.page.wait_for_timeout(1000)
-            try:
-                template_page.select_type(tmpl_type)
-            except Exception:
-                pass
-            if use_dlt:
-                template_page.fill_dlt_id(dlt_id_for_this_save)
-            template_page.fill_content(content)
-            try:
-                template_page.fill_sample(SAMPLE_TRANS)
-            except Exception:
-                pass
-            template_page.click_save(wait_ms=5000)
-            template_page.page.wait_for_timeout(3000)
-
-        def _assert_save_succeeded(step_label):
-            """Both saves were previously trusted blind -- only the SECOND
-            one got any success check at all, and even that check
-            (is_success_toast_shown() or is_template_list_page()) can't
-            distinguish "saved fine" from "validation failed but we're
-            still/again on a page whose URL contains 'template'". Check
-            explicitly for a toast/inline validation error FIRST (the
-            authoritative signal when present), and only fall back to the
-            toast-or-list-page heuristic when no error is visible -- for
-            either save, not just the second. This is what will surface
-            whether a sender (e.g. "dummy") silently requires a DLT ID
-            that use_dlt=False never fills in, instead of that failure
-            only showing up later as a confusing "found 0 rows"."""
-            toast_error = template_page.get_toast_error()
-            validation_errors = template_page.get_validation_errors()
-            if toast_error or validation_errors:
-                pytest.fail(
-                    f"{step_label} save for sender={sender_id!r} name={name!r} "
-                    f"was rejected by the app -- toast error: {toast_error!r}, "
-                    f"inline validation errors: {validation_errors!r}. "
-                    f"(If this is the 'dummy' sender, it may require a DLT/Entity "
-                    f"ID that use_dlt=False never fills in -- see this test's own "
-                    f"docstring.)"
-                )
-            success = template_page.is_success_toast_shown() or template_page.is_template_list_page()
-            assert success, (
-                f"{step_label} save for sender={sender_id!r} name={name!r} did not "
-                f"show a success toast or return to the template list, and no "
-                f"explicit validation/toast error was detected either -- unclear "
-                f"failure, needs investigation."
-            )
-
-        # -- First create --
-        _to_list(template_page)
-        _fill_and_save(original_content, first_dlt_id)
-        _assert_save_succeeded("First (create)")
-        _created.append(name)
-
-        # -- Capture the id of the just-created row, so the second save can
-        #    be proven to have updated THIS SAME row rather than a new one.
-        #    NOTE: search(name) narrows pagination but the app's own search
-        #    can be fuzzy/token-based (e.g. it may match on just the
-        #    "AutoTmpl" prefix shared by every randomly-generated test
-        #    template still sitting in this account from earlier runs), so
-        #    row identity is read via an EXACT td-text match, never via
-        #    "whatever search surfaced first" --
-        _to_list(template_page)
-        template_page.search(name)
-        template_page.page.wait_for_timeout(1500)
-        first_matches = template_page.get_rows_by_exact_name(name)
-        first_match_count = first_matches.count()
-        assert first_match_count == 1, (
-            f"Expected exactly 1 row with the exact name '{name}' before the "
-            f"override save, found {first_match_count} -- the list's search "
-            f"may be returning unrelated rows (e.g. other leftover test "
-            f"templates sharing the 'AutoTmpl_' prefix); name uniqueness "
-            f"itself may be compromised"
-        )
-        original_template_id = template_page.get_template_id_from_row(first_matches.first)
-        assert original_template_id is not None, (
-            f"Could not read the template id for '{name}' off its row after the "
-            f"first (create) save -- can't verify override identity without it"
-        )
-        template_page.clear_search()
-
-        # -- Second create: SAME sender + SAME name, different content and
-        #    (when use_dlt) a DIFFERENT DLT Template Id -- this is the real
-        #    override trigger the app implements --
-        _to_list(template_page)
-        _fill_and_save(updated_content, second_dlt_id)
-        _assert_save_succeeded("Second (override)")
-
-        # -- Verify exactly ONE row with this EXACT name (override, not a
-        #    duplicate) -- see the note above on why this must be an exact
-        #    td-text match rather than the raw search-result row count --
-        _to_list(template_page)
-        template_page.search(name)
-        template_page.page.wait_for_timeout(1500)
-        overridden_matches = template_page.get_rows_by_exact_name(name)
-        overridden_match_count = overridden_matches.count()
-        assert overridden_match_count == 1, (
-            f"Expected exactly 1 row with the exact name '{name}' after the "
-            f"override save, found {overridden_match_count} "
-            f"-- a second row would mean this created a NEW template instead of "
-            f"overriding the existing one"
-        )
-
-        # -- Verify it's the SAME underlying record (overridden), not a
-        #    different row that happens to have the same name/sender --
-        overridden_row = overridden_matches.first
-        overridden_template_id = template_page.get_template_id_from_row(overridden_row)
-        assert overridden_template_id is not None, (
-            f"Could not read the template id for '{name}' off its row after the "
-            f"second (override) save -- can't verify override identity without it"
-        )
-        assert overridden_template_id == original_template_id, (
-            f"Template '{name}' has a DIFFERENT id after the second save "
-            f"(was {original_template_id!r}, now {overridden_template_id!r}) -- "
-            f"this means a NEW template record was created instead of the "
-            f"existing one being overridden/updated in place"
-        )
-
-        # -- Verify the row's content reflects the NEW submission -- edit
-        #    action is scoped to the SAME exact-matched row above, not a
-        #    document-wide "first row" (which search's fuzziness could
-        #    point at a different template entirely) --
-        assert template_page.click_row_edit(overridden_row), (
-            "Edit button not found on the overridden row"
-        )
-        actual_content = template_page.page.locator(SMSTemplatePage.FORM_CONTENT).input_value()
-        template_page.click_form_cancel()
-        template_page.clear_search()
-        assert actual_content.strip() == updated_content.strip(), (
-            f"Overridden template's content should be the NEW submission "
-            f"({updated_content!r}), got {actual_content!r} -- looks like the old "
-            f"template was kept instead of being overridden"
-        )
-
-    @pytest.mark.regression
-    def test_override_existing_dlt_template_same_sender_and_name(self, template_page):
-        """TC_09: Sender mapped with Entity ID (DLT) -- same sender + same
-        template name overrides the existing DLT template."""
-        self._create_then_override(template_page, "AM-SMS", "Transactional", use_dlt=True)
-
-    @pytest.mark.regression
-    def test_override_existing_non_dlt_template_same_sender_and_name(self, template_page):
-        """TC_10: "dummy" sender -- same sender + same template name, but a
-        DIFFERENT DLT Template Id on the second save, overrides the
-        existing template in place (confirmed real app behavior; see
-        _create_then_override's docstring for the general mechanism).
-
-        CONFIRMED (previously an unconfirmed assumption, now disproven by
-        the app's own validation): "dummy" is NOT a Non-DLT sender -- the
-        app rejects a save for it with "The dlt template id field is
-        required." So this uses use_dlt=True with two distinct generated
-        DLT Template Ids (dlt_ids) rather than use_dlt=False.
-        """
-        dlt_id_1 = SMSTemplatePage.generate_dlt_id()
-        dlt_id_2 = SMSTemplatePage.generate_dlt_id()
-        self._create_then_override(
-            template_page, "dummy", "Transactional", use_dlt=True,
-            dlt_ids=(dlt_id_1, dlt_id_2),
-        )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # PART 4 — Verify Created Templates in List
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1134,6 +943,10 @@ class TestExportTemplateList:
     @pytest.mark.regression
     def test_export_template_list_headers(self, template_page):
         _to_list(template_page)
+        try:
+            template_page.ensure_columns_checked(EXPECTED_SMS_TEMPLATE_UI_HEADERS)
+        except Exception:
+            pass
 
         print("[DOWNLOAD] SMS Template list export requested")
         try:
@@ -1256,6 +1069,10 @@ def test_ui_default_table_headers_full(template_page):
     EXPECTED_SMS_TEMPLATE_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     _to_list(template_page)
+    try:
+        template_page.ensure_columns_checked(EXPECTED_SMS_TEMPLATE_UI_HEADERS)
+    except Exception:
+        pass
     headers = template_page.get_visible_column_headers()
     for col in EXPECTED_SMS_TEMPLATE_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

@@ -253,7 +253,18 @@ def test_campaign_report_TC14_columns_dropdown(campaign_report_page):
         after = set(campaign_report_page.get_visible_column_headers())
         assert after != before, "Column visibility should change after unchecking"
     finally:
-        campaign_report_page.check_column(toggled_value)
+        # Real-run fix (2026-10-10): 'sender' is the confirmed first
+        # optional column, so this restore runs on essentially every run.
+        # An unverified restore here previously left Sender unchecked for
+        # the rest of the module-scoped session (sessionStorage-backed,
+        # survives navigate_to_report()), which silently broke TC_15's
+        # CSV export header check two tests later. Assert the restore
+        # actually stuck instead of trusting it blindly.
+        restored = campaign_report_page.check_column(toggled_value)
+        assert restored, (
+            f"Failed to restore column {toggled_value!r} after unchecking it -- "
+            "this would leak into later tests (e.g. TC_15's export header check)"
+        )
 
 
 # ── TC_15 — Export ────────────────────────────────────────────────────────
@@ -269,6 +280,19 @@ def test_campaign_report_TC15_export_csv(campaign_report_page):
     """
     ensure_on_report_page(campaign_report_page)
     assert campaign_report_page.is_report_page()
+
+    # Belt-and-suspenders self-heal (2026-10-10): the export reads the
+    # same persisted (sessionStorage) column-selection state as the
+    # on-screen Columns dropdown -- if an earlier test in this
+    # module-scoped session (e.g. TC_14) left a column unchecked, the
+    # export silently drops it too, exactly as the 'Sender' column was
+    # observed missing from a real export despite TC_14 supposedly
+    # restoring it. Make sure every column is checked before exporting,
+    # regardless of what TC_14's own restore did.
+    try:
+        campaign_report_page.ensure_columns_checked(EXPECTED_SMS_CAMPAIGN_REPORT_HEADERS)
+    except Exception:
+        pass
 
     print("[DOWNLOAD] SMS Campaign Report export requested")
     result = campaign_report_page.click_export_csv(timeout_ms=30000)

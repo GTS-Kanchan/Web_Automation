@@ -384,10 +384,21 @@ class SMSTemplatePage(BasePage):
 
     # ── Export ─────────────────────────────────────────────────────────────────
 
-    def export_to_xlsx(self, timeout_ms=30000):
+    def export_to_xlsx(self, timeout_ms=60000):
         """
         Opens the Bulk Actions dropdown, then clicks Export, capturing the
         resulting download.
+
+        Real-run fix (2026-10-09): default bumped 30000 -> 60000ms --
+        a real run showed page.expect_download() timing out on a plain
+        30s wait with a large template list (the export only begins
+        generating/downloading once the backend has serialized every row,
+        so a larger account's list genuinely needs more wall-clock time
+        here, not a locator fix). 60000ms matches the precedent already
+        set on SmsMessagePage.export() for the same reason, the largest
+        default timeout already in use among this suite's many
+        export_to_xlsx()/export_csv()/click_export_csv() methods (most of
+        which default to 30000ms for comparatively small lists).
 
         A real pytest run showed this timing out on MENU_EXPORT even
         though the BTN_BULK_ACTIONS click itself didn't raise.
@@ -460,6 +471,89 @@ class SMSTemplatePage(BasePage):
 
     def get_visible_column_headers(self):
         return self._get_headers_safe(self.COLUMN_HEADERS)
+
+    def get_column_toggles(self):
+        """Return list of (label_text, checkbox_locator, is_checked) for
+        every checkbox in the Columns panel. Label resolution mirrors
+        every other report page in this project: for= attribute on a
+        sibling <label>, an enclosing <label>, a following sibling
+        span/label, and finally the checkbox's own `value` attribute as
+        a last resort."""
+        try:
+            self.h.wait_for_element_clickable(self.BTN_COLUMNS).click()
+            self.page.wait_for_timeout(400)
+        except Exception:
+            pass
+        result = []
+        try:
+            checkboxes = self.page.locator(self.COLUMN_CHECKBOXES)
+            count = checkboxes.count()
+        except Exception:
+            return result
+        for i in range(count):
+            cb = checkboxes.nth(i)
+            label_text = ""
+            try:
+                cb_id = cb.get_attribute("id") or ""
+                if cb_id:
+                    lbl = self.page.locator(f"label[for='{cb_id}']").first
+                    if lbl.count() > 0:
+                        label_text = lbl.inner_text().strip()
+            except Exception:
+                pass
+            if not label_text:
+                try:
+                    lbl = cb.locator("xpath=ancestor::label[1]").first
+                    label_text = lbl.inner_text().strip()
+                except Exception:
+                    pass
+            if not label_text:
+                try:
+                    lbl = cb.locator(
+                        "xpath=following-sibling::span[1] | following-sibling::label[1]"
+                    ).first
+                    label_text = lbl.inner_text().strip()
+                except Exception:
+                    pass
+            if not label_text:
+                val = cb.get_attribute("value") or ""
+                label_text = val.replace("_", " ").replace("-", " ").title()
+            try:
+                is_checked = cb.is_checked()
+            except Exception:
+                is_checked = False
+            result.append((label_text, cb, is_checked))
+        return result
+
+    def ensure_columns_checked(self, labels):
+        """Make sure each column named in `labels` (case-insensitive,
+        substring match against the Columns panel's label text) is
+        checked, checking it if currently unchecked. Self-heal so a
+        UI/export header check doesn't depend on whatever column-
+        visibility state an earlier test in this module-scoped session
+        left behind -- same convention as every other report page in
+        this project. Returns the list of requested labels that could
+        not be found/checked."""
+        wanted = [(label, label.strip().lower()) for label in labels]
+        not_found = []
+        for original_label, needle in wanted:
+            toggles = self.get_column_toggles()
+            match = None
+            for label_text, cb, is_checked in toggles:
+                if needle in label_text.strip().lower():
+                    match = (cb, is_checked)
+                    break
+            if match is None:
+                continue
+            cb, is_checked = match
+            if not is_checked:
+                try:
+                    cb.scroll_into_view_if_needed()
+                    cb.click(force=True)
+                    self.page.wait_for_timeout(800)
+                except Exception:
+                    not_found.append(original_label)
+        return not_found
 
     def uncheck_first_optional_column(self):
         self.h.wait_for_element_clickable(self.BTN_COLUMNS).click()

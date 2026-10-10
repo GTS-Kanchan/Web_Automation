@@ -216,6 +216,10 @@ def test_tc008b_export_csv_headers(blocked_numbers_page):
     ensure_on_page(blocked_numbers_page)
 
     print("[DOWNLOAD] SMS Blocked Numbers export requested")
+    try:
+        blocked_numbers_page.restore_default_columns()
+    except Exception:
+        pass
     result = blocked_numbers_page.export_csv(timeout_ms=30000)
     assert result is not None, "Export should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"
@@ -643,6 +647,10 @@ def test_ui_default_table_headers_full(blocked_numbers_page):
     EXPECTED_SMS_BLOCKED_NUMBERS_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_page(blocked_numbers_page)
+    try:
+        blocked_numbers_page.restore_default_columns()
+    except Exception:
+        pass
     headers = blocked_numbers_page.get_visible_column_headers()
     for col in EXPECTED_SMS_BLOCKED_NUMBERS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

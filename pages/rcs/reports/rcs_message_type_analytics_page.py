@@ -210,16 +210,37 @@ class RcsMessageTypeAnalyticsPage(BasePage):
     def get_product_filter_value(self):
         return self.h.wait_for_element_visible(self.FILTER_PRODUCT_SELECT).input_value()
 
-    def toggle_product_filter_option(self, value):
-        """value: 'promotional' | 'transactional' | 'otp' | 'multi_use'.
+    # CONFIRMED live DOM (2026-10-09, real captured markup): this filter is
+    # a plain <select id="{TABLE_NAME}-filter-product"
+    # wire:model.live="filterComponents.product"> with options value=""
+    # (All) | "Transactional" | "Promotional" | "OTP" -- NOT a checkbox
+    # multiselect. The earlier "UNCONFIRMED-select correction" guessed a
+    # checkbox shape (ids "{TABLE_NAME}-filter-product-0/1/2/3") by analogy
+    # with RCS Usage Analytics, which genuinely does use checkboxes for this
+    # filter -- that guess is now disproven for THIS report by the real DOM
+    # (same fix independently confirmed on RCS Campaign Analytics' identical
+    # select, same shared Livewire filter component).
+    # toggle_product_filter_option() is kept (callers/tests already use this
+    # name) but now just delegates to the confirmed select-based
+    # select_product_filter(), case-mapping the lowercase values the old
+    # checkbox guess used onto the real option values.
+    _PRODUCT_FILTER_VALUE_MAP = {
+        "": "",
+        "all": "",
+        "transactional": "Transactional",
+        "promotional": "Promotional",
+        "otp": "OTP",
+    }
 
-        UNCONFIRMED-select correction: this page had no "CONFIRMED live DOM" claim backing its previous <select>-based select_product_filter() (unlike e.g. Country/Template Analytics, which genuinely do document that confirmation) -- it was an unverified guess, following the same generic docstring copied across every report's page object. A sibling report, RCS Usage Analytics, turned out to have a checkbox-based multiselect for this exact filter instead (user-supplied live DOM: ids "{TABLE_NAME}-filter-product-0/1/2/3" with a "value" attribute of "promotional"/"transactional"/"otp"/"multi_use" each), which this codebase's own shared-component naming convention (Message Type Analytics uses the identical "{TABLE_NAME}-filter-product-N" id pattern) makes the more likely real shape here too. Not independently re-confirmed for this specific report -- if this is wrong, select_product_filter() above is kept unchanged as a fallback."""
-        self.open_filters_popover()
-        cb = self.h.wait_for_element_visible(
-            f"input[id^='{self.TABLE_NAME}-filter-product-'][value='{value}']")
-        cb.scroll_into_view_if_needed()
-        cb.click(force=True)
-        self.page.wait_for_timeout(1500)
+    def toggle_product_filter_option(self, value):
+        """value: '' | 'all' | 'transactional' | 'promotional' | 'otp'
+        (case-insensitive), or already-correctly-cased 'Transactional' |
+        'Promotional' | 'OTP' -- selects that option in the CONFIRMED
+        <select id="{TABLE_NAME}-filter-product"> filter. 'multi_use' has
+        no equivalent here (that's a Usage-Analytics-only product type) and
+        is not accepted."""
+        mapped = self._PRODUCT_FILTER_VALUE_MAP.get(value.lower(), value)
+        self.select_product_filter(mapped)
 
     # ── Report Type ──────────────────────────────────────────────────────────
 

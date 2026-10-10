@@ -37,7 +37,7 @@ environments:
 
     auth_token: ""
     campaign_id: "3e087f65-bf67-42ef-95c7-c37d5c28866f"
-    template_id: "7075"
+    template_id: "55515"
     timeout_seconds: 15
     verify_ssl: true
 

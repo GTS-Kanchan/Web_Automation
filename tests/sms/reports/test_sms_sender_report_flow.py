@@ -221,6 +221,10 @@ def test_sender_report_TC13_export_csv(sender_report_page):
     assert sender_report_page.is_report_page()
 
     print("[DOWNLOAD] SMS Sender Report export requested")
+    try:
+        sender_report_page.ensure_columns_checked(EXPECTED_SMS_SENDER_REPORT_HEADERS)
+    except Exception:
+        pass
     result = sender_report_page.click_export_csv(timeout_ms=30000)
     assert result is not None, "Export CSV should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"

@@ -17,6 +17,7 @@ import re
 import time
 
 from pages.common.base_page import BasePage
+from utils.auth_state import recover_if_logged_out
 
 
 class SMSCampaignPage(BasePage):
@@ -132,13 +133,23 @@ class SMSCampaignPage(BasePage):
 
     # Filter — locators confirmed from a live DOM dump of the SMS Campaigns
     # list page's filter panel (rappasoft/laravel-livewire-tables
-    # filterComponents block). Confirmed real filters (7 total): Department,
-    # User, Status, Type, Template Name, Sender Id, Product. There is NO
-    # Schedule From/To date-range filter on this page.
+    # filterComponents block). Confirmed real filters: Department,
+    # User, Status, Type, Template Name, Sender Id, Product, AND a
+    # Created From/To date-range filter (CORRECTED 2026-10-10 — a prior
+    # version of this comment claimed no Schedule/date filter existed on
+    # this page; a real DOM dump disproved that: the panel has
+    # #sms_campaigns-filter-created_from-wrapper /
+    # ...-created_to-wrapper, each an Alpine x-data component with a bare
+    # <input type="date"> + time <select> inside the wrapper (identical
+    # structure to the Messages page's own Created From/To widget — see
+    # SMSMessagePage.FILTER_FROM_WRAPPER / _set_precise_date_time's
+    # docstring). See FILTER_FROM_WRAPPER/FILTER_TO_WRAPPER below.
     BTN_FILTER               = "xpath=//button[contains(.,'Filter') or @*[name()='wire:click' and contains(.,'filter')]]"
     SELECT_FILTER_DEPARTMENT = "#sms_campaigns-filter-department"
     SELECT_FILTER_USER       = "#sms_campaigns-filter-user"
     SELECT_FILTER_STATUS     = "#sms_campaigns-filter-status"
+    FILTER_FROM_WRAPPER      = "#sms_campaigns-filter-created_from-wrapper"
+    FILTER_TO_WRAPPER        = "#sms_campaigns-filter-created_to-wrapper"
     # NOTE: this filter's Livewire field is `filterComponents.source`, not
     # `.type` -- confirmed via the real DOM: <select
     # wire:model.live="filterComponents.source" id="sms_campaigns-filter-source">
@@ -837,6 +848,68 @@ class SMSCampaignPage(BasePage):
         sel.select_option(label=value.capitalize())
         self.page.wait_for_timeout(1500)
 
+    def _set_precise_date_time(self, wrapper_selector, date_str, time_str=None):
+        """Same Alpine widget structure as
+        SMSMessagePage._set_precise_date_time (identical real DOM: a bare
+        <input type='date'> + time <select>, both scoped inside
+        wrapper_selector with no id of their own). time_str is optional
+        here -- the fallback use below only needs day granularity, so
+        when omitted the time <select> is left untouched."""
+        try:
+            date_input = self.page.locator(f"{wrapper_selector} input[type='date']").first
+            date_input.evaluate(
+                "(el, v) => { el.value = v; "
+                "el.dispatchEvent(new Event('input', {bubbles: true})); "
+                "el.dispatchEvent(new Event('change', {bubbles: true})); }",
+                date_str,
+            )
+            self.page.wait_for_timeout(300)
+        except Exception:
+            pass
+        if time_str:
+            try:
+                self.h.select_option(f"{wrapper_selector} select", value=time_str)
+                self.page.wait_for_timeout(300)
+            except Exception:
+                pass
+
+    def set_filter_date_range(self, from_date, to_date):
+        """from_date/to_date: 'YYYY-MM-DD'. Sets the Created From/To date
+        filter (see FILTER_FROM_WRAPPER/FILTER_TO_WRAPPER's docstring for
+        the confirmed real DOM)."""
+        self.open_filter()
+        self._set_precise_date_time(self.FILTER_FROM_WRAPPER, from_date)
+        self._set_precise_date_time(self.FILTER_TO_WRAPPER, to_date)
+        self.page.wait_for_timeout(1000)
+
+    def ensure_records_visible_with_previous_day_fallback(self):
+        """
+        Real-run fix (2026-10-10, user-confirmed): same symptom and same
+        cause as SMSMessagePage's method of the same name -- this list
+        page's "Created" date filter also defaults to a ONE-DAY (today
+        only) window, which can hide genuinely-real campaigns created the
+        previous day. A real pytest run showed every
+        test_sms_campaign_message_report_flow.py test ERRORing with
+        "Could not open an SMS Campaign message report page from the
+        listing page's first row" -- i.e. the list had NO row at all for
+        click_reports_link_on_first_row() to use, consistent with the
+        default filter hiding all of today's-vs-yesterday's data.
+
+        If the table is empty right now, broaden Created From to include
+        yesterday (Created To stays today) and give the table one more
+        chance to load. Cheap no-op when rows are already present. Never
+        raises -- best-effort widening only.
+        """
+        if self.get_row_count() > 0:
+            return
+        try:
+            today = datetime.datetime.now().strftime("%Y-%m-%d")
+            yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+            self.set_filter_date_range(yesterday, today)
+            self.page.wait_for_timeout(1000)
+        except Exception:
+            pass
+
     def export_campaigns(self):
         try:
             btn = self.page.locator(self.BTN_BULK_ACTION).first
@@ -1054,7 +1127,25 @@ class SMSCampaignPage(BasePage):
         raise Exception("Campaign Name input not found by XPath or JS scan")
 
     def enter_campaign_name(self, name):
-        inp = self._find_campaign_name_input()
+        """Real-run fix (2026-10-10): a real run showed this raising
+        _find_campaign_name_input's generic "input not found" exception
+        while the page was actually sitting on /login -- a captured
+        screenshot confirmed it -- i.e. the shared session expired
+        between this test's own start (where conftest.py's autouse
+        session-recovery check already ran) and this later navigation
+        inside the same test body. If the lookup fails AND we're on
+        /login, recover the session, re-navigate back to campaign create,
+        and retry ONCE before giving up; a failure for any other reason
+        (not a login redirect) is re-raised as-is, unchanged."""
+        try:
+            inp = self._find_campaign_name_input()
+        except Exception:
+            if recover_if_logged_out(self.page):
+                self.open(self.CAMPAIGN_CREATE_URL)
+                self.page.wait_for_timeout(1500)
+                inp = self._find_campaign_name_input()
+            else:
+                raise
         inp.scroll_into_view_if_needed()
         try:
             inp.evaluate("(el) => { el.value = ''; }")
@@ -1232,10 +1323,38 @@ class SMSCampaignPage(BasePage):
     def is_import_popup_open(self):
         return self.is_element_present(self.IMPORT_POPUP, timeout=5000)
 
-    def paste_contacts(self, numbers_text):
-        ta = self.page.locator(self.TEXTAREA_PASTE).first
-        ta.wait_for(state="attached", timeout=10000)
-        ta.fill(numbers_text)
+    def paste_contacts(self, numbers_text, attempts=3):
+        """Paste into the Import Contacts textarea (#cp_contacts).
+
+        Real-run fix (2026-10-09): a real run showed this timing out
+        waiting 10s for #cp_contacts to attach, called right after
+        click_import_contact() with no check that the popup actually
+        opened first -- same class of timing issue already found and
+        fixed on RCS's equivalent Import Contacts modal
+        (click_import_contacts_btn()'s bounded retry): opening this
+        modal is a Livewire round-trip that isn't always done within a
+        short fixed wait under load, and click_import_contact() itself
+        never verifies the popup opened before returning. Bounded retry
+        here: if the textarea doesn't attach within the wait window,
+        check whether the popup is even open (is_import_popup_open())
+        and, if not, re-click Import Contacts and try again, instead of
+        failing on the very first miss."""
+        last_exc = None
+        for attempt in range(1, attempts + 1):
+            try:
+                ta = self.page.locator(self.TEXTAREA_PASTE).first
+                ta.wait_for(state="attached", timeout=10000)
+                ta.fill(numbers_text)
+                return
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= attempts:
+                    raise
+                if not self.is_import_popup_open():
+                    self.click_import_contact()
+                self.page.wait_for_timeout(800)
+        if last_exc:
+            raise last_exc
 
     def _arm_file_chooser_guard(self):
         """Safety net against a real native OS "Open" dialog popping up

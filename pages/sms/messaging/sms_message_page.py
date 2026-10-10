@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime, timedelta
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -603,6 +604,46 @@ class SMSMessagePage(BasePage):
             except Exception:
                 pass
 
+    def ensure_records_visible_with_previous_day_fallback(self):
+        """
+        Real-run fix (2026-10-10, user-confirmed): the Messages table's
+        "Created" date filter defaults to a ONE-DAY window (today only --
+        confirmed from the filter panel's own date widget, whose `max` is
+        always today -- see FILTER_FROM_WRAPPER/FILTER_TO_WRAPPER and
+        set_filter_date_range()'s docstring for the real DOM). Some real
+        test data is genuinely older than "today" (created the previous
+        day, e.g. late-night runs crossing midnight, or data left over
+        from an earlier day's run) -- the default filter silently excludes
+        it, which isn't a real "no data" state, just a too-narrow window.
+        A real pytest run hit exactly this: TC002/TC003 found neither data
+        rows nor the "No records" placeholder, because the table can
+        render with NO placeholder row at all when a filter (as opposed to
+        a search) is what's producing zero rows.
+
+        Per the user's instruction: if the table is empty right now,
+        broaden Created From to include yesterday (Created To stays
+        today) and give the table one more chance to load before the
+        caller's own assertion runs. Cheap no-op when rows are already
+        present. Never raises -- this is a best-effort widening, not a
+        guarantee; a caller's own "rows or no-records message" assertion
+        is still the real check.
+        """
+        try:
+            self.wait_for_table_load(timeout=10000)
+        except Exception:
+            pass
+        if self.get_row_count() > 0:
+            return
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            self.open_filter_panel()
+            self.set_filter_date_range(yesterday, today)
+            self.page.wait_for_timeout(1000)
+            self.wait_for_table_load(timeout=10000)
+        except Exception:
+            pass
+
     def diagnose_date_filter(self):
         """
         Return concrete evidence about what FILTER_FROM_DATE/FILTER_TO_DATE
@@ -838,40 +879,61 @@ class SMSMessagePage(BasePage):
         toggle), click once more and do a final poll. Every branch ends
         by having actually verified a visible checkbox, or having
         genuinely exhausted retries, rather than assuming success.
+
+        Real-run fix (2026-10-10): a run showed TC021 failing with ZERO
+        toggles found after a full poll/click/poll cycle, with a captured
+        screenshot of Laravel's "419 | PAGE EXPIRED" overlay covering the
+        page -- the Columns button's Livewire AJAX call landed after the
+        shared browser context's session/CSRF token had gone stale
+        mid-suite, so no checkbox panel was ever going to render no matter
+        how long we polled. If the normal open attempt comes up empty,
+        check for that overlay specifically and, if present, refresh the
+        page (see Helpers.recover_from_page_expired) and retry the whole
+        open once with a fresh session.
         """
-        btn = self.h.wait_for_element_clickable(self.BTN_COLUMNS, timeout=10000)
-        btn.scroll_into_view_if_needed()
 
-        def _has_visible_toggle():
-            try:
-                return self.page.locator(
-                    "xpath=//input[@type='checkbox'][not(ancestor::table)] >> visible=true"
-                ).count() > 0
-            except Exception:
-                return False
+        def _try_open():
+            btn = self.h.wait_for_element_clickable(self.BTN_COLUMNS, timeout=10000)
+            btn.scroll_into_view_if_needed()
 
-        def _poll(attempts=6, interval_ms=300):
-            for _ in range(attempts):
+            def _has_visible_toggle():
+                try:
+                    return self.page.locator(
+                        "xpath=//input[@type='checkbox'][not(ancestor::table)] >> visible=true"
+                    ).count() > 0
+                except Exception:
+                    return False
+
+            def _poll(attempts=6, interval_ms=300):
+                for _ in range(attempts):
+                    if _has_visible_toggle():
+                        self.page.wait_for_timeout(500)
+                        return True
+                    self.page.wait_for_timeout(interval_ms)
                 if _has_visible_toggle():
                     self.page.wait_for_timeout(500)
                     return True
-                self.page.wait_for_timeout(interval_ms)
-            if _has_visible_toggle():
-                self.page.wait_for_timeout(500)
+                return False
+
+            if _poll():
                 return True
+
+            for _ in range(2):
+                try:
+                    btn.click()
+                except Exception:
+                    pass
+                self.page.wait_for_timeout(500)
+                if _poll():
+                    return True
             return False
 
-        if _poll():
+        if _try_open():
             return
 
-        for _ in range(2):
-            try:
-                btn.click()
-            except Exception:
-                pass
-            self.page.wait_for_timeout(500)
-            if _poll():
-                return
+        if self.h.recover_from_page_expired():
+            self.navigate()
+            _try_open()
 
     # Labels that represent "toggle all" controls — skip these
     _SKIP_TOGGLE_LABELS = {
@@ -945,6 +1007,66 @@ class SMSMessagePage(BasePage):
             return result
         except Exception:
             return []
+
+    def restore_default_columns(self):
+        """
+        Restores the Columns panel to its CONFIRMED default state: every
+        real (non-skip) toggleable column checked. Mirrors
+        RcsAgentPage.restore_default_columns -- same project convention
+        (that page's own docstring: "default: all 7 toggleable checkboxes
+        checked") -- but this page never had its own restore method,
+        which is the gap this closes.
+
+        Real-run fix (2026-10-10): this page's underlying Livewire table
+        is named "sms_messages" (confirmed: get_column_toggles/
+        toggle_column/open_column_panel all operate on this page's own
+        plain `table` locator, which IS that Livewire component) -- and
+        tests/sms/campaigns/sms_campaign_message_report_flow's report
+        page renders the EXACT SAME table component (TABLE_NAME =
+        "sms_messages" there too, confirmed via
+        wire:key="sms_messages-table-head-0" per that page's own
+        docstring). Column-visibility is this Livewire table's own
+        persisted state, not something scoped to one page's URL -- so a
+        column left hidden by a test HERE (e.g. an interrupted TC022-style
+        toggle-and-restore) leaks into that completely different page too,
+        for the rest of the run. A real run hit exactly that: the
+        Campaign Message Report's "Total Messages" table was missing
+        CONTACT and SMS UNITS -- both confirmed-present defaults there --
+        with every other column present and in the same order (not a
+        locator break; a genuine two-column subset consistent with a
+        leaked hide).
+
+        Callers on EITHER page should call this before relying on the
+        full default column set being visible, not just tests that
+        directly manipulate columns.
+        """
+        # Real-run fix (2026-10-10): the original version below trusted a
+        # single toggle_column() call per unchecked label with no
+        # verification -- toggle_column() clicks a <label> by text match
+        # and silently swallows every exception, so a click that lands on
+        # the wrong element (e.g. a partial text match) or doesn't
+        # actually flip the checkbox leaves it unchecked with no signal
+        # anything went wrong. A live run showed exactly that: CONTACT
+        # and SMS UNITS stayed missing on the Campaign Message Report
+        # page even after this method ran. Now verifies each column is
+        # actually checked afterward and retries (re-reading toggles
+        # fresh each pass, since a click can trigger a Livewire
+        # re-render) up to 3 passes before giving up on a given column.
+        for attempt in range(3):
+            try:
+                self.open_column_panel()
+                toggles = self.get_column_toggles()
+            except Exception:
+                return
+            still_unchecked = [label for label, is_checked in toggles if not is_checked]
+            if not still_unchecked:
+                return
+            for label in still_unchecked:
+                try:
+                    self.toggle_column(label)
+                except Exception:
+                    pass
+            self.page.wait_for_timeout(300)
 
     def toggle_column(self, label_text):
         """Toggle a column checkbox by its label text."""

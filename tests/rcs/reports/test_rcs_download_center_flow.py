@@ -495,26 +495,53 @@ class TestTC08FilterProcessing:
 # TC_09 — View / Summary modal opens
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _open_view_modal_on_completed_row(p: RcsDownloadCenterPage):
+    """Filter to Completed and click View on a CONFIRMED-completed row,
+    then return whether the summary modal opened.
+
+    CORRECTED (2026-10-09): real run evidence (screenshot) showed clicking
+    View on row 0 with NO status filter applied does not reliably open the
+    summary modal -- the row at index 0 (most recent request, this table's
+    default/only sort) is often still 'pending'/'processing', which has no
+    completed download/summary to show, so the View action is a no-op for
+    it. Filtering to STATUS_COMPLETED first and locating an actual
+    completed row (rather than assuming row 0 is one) makes this
+    deterministic instead of depending on what request happened to be most
+    recent when the suite ran."""
+    p.set_filter_status(p.STATUS_COMPLETED)
+    row_idx = p.find_row_with_status(p.STATUS_COMPLETED)
+    if row_idx == -1:
+        pytest.skip("No Completed-status rows available to test the View icon")
+    p.click_view_icon(row_idx=row_idx)
+    p.page.wait_for_timeout(1500)
+    return p.is_popup_open()
+
+
 class TestTC09ViewModal:
     """TC_09: Clicking the View icon opens the summary modal.
     NOTE: exact row action title is UNCONFIRMED for this page (table had
     zero rows at DOM-capture time) — see rcs_download_center_page.py's
     module docstring. Skips gracefully if no rows exist.
 
+    CORRECTED (2026-10-09): the View action only reliably opens the summary
+    modal for a Completed-status row (see _open_view_modal_on_completed_row
+    docstring) -- all three tests below now filter to Completed and locate
+    a real completed row instead of blindly clicking row 0.
+
     Independence: the two follow-on tests no longer assume
     test_tc09_view_modal_opens ran first (in this order, in this worker)
     and left the modal open for them -- each opens its own modal via the
-    same already-established click_view_icon(row_idx=0) call if it isn't
+    same shared _open_view_modal_on_completed_row() helper if it isn't
     open already, so every test in this class passes standalone."""
 
     def test_tc09_view_modal_opens(self, download_center_page):
         ensure_on_dc_page(download_center_page)
         if download_center_page.get_row_count() == 0:
             pytest.skip("No rows available to test view icon")
-        download_center_page.click_view_icon(row_idx=0)
-        download_center_page.page.wait_for_timeout(1500)
-        assert download_center_page.is_popup_open(), (
-            "Summary modal did not open after clicking the View icon"
+        opened = _open_view_modal_on_completed_row(download_center_page)
+        assert opened, (
+            "Summary modal did not open after clicking the View icon on a "
+            "Completed-status row"
         )
 
     def test_tc09_modal_content_nonempty(self, download_center_page):
@@ -522,8 +549,7 @@ class TestTC09ViewModal:
         if not download_center_page.is_popup_open():
             if download_center_page.get_row_count() == 0:
                 pytest.skip("No rows available to test view icon")
-            download_center_page.click_view_icon(row_idx=0)
-            download_center_page.page.wait_for_timeout(1500)
+            _open_view_modal_on_completed_row(download_center_page)
         if not download_center_page.is_popup_open():
             pytest.skip("Summary modal not open")
         text = download_center_page.get_popup_all_text()
@@ -534,8 +560,7 @@ class TestTC09ViewModal:
         if not download_center_page.is_popup_open():
             if download_center_page.get_row_count() == 0:
                 pytest.skip("No rows available to test view icon")
-            download_center_page.click_view_icon(row_idx=0)
-            download_center_page.page.wait_for_timeout(1500)
+            _open_view_modal_on_completed_row(download_center_page)
         if not download_center_page.is_popup_open():
             pytest.skip("Summary modal not open")
         download_center_page.close_popup()
@@ -730,21 +755,48 @@ class TestTC12ConfirmDelete:
         # delete lands server-side -- a live search box's `wire:model`
         # value hasn't changed, so nothing tells Livewire to refetch.
         # Re-issuing search() partway through (a real re-fill of the
-        # input, not a cache read) forces exactly that refetch. If the
-        # row count still hasn't dropped after this, that's real signal
-        # the delete did not actually take effect server-side, not a
-        # polling/timing gap -- see confirm_debug in the assertion below.
+        # input, not a cache read) forces exactly that refetch.
+        #
+        # Real-run fix (2026-10-09): the "partway through" trigger above
+        # (fire once >6s of the 10s window has elapsed) can itself be
+        # starved -- a real run showed the failure with re-searched=False,
+        # which only happens if the loop's own calls (get_row_count() /
+        # is_no_records_visible(), or general app load at the time) ate
+        # most/all of the 10s window before the elapsed-time check was
+        # ever reached, so the re-search safety net never got a chance to
+        # run at all. A wall-clock-relative trigger inside a loop whose
+        # own iteration cost is NOT guaranteed small is unreliable by
+        # construction. Fixed by decoupling the re-search from the poll
+        # loop's timing entirely: it now ALWAYS fires exactly once, a
+        # fixed 4 polls in (regardless of how long those polls took), and
+        # -- belt and suspenders -- there is also a final guaranteed
+        # re-search + recheck AFTER the loop if the loop exited without
+        # ever having researched, so this safety net can no longer be
+        # skipped by timing variance. If the row count still hasn't
+        # dropped after that, that's real signal the delete did not
+        # actually take effect server-side, not a polling/timing gap --
+        # see confirm_debug in the assertion below.
         deadline = time.time() + 10
         researched = False
+        poll_count = 0
         after_count = download_center_page.get_row_count()
         while time.time() < deadline:
             after_count = download_center_page.get_row_count()
             if after_count < before_count or download_center_page.is_no_records_visible():
                 break
-            if not researched and time.time() > deadline - 6:
+            poll_count += 1
+            if not researched and poll_count >= 4:
                 download_center_page.search(disposable_report)
                 researched = True
+                after_count = download_center_page.get_row_count()
+                if after_count < before_count or download_center_page.is_no_records_visible():
+                    break
             download_center_page.page.wait_for_timeout(500)
+        if not researched and not (after_count < before_count or download_center_page.is_no_records_visible()):
+            download_center_page.search(disposable_report)
+            researched = True
+            download_center_page.page.wait_for_timeout(1500)
+            after_count = download_center_page.get_row_count()
         reset_filters(download_center_page)
         confirm_debug = getattr(download_center_page, "last_confirm_delete_debug", {})
         assert after_count < before_count or download_center_page.is_no_records_visible(), (

@@ -28,14 +28,20 @@ all rows sharing the same Duration) × 100 — confirmed from real DOM rows
 where a Duration's full row set is visible on one page (percentages sum
 to exactly 100%).
 
-IMPORTANT — DOM-confirmed discrepancy vs. the supplied test-case spec:
-TC_16 references error code 454 with description "DLR is pending with
-Operator" as if it were guaranteed sample data, but the live DOM's
-10-row sample only contains error codes 000 ("Delivered") and 450
-("number block") — no code 454 is present. Per the project's "never
-guess" rule, TC_16 is written to search for code 454 dynamically and
-soft-skip if it isn't present on the current data set, rather than
-asserting against a hardcoded row that isn't confirmed to exist.
+IMPORTANT — default-view data gap (real-run finding, 2026-10-10):
+TC_16 references error code 454 ("DLR is pending with Operator"), and a
+small early DOM sample of this page did not happen to contain it. Real
+CSV exports pulled from this same environment on 2026-10-10 confirm code
+454 genuinely occurs in the backend data (e.g. "09-10-2026",
+"Transactional","454","DLR is pending with Operator","2"), so the earlier
+"not confirmed to exist" note was simply an artifact of a narrow default
+date-range view, not a true absence. `ensure_on_report_page()` now calls
+`ensure_records_visible()` (widens the flatpickr range to the widest
+selectable window when the default view shows zero rows) before every
+test, which should surface code 454 in most runs. TC_16 still searches
+for it dynamically and soft-skips if truly absent on the current data
+set/date window, rather than asserting against a hardcoded row, in case
+a given run's visible window still doesn't include it.
 
 Run:
     pytest tests/test_sms_error_code_report_flow.py -v
@@ -72,6 +78,10 @@ def ensure_on_report_page(p):
     if not p.is_report_page():
         p.navigate_to_report()
         p.page.wait_for_timeout(1000)
+    try:
+        p.ensure_records_visible()
+    except Exception:
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -285,6 +295,10 @@ def test_tc13_export_csv_functionality(error_code_report_page):
     assert error_code_report_page.is_report_page()
 
     print("[DOWNLOAD] SMS Error Code Report export requested")
+    try:
+        error_code_report_page.ensure_columns_checked(EXPECTED_SMS_ERROR_CODE_REPORT_HEADERS)
+    except Exception:
+        pass
     result = error_code_report_page.click_export_csv(timeout_ms=30000)
     assert result is not None, "Export CSV should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"
@@ -358,11 +372,12 @@ def test_tc15_delivered_error_code_records(error_code_report_page):
 @pytest.mark.regression
 def test_tc16_pending_dlr_error_code_records(error_code_report_page):
     """TC_16: Records with error code 454 should display "DLR is pending
-    with Operator". NOTE: the live DOM's captured 10-row sample does not
-    contain code 454 (only codes 000="Delivered" and 450="number block"
-    are present) — per the project's "never guess" rule this searches
-    dynamically and soft-skips if the code isn't present in the current
-    data set, rather than asserting against unconfirmed sample data."""
+    with Operator". Real CSV exports from this environment confirm code
+    454 does occur in the backend data; `ensure_on_report_page()` widens
+    the date range when the default view is empty so this test should
+    normally find it. Still searches dynamically and soft-skips if the
+    current visible data set/date window genuinely has no 454 rows,
+    rather than asserting against a hardcoded row."""
     ensure_on_report_page(error_code_report_page)
     rows = error_code_report_page.get_all_row_data()
     matching = [r for r in rows if r["error_code"] == "454"]

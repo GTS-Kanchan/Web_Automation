@@ -444,6 +444,10 @@ def test_ui_default_table_headers_full(error_codes_page):
     EXPECTED_SMS_ERROR_CODES_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_page(error_codes_page)
+    try:
+        error_codes_page.ensure_columns_checked(EXPECTED_SMS_ERROR_CODES_UI_HEADERS)
+    except Exception:
+        pass
     headers = error_codes_page.get_visible_column_headers()
     for col in EXPECTED_SMS_ERROR_CODES_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
@@ -471,6 +475,10 @@ def test_date_datetime_verification_no_date_column(error_codes_page):
     already uses) rather than silently omitting Error Codes from
     date-verification coverage."""
     ensure_on_page(error_codes_page)
+    try:
+        error_codes_page.ensure_columns_checked(EXPECTED_SMS_ERROR_CODES_UI_HEADERS)
+    except Exception:
+        pass
     ui_headers = error_codes_page.get_visible_column_headers()
     # CONFIRMED real behavior: this app renders header LABELS uppercase
     # via CSS text-transform (same as every other list/report page in

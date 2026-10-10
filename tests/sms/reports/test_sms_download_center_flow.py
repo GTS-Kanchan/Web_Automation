@@ -441,6 +441,7 @@ class TestTC10Download:
         finally:
             download_center_page.page.remove_listener("response", _on_response)
 
+        dl_diag = download_center_page.get_download_diagnostics()
         assert downloaded is not None, (
             "Download did not complete within the extended wait budget "
             "(90s, then a further 60s — either still waiting on an "
@@ -450,6 +451,17 @@ class TestTC10Download:
             f"aria-label={diag['aria_label']!r} text={diag['text']!r}\n"
             "Network responses matching download/export/report seen during "
             f"the click window: {seen_responses or '(none — no matching request was ever sent)'}\n"
+            f"Playwright 'download' events seen on this page: {dl_diag['events_seen']}; "
+            f"save errors: {dl_diag['errors'] or '(none)'}; "
+            f"paths ever recorded: {dl_diag['saved_paths'] or '(none)'}\n"
+            "Reading THIS: events_seen == 0 with a 2xx network response means "
+            "the browser received the file but never treated it as a "
+            "download (e.g. rendered/navigated instead) -- not something "
+            "save_as() can fix. events_seen > 0 with a non-empty errors "
+            "list means the download DID happen but saving it to "
+            "DOWNLOAD_DIR failed for the reason given -- see "
+            "SMSDownloadCenterPage._on_download's fallback (download.path()) "
+            "for whether the file was still recovered under saved_paths.\n"
             "Reading this: matched_by == 'positional-fallback' means the "
             "attribute-based locator (title/aria-label/data-tooltip="
             "'Download') didn't match anything real in this row, so a "

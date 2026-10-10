@@ -120,6 +120,30 @@ def _collect_message_ids(report_page):
     string is stored (never fabricated) if neither read returns anything."""
     contact_col = report_page.get_column_index("Contact")
     if contact_col is None:
+        # Real-run fix (2026-10-10): a real run showed this missing
+        # exactly CONTACT and SMS UNITS -- both confirmed-present
+        # defaults for every clickable card on this page -- with every
+        # other column present and in order. This report page renders
+        # the SAME underlying Livewire table ("sms_messages") as the
+        # standalone SMS Messages page
+        # (pages/sms/messaging/sms_message_page.py), and column
+        # visibility is that table's own persisted state, not scoped to
+        # one page's URL -- so a column a Messages-page test left hidden
+        # (an interrupted toggle-and-restore) leaks into this completely
+        # different report page too. Attempt one self-heal: restore
+        # defaults via SMSMessagePage.restore_default_columns() (adds
+        # the missing method this report page never had of its own),
+        # then reload THIS report page and retry the lookup once before
+        # giving up.
+        try:
+            from pages.sms.sms_message_page import SMSMessagePage
+            SMSMessagePage(report_page.page).restore_default_columns()
+            report_page.page.reload()
+            report_page.wait_for_table_load()
+            contact_col = report_page.get_column_index("Contact")
+        except Exception:
+            pass
+    if contact_col is None:
         return None, None, None, {"no_contact_column": report_page.get_visible_column_headers()}
     popup = report_page.message_details_popup()
     recipients, message_ids, message_contents = [], {}, {}

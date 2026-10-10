@@ -55,6 +55,26 @@ def agent_page(module_logged_in_page):
     p = RcsAgentPage(module_logged_in_page)
     p.navigate()
     p.wait_for_table_load(timeout=15000)
+    # FIX (2026-10-09): test_RCS017/018/019 (use_case/status/verification_status
+    # column reads) came back empty -- len(values) == 0 for every row -- even
+    # though COLUMN_INDEX is confirmed correct against the real <thead> markup.
+    # Root cause: the "Columns" visibility toggle (RcsAgentPage.toggle_column /
+    # restore_default_columns) is a Rappasoft Livewire Tables widget whose
+    # selection can be carried in the shared storage_state session this suite
+    # reuses across runs, so a column toggled off in an earlier/unrelated
+    # session silently renders fewer <td>s per row than COLUMN_INDEX expects --
+    # invisible when checking the live app fresh in a normal browser profile
+    # (full columns there), but real for this suite's reused auth state. Every
+    # sibling suite (email/whatsapp templates, sender_id, flows, opt-in/out)
+    # already guards against exactly this by calling restore_default_columns()
+    # before relying on column positions; RcsAgentPage had the method but
+    # never called it. Call it once here at module setup so every test in
+    # this file starts from the CONFIRMED all-7-checked default regardless of
+    # what the reused session happened to carry.
+    try:
+        p.restore_default_columns()
+    except Exception:
+        pass
     return p
 
 
@@ -71,10 +91,19 @@ def _reset_agent_page_state(agent_page):
     reliable way to reset all of that state at once. This also makes each
     test runnable in isolation: `agent_page` itself already does one fresh
     navigate() at module setup, so the very first test to run starts clean
-    too."""
+    too.
+
+    Also restores default columns after every test (wrapped in try/except,
+    matching the established pattern in the email/whatsapp suites) -- guards
+    against test_RCS023_columns_dropdown's own popover interaction, or any
+    other future test, leaving a toggled column behind for the next test."""
     yield
     agent_page.navigate()
     agent_page.wait_for_table_load(timeout=15000)
+    try:
+        agent_page.restore_default_columns()
+    except Exception:
+        pass
 
 
 def test_RCS001_page_loads_successfully(agent_page):
@@ -250,6 +279,10 @@ def test_RCS026_export_csv_verifies_header(agent_page):
     Export pattern already proven on SmsBlockedNumbersPage.export_csv()
     (see RcsAgentPage.export_csv() docstring): the export acts on the
     current filtered listing."""
+    try:
+        agent_page.restore_default_columns()
+    except Exception:
+        pass
     result = agent_page.export_csv()
     if result is None:
         pytest.skip("Bulk Actions -> Export did not produce a downloaded file within 30s")
@@ -290,6 +323,10 @@ def test_ui_default_table_headers_full(agent_page):
     EXPECTED_RCS_AGENT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     agent_page.navigate()
+    try:
+        agent_page.restore_default_columns()
+    except Exception:
+        pass
     headers = agent_page.get_visible_column_headers()
     for col in EXPECTED_RCS_AGENT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

@@ -188,13 +188,15 @@ def test_tc08_filter_by_agent(status_analytics_page):
 @pytest.mark.regression
 def test_tc09_filter_by_product_type(status_analytics_page):
     """TC_09: Filtering by Product Type (Transactional) updates the report.
-    Uses toggle_product_filter_option() (checkbox-based, see its
-    docstring) instead of the old unconfirmed select_product_filter()
-    guess -- get_product_filter_value() doesn't apply to a checkbox
-    multiselect, so it's dropped rather than asserted on."""
+
+    CORRECTED (2026-10-09): real captured DOM shows this filter is a plain
+    <select id="rcs_status_report-filter-product">, not a checkbox
+    multiselect -- toggle_product_filter_option() now delegates to the
+    confirmed select, so get_product_filter_value() applies again."""
     ensure_on_report_page(status_analytics_page)
     status_analytics_page.toggle_product_filter_option("transactional")
     status_analytics_page.page.wait_for_timeout(1000)
+    assert status_analytics_page.get_product_filter_value() == "Transactional"
     assert status_analytics_page.has_records() or status_analytics_page.has_no_records_message()
 
 
@@ -313,6 +315,10 @@ def test_tc17_export_csv(status_analytics_page):
     click-and-sleep pattern that never verified anything (see the
     page object's click_export_csv() docstring)."""
     ensure_on_report_page(status_analytics_page)
+    try:
+        status_analytics_page.ensure_columns_checked(EXPECTED_RCS_STATUS_ANALYTICS_HEADERS)
+    except Exception:
+        pass
     result = status_analytics_page.click_export_csv()
     if result is None:
         pytest.skip("Export CSV did not produce a downloaded file within 30s")

@@ -273,13 +273,16 @@ def test_message_type_analytics_TC11_search_invalid_message_type(message_type_an
 @pytest.mark.regression
 def test_message_type_analytics_TC12_filter_by_product(message_type_analytics_page):
     """TC_12: Filtering by Transactional/OTP/Promotional shows only
-    matching data. Uses toggle_product_filter_option() (checkbox-based,
-    see its docstring) instead of the old unconfirmed select_product_filter()
-    guess -- get_product_filter_value() doesn't apply to a checkbox
-    multiselect, so it's dropped rather than asserted on."""
+    matching data.
+
+    CORRECTED (2026-10-09): real captured DOM shows this filter is a plain
+    <select id="rcs_message_type_report-filter-product">, not a checkbox
+    multiselect -- toggle_product_filter_option() now delegates to the
+    confirmed select, so get_product_filter_value() applies again."""
     ensure_on_report_page(message_type_analytics_page)
     message_type_analytics_page.toggle_product_filter_option("transactional")
     message_type_analytics_page.page.wait_for_timeout(1000)
+    assert message_type_analytics_page.get_product_filter_value() == "Transactional"
     assert message_type_analytics_page.has_records() or message_type_analytics_page.has_no_records_message()
 
 
@@ -339,6 +342,10 @@ def test_message_type_analytics_TC13_export_csv(message_type_analytics_page):
     click-and-sleep pattern that never verified anything (see the
     page object's click_export_csv() docstring)."""
     ensure_on_report_page(message_type_analytics_page)
+    try:
+        message_type_analytics_page.ensure_columns_checked(EXPECTED_RCS_MESSAGE_TYPE_ANALYTICS_HEADERS)
+    except Exception:
+        pass
     result = message_type_analytics_page.click_export_csv()
     if result is None:
         pytest.skip("Export CSV did not produce a downloaded file within 30s")

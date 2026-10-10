@@ -381,26 +381,48 @@ class SmsIncomingMessagesPage(BasePage):
 
     # ── Export CSV ───────────────────────────────────────────────────────────
 
-    def export_csv(self, timeout=30000):
+    def export_csv(self, timeout=90000, attempts=2):
         """Triggers the Export CSV button and captures the resulting
         download via Playwright's native download event (replaces the
-        Selenium mtime-polling approach)."""
-        try:
-            btn = self.h.wait_for_element_clickable(self.EXPORT_CSV_BTN, timeout=10000)
-            btn.scroll_into_view_if_needed()
-            with self.page.expect_download(timeout=timeout) as dl_info:
-                btn.click(force=True)
-            download = dl_info.value
-            filename = download.suggested_filename or "sms_incoming_messages_export.csv"
-            dest = os.path.join(DOWNLOAD_DIR, filename)
-            download.save_as(dest)
-            return {
-                "elapsed_s": None,
-                "file_path": dest,
-                "file_size": os.path.getsize(dest),
-            }
-        except Exception:
-            return None
+        Selenium mtime-polling approach).
+
+        Real-run fix (2026-10-10): a real run showed expect_download()
+        timing out at the previous 30000ms default even for a small
+        on-screen row count (10 rows) -- the export covers the FULL
+        unfiltered dataset behind the UI table's own pagination, not just
+        what's currently visible, so a larger real account's total
+        Incoming Messages history can make this genuinely slow to
+        generate server-side even when the visible page is small. Bumped
+        to 90000ms (same precedent as SMS Template export's own
+        real-run fix: "due to large number of data it take time"), and
+        now retries the click up to `attempts` times -- the previous
+        single-attempt version couldn't distinguish "the click didn't
+        register" from "the export is genuinely slow," so a transient
+        miss on the first attempt was indistinguishable from the slow
+        case and just as likely to erroneously skip the whole test.
+        Returns None only after every attempt's expect_download() has
+        timed out or raised."""
+        last_exc = None
+        for attempt in range(1, attempts + 1):
+            try:
+                btn = self.h.wait_for_element_clickable(self.EXPORT_CSV_BTN, timeout=10000)
+                btn.scroll_into_view_if_needed()
+                with self.page.expect_download(timeout=timeout) as dl_info:
+                    btn.click(force=True)
+                download = dl_info.value
+                filename = download.suggested_filename or "sms_incoming_messages_export.csv"
+                dest = os.path.join(DOWNLOAD_DIR, filename)
+                download.save_as(dest)
+                return {
+                    "elapsed_s": None,
+                    "file_path": dest,
+                    "file_size": os.path.getsize(dest),
+                }
+            except Exception as exc:
+                last_exc = exc
+                if attempt < attempts:
+                    self.page.wait_for_timeout(1000)
+        return None
 
     # ── Pagination ───────────────────────────────────────────────────────────
 

@@ -228,6 +228,10 @@ def test_tc12_export_latency_report_csv(latency_report_page):
     assert latency_report_page.is_report_page()
 
     print("[DOWNLOAD] SMS Latency Report export requested")
+    try:
+        latency_report_page.ensure_columns_checked(EXPECTED_SMS_LATENCY_REPORT_HEADERS)
+    except Exception:
+        pass
     result = latency_report_page.click_export_csv(timeout_ms=30000)
     assert result is not None, "Export CSV should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"

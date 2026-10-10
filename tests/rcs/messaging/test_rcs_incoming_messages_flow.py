@@ -300,6 +300,10 @@ def test_tc018_export_csv_button(incoming_messages_page):
     row matches this instance's confirmed RCS Incoming Messages export
     columns exactly (constants/rcs_incoming_messages_headers.py)."""
     ensure_on_page(incoming_messages_page)
+    try:
+        incoming_messages_page.restore_default_columns()
+    except Exception:
+        pass
     result = incoming_messages_page.export_csv(timeout=30000)
     assert result is not None, "Export CSV should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"
@@ -427,6 +431,10 @@ def test_ui_default_table_headers_full(incoming_messages_page):
     EXPECTED_RCS_INCOMING_MESSAGES_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     incoming_messages_page.navigate_to_report()
+    try:
+        incoming_messages_page.restore_default_columns()
+    except Exception:
+        pass
     headers = incoming_messages_page.get_visible_column_headers()
     for col in EXPECTED_RCS_INCOMING_MESSAGES_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

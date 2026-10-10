@@ -467,6 +467,10 @@ def test_ui_default_table_headers_full(rcs_error_codes_page):
     EXPECTED_RCS_ERROR_CODES_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     rcs_error_codes_page.navigate_to_report()
+    try:
+        rcs_error_codes_page.ensure_columns_checked(EXPECTED_RCS_ERROR_CODES_UI_HEADERS)
+    except Exception:
+        pass
     headers = rcs_error_codes_page.get_visible_column_headers()
     for col in EXPECTED_RCS_ERROR_CODES_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

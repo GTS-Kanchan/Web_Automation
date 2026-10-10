@@ -271,6 +271,39 @@ class SmsErrorCodeReportPage(BasePage):
         self.page.wait_for_timeout(1500)
         return True
 
+    def ensure_records_visible(self):
+        """If the report's DEFAULT view (no date filter interaction)
+        renders zero rows, widen the date-range picker to the widest
+        window currently selectable (earliest visible day cell -> latest
+        visible day cell) and retry once.
+
+        Real-run fix (2026-10-10): CSV exports pulled from this exact
+        environment on this same day confirm substantial real historical
+        data exists for this report -- e.g. error code 454 ("DLR is
+        pending with Operator") appears on 09-10-2026, and code 000
+        ("Delivered") / other codes go back through September -- yet a
+        fresh `navigate_to_report()` with no filter applied was observed
+        returning zero table rows in a live run. This is the same
+        default-date-window gap already fixed on the SMS Messages and
+        SMS Campaigns list pages (see SMSMessagePage/SMSCampaignPage
+        `ensure_records_visible_with_previous_day_fallback`); this report
+        has its own flatpickr range picker rather than separate From/To
+        inputs, so the fix here widens via the picker instead.
+        """
+        if self.has_records():
+            return
+        try:
+            self.open_date_range_picker()
+            days = self.page.locator(self._DAY_CELLS_CSS)
+            count = days.count()
+            if count >= 2:
+                days.nth(0).click(force=True)
+                self.page.wait_for_timeout(300)
+                days.nth(count - 1).click(force=True)
+                self.page.wait_for_timeout(1500)
+        except Exception:
+            pass
+
     def get_date_range_value(self):
         # flatpickr sets the input's live DOM *value property* via JS, not
         # the static HTML "value" *attribute* -- browsers never sync the

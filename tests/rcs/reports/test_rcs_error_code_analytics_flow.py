@@ -352,6 +352,10 @@ def test_error_code_analytics_TC13_export_csv(error_code_analytics_page):
     click-and-sleep pattern that never verified anything (see the
     page object's click_export_csv() docstring)."""
     ensure_on_report_page(error_code_analytics_page)
+    try:
+        error_code_analytics_page.ensure_columns_checked(EXPECTED_RCS_ERROR_CODE_ANALYTICS_HEADERS)
+    except Exception:
+        pass
     result = error_code_analytics_page.click_export_csv()
     if result is None:
         pytest.skip("Export CSV did not produce a downloaded file within 30s")

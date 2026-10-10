@@ -382,6 +382,10 @@ def test_template_analytics_TC13_export_csv(template_analytics_page):
     click-and-sleep pattern that never verified anything (see the
     page object's click_export_csv() docstring)."""
     ensure_on_report_page(template_analytics_page)
+    try:
+        template_analytics_page.ensure_columns_checked(EXPECTED_RCS_TEMPLATE_ANALYTICS_HEADERS)
+    except Exception:
+        pass
     result = template_analytics_page.click_export_csv()
     if result is None:
         pytest.skip("Export CSV did not produce a downloaded file within 30s")

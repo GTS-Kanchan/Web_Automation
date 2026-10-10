@@ -371,6 +371,10 @@ def test_country_analytics_TC13_export_csv(country_analytics_page):
     click-and-sleep pattern that never verified anything (see the
     page object's click_export_csv() docstring)."""
     ensure_on_report_page(country_analytics_page)
+    try:
+        country_analytics_page.ensure_columns_checked(EXPECTED_RCS_COUNTRY_ANALYTICS_HEADERS)
+    except Exception:
+        pass
     result = country_analytics_page.click_export_csv()
     if result is None:
         pytest.skip("Export CSV did not produce a downloaded file within 30s")

@@ -612,13 +612,19 @@ def test_TC006_add_new_optout_number(optout_page, _optout_number_cleanup):
     the same target the Cancel link points at and matching every other
     confirmed create-flow in this app (RCS Campaign/Template Create both
     redirect to their own list page on save) -- is the only confirmed
-    post-submit signal available."""
+    post-submit signal available.
+
+    CORRECTED (2026-10-09): despite the placeholder's own "+1234567890"
+    example, real live-app validation rejects a leading '+' with "Phone
+    number can only contain digits (0-9)." (confirmed via a real failed
+    submission's screenshot) -- the field wants digits only, country code
+    included but with no '+' or other separator."""
     ensure_on_optout_page(optout_page)
     optout_page.click_add_new_optout_number()
     assert optout_page.is_create_page(), \
         "Clicking 'Add New OptOut Number' should navigate to /rcs/optout/create"
 
-    phone = "+91" + short_unique_digits(9)
+    phone = "91" + short_unique_digits(9)
     _optout_number_cleanup.append(phone)
     optout_page.fill_create_phone_number(phone)
     optout_page.click_create_submit()
@@ -702,6 +708,10 @@ def test_TC027_export_csv_verifies_header(optout_page):
     RcsOptOutPage.export_csv() docstring): the export acts on the
     current filtered listing."""
     ensure_on_optout_page(optout_page)
+    try:
+        optout_page.restore_default_columns()
+    except Exception:
+        pass
     result = optout_page.export_csv()
     if result is None:
         pytest.skip("Bulk Actions -> Export did not produce a downloaded file within 30s")
@@ -742,6 +752,10 @@ def test_ui_default_table_headers_full(optout_page):
     EXPECTED_RCS_OPTOUT_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     optout_page.navigate()
+    try:
+        optout_page.restore_default_columns()
+    except Exception:
+        pass
     headers = optout_page.get_visible_column_headers()
     for col in EXPECTED_RCS_OPTOUT_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

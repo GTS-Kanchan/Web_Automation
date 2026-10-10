@@ -345,17 +345,59 @@ class SmsCampaignReportPage(BasePage):
         reload — unlike every other filter on this page, a plain
         navigate_to_report() does NOT reset it. Used to restore state after
         uncheck_first_optional_column() in tests, so hiding a column in one
-        test doesn't silently break a later test that expects it visible."""
-        self.open_columns_dropdown()
-        cb = self.page.locator(f"input[type='checkbox'][value='{value}']")
-        if cb.count() == 0:
-            return False
-        cb = cb.first
-        if not cb.is_checked():
-            cb.scroll_into_view_if_needed()
-            cb.click(force=True)
-            self.page.wait_for_timeout(800)
-        return True
+        test doesn't silently break a later test that expects it visible.
+
+        Real-run fix (2026-10-10): 'sender' is CONFIRMED to be the first
+        optional column (see uncheck_first_optional_column's docstring),
+        so TC_14 (Columns Dropdown test) unchecks Sender on essentially
+        every run, then tries to restore it in a finally block -- but the
+        old version trusted open_columns_dropdown()'s single idempotent
+        visibility check and a single click+800ms wait, with no
+        verification the click actually landed. This page's
+        open_columns_dropdown() uses a plain Alpine `open = !open`
+        toggle (same as every other report page here), which a stray
+        outside click can silently close without any DOM signal this
+        method was checking for -- if that happens between
+        uncheck_first_optional_column() and this call, the "already
+        open" fast-path sees it as closed, re-clicks, and may instead
+        toggle it OPEN -> CLOSED -> the click lands on nothing, silently
+        leaving Sender unchecked for the rest of the module-scoped
+        session (this broke TC_15's CSV export, which reads the same
+        persisted column-selection state: 'Sender' missing from the
+        exported header row). Now polls/retries until the checkbox is
+        confirmed checked, re-opening the panel between attempts, and
+        returns False (instead of a blind True) if it never actually
+        sticks, so a caller can fail loudly rather than silently leaking
+        state into later tests.
+        """
+        for attempt in range(3):
+            self.open_columns_dropdown()
+            cb = self.page.locator(f"input[type='checkbox'][value='{value}']")
+            if cb.count() == 0:
+                self.page.wait_for_timeout(300)
+                continue
+            cb = cb.first
+            try:
+                if cb.is_checked():
+                    return True
+                cb.scroll_into_view_if_needed()
+                cb.click(force=True)
+                self.page.wait_for_timeout(800)
+                if cb.is_checked():
+                    return True
+            except Exception:
+                pass
+            # Not confirmed checked -- the panel may have been toggled
+            # closed instead of opened. Force a fresh open attempt next
+            # loop by explicitly clicking the Columns button once more
+            # if the checkbox list isn't visible at all.
+            if not self._is_visible(self.COLUMN_CHECKBOXES, timeout=500):
+                try:
+                    self._js_click(self.COLUMNS_BUTTON, timeout=5000)
+                    self.page.wait_for_timeout(500)
+                except Exception:
+                    pass
+        return False
 
     def get_column_toggles(self):
         """Return list of (label_text, checkbox_locator, is_checked) for

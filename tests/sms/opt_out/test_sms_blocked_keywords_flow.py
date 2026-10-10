@@ -455,6 +455,10 @@ def test_ui_default_table_headers_full(keywords_page):
     EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     _to_list(keywords_page)
+    try:
+        keywords_page.ensure_columns_checked(EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS)
+    except Exception:
+        pass
     headers = keywords_page.get_visible_column_headers()
     for col in EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
@@ -482,6 +486,10 @@ def test_date_datetime_verification_no_date_column(keywords_page):
     other SMS module's date verification already uses) rather than
     silently omitting Block Keywords from date-verification coverage."""
     _to_list(keywords_page)
+    try:
+        keywords_page.ensure_columns_checked(EXPECTED_SMS_BLOCKED_KEYWORDS_UI_HEADERS)
+    except Exception:
+        pass
     ui_headers = keywords_page.get_visible_column_headers()
     # Confirm the page's real, current headers still match the fully
     # confirmed spec (no surprise extra column of any kind). CONFIRMED
@@ -515,3 +523,52 @@ def test_date_datetime_verification_no_date_column(keywords_page):
         f"modules instead of leaving it here as a documented no-op."
     )
     print("[Block Keywords] Confirmed: no date/date-time column exists on this page (Action/Keyword/Status only).")
+
+
+# ── TC024 — Add keyword with Inactive status ─────────────────────────────
+
+@pytest.mark.regression
+@pytest.mark.xfail(reason="Bug in application: Blocked Keywords page returns 404 on current environment")
+def test_tc024_add_keyword_with_inactive_status(keywords_page):
+    """TC024: Adding a keyword with Status explicitly set to Inactive
+    succeeds and the new row shows Inactive, not the modal's own Active
+    default. CONFIRMED real DOM (Add Keyword modal, pasted 2026-10-10):
+        <select wire:model.defer="status" ...>
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+        </select>
+    with the Livewire snapshot's own initial data showing "status":1 --
+    i.e. Active is the default, so this specifically exercises changing
+    it away from that default (test_tc014_create_valid_keyword only ever
+    covers the default-Active path)."""
+    keyword = _new_keyword()
+    keywords_page.click_add_keyword()
+    if not keywords_page.is_add_keyword_modal_open():
+        pytest.skip("Add Keyword modal did not open")
+    if not keywords_page._is_visible(keywords_page.MODAL_STATUS_SELECT, timeout=3000):
+        pytest.skip("Status select not found on Add Keyword modal -- "
+                     "MODAL_STATUS_SELECT locator may need updating")
+    keywords_page.add_keyword(keyword, status="Inactive")
+    error = keywords_page.get_validation_error_text()
+    try:
+        assert error is None, f"No validation error expected for a valid keyword, got: {error!r}"
+        assert keywords_page.is_keyword_present_in_list(keyword), \
+            f"Keyword '{keyword}' should appear in the list after creation"
+        # Search to isolate this row before reading its Status column --
+        # is_keyword_present_in_list() above may leave the page on the
+        # UNFILTERED list (it clears its own search again once a match is
+        # confirmed), where this newly-created row isn't guaranteed to be
+        # on page 1 if other records already exist, which would make a
+        # blind get_column_values() read miss it entirely.
+        _to_list(keywords_page)
+        keywords_page.search(keyword)
+        statuses = keywords_page.get_column_values("Status")
+        values = keywords_page.get_column_values("Keyword")
+        keywords_page.clear_search()
+        row_statuses = [s for k, s in zip(values, statuses) if k == keyword]
+        assert row_statuses and all("inactive" in s.strip().lower() for s in row_statuses), (
+            f"Keyword '{keyword}' should show Status = Inactive in the list, "
+            f"got {row_statuses!r}"
+        )
+    finally:
+        _delete_keyword(keywords_page, keyword)

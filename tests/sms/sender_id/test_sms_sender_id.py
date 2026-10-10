@@ -974,20 +974,43 @@ class TestUploadSenderIds:
         sender_id_page.page.wait_for_timeout(2000)
 
         # ── Verify each ID in the list — exact match only ────────────────────
-        missing = []
-        for sid in csv_sender_ids:
-            # is_sender_id_present_in_list navigates to the list, optionally
-            # searches, and requires an exact <td> match — not just any rows.
-            found = sender_id_page.is_sender_id_present_in_list(sid)
-            if not found:
-                missing.append(sid)
+        # Real-run fix (2026-10-10): this assertion's own failure message
+        # already named "import queued (run again in a few seconds)" as a
+        # likely cause, but nothing actually acted on that -- the check
+        # above was a single pass straight after one fixed 2s pause. A
+        # real run showed exactly that symptom (3 of several uploaded IDs
+        # missing on the first check). Poll: re-check only the IDs still
+        # missing after each pass, up to SENDER_ID_IMPORT_POLL_ATTEMPTS
+        # times, before actually failing -- this is strictly additive
+        # (never masks a real "never imported" case, since it still fails
+        # if IDs remain missing after every attempt).
+        SENDER_ID_IMPORT_POLL_ATTEMPTS = 4
+        SENDER_ID_IMPORT_POLL_INTERVAL_SECONDS = 5
+
+        missing = list(csv_sender_ids)
+        for attempt in range(1, SENDER_ID_IMPORT_POLL_ATTEMPTS + 1):
+            still_missing = []
+            for sid in missing:
+                # is_sender_id_present_in_list navigates to the list,
+                # optionally searches, and requires an exact <td> match —
+                # not just any rows.
+                found = sender_id_page.is_sender_id_present_in_list(sid)
+                if not found:
+                    still_missing.append(sid)
+            missing = still_missing
+            if not missing or attempt == SENDER_ID_IMPORT_POLL_ATTEMPTS:
+                break
+            sender_id_page.page.wait_for_timeout(SENDER_ID_IMPORT_POLL_INTERVAL_SECONDS * 1000)
 
         assert not missing, (
             f"The following sender IDs from the CSV were NOT found in the list "
-            f"after upload: {missing}. "
-            f"Possible causes: import queued (run again in a few seconds), "
-            f"IDs already existed and were rejected as duplicates, or "
-            f"the CSV column header does not match ('Sender_ID' expected)."
+            f"after upload, even after {SENDER_ID_IMPORT_POLL_ATTEMPTS} checks "
+            f"over ~{SENDER_ID_IMPORT_POLL_ATTEMPTS * SENDER_ID_IMPORT_POLL_INTERVAL_SECONDS}s: "
+            f"{missing}. "
+            f"Possible causes: IDs already existed and were rejected as "
+            f"duplicates, or the CSV column header does not match "
+            f"('Sender_ID' expected) -- import-queue delay is now ruled out "
+            f"by the retries above."
         )
 
     @pytest.mark.regression
@@ -1237,8 +1260,20 @@ class TestUploadEdgeCases:
         valid_ids = ["MIXVD1", "MIXVALID2", "MIXVALID3"]
         invalid_ids = ["AB", "TEST!@#"]
         missing_valid = list(valid_ids)
-        max_attempts = 4
-        poll_interval_ms = 4000
+        # Real-run fix (2026-10-10): a real run showed ALL THREE valid rows
+        # still missing after the previous budget (4 attempts x 4s = 16s),
+        # with no partial progress between attempts -- consistent with a
+        # mixed-content file (3 valid + 2 invalid rows interleaved) simply
+        # taking longer to finish server-side processing than a pure-valid
+        # file does (test_upload_csv_and_verify_in_list's own real-run fix
+        # needed 4x5s=20s for a pure-valid file; a mixed file plausibly
+        # needs more). Raised to 6x5s=30s. Also see
+        # SMSSenderIDPage.is_sender_id_present_in_list's real-run fix: the
+        # "invalid row(s) also found" note below was partly a false
+        # positive from an unscoped contains() match on the short "AB"
+        # needle, now fixed at the lookup level too.
+        max_attempts = 6
+        poll_interval_ms = 5000
         for attempt in range(1, max_attempts + 1):
             missing_valid = [sid for sid in missing_valid if not sender_id_page.is_sender_id_present_in_list(sid)]
             if not missing_valid:
@@ -1397,6 +1432,10 @@ class TestExportSenderIds:
         """Export CSV downloads the file, completes within the SLA, and its
         headers exactly match the defined Sender ID export specification."""
         _to_list(sender_id_page)
+        try:
+            sender_id_page.ensure_columns_checked(EXPECTED_SMS_SENDER_ID_UI_HEADERS)
+        except Exception:
+            pass
         result = sender_id_page.export_csv()
         elapsed, file_size, file_path = result["elapsed_s"], result["file_size"], result["file_path"]
         print(f"\n[PERF] Export CSV — elapsed: {elapsed}s | size: {file_size} bytes | file: {file_path}")
@@ -1502,6 +1541,10 @@ def test_ui_default_table_headers_full(sender_id_page):
     EXPECTED_SMS_SENDER_ID_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     _to_list(sender_id_page)
+    try:
+        sender_id_page.ensure_columns_checked(EXPECTED_SMS_SENDER_ID_UI_HEADERS)
+    except Exception:
+        pass
     headers = sender_id_page.get_visible_column_headers()
     for col in EXPECTED_SMS_SENDER_ID_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \

@@ -742,6 +742,85 @@ class SMSSenderIDPage(BasePage):
     def get_visible_column_headers(self):
         return self._get_headers_safe(self.COLUMN_HEADER)
 
+    def get_column_toggles(self):
+        """Return list of (label_text, checkbox_locator, is_checked) for
+        every checkbox in the Columns panel. Label resolution mirrors
+        every other report page in this project: for= attribute on a
+        sibling <label>, an enclosing <label>, a following sibling
+        span/label, and finally the checkbox's own `value` attribute as
+        a last resort."""
+        self.open_column_toggle()
+        result = []
+        try:
+            checkboxes = self.page.locator(self.COLUMN_CHECKBOXES)
+            count = checkboxes.count()
+        except Exception:
+            return result
+        for i in range(count):
+            cb = checkboxes.nth(i)
+            label_text = ""
+            try:
+                cb_id = cb.get_attribute("id") or ""
+                if cb_id:
+                    lbl = self.page.locator(f"label[for='{cb_id}']").first
+                    if lbl.count() > 0:
+                        label_text = lbl.inner_text().strip()
+            except Exception:
+                pass
+            if not label_text:
+                try:
+                    lbl = cb.locator("xpath=ancestor::label[1]").first
+                    label_text = lbl.inner_text().strip()
+                except Exception:
+                    pass
+            if not label_text:
+                try:
+                    lbl = cb.locator(
+                        "xpath=following-sibling::span[1] | following-sibling::label[1]"
+                    ).first
+                    label_text = lbl.inner_text().strip()
+                except Exception:
+                    pass
+            if not label_text:
+                val = cb.get_attribute("value") or ""
+                label_text = val.replace("_", " ").replace("-", " ").title()
+            try:
+                is_checked = cb.is_checked()
+            except Exception:
+                is_checked = False
+            result.append((label_text, cb, is_checked))
+        return result
+
+    def ensure_columns_checked(self, labels):
+        """Make sure each column named in `labels` (case-insensitive,
+        substring match against the Columns panel's label text) is
+        checked, checking it if currently unchecked. Self-heal so a
+        UI/export header check doesn't depend on whatever column-
+        visibility state an earlier test in this module-scoped session
+        left behind -- same convention as every other report page in
+        this project. Returns the list of requested labels that could
+        not be found/checked."""
+        wanted = [(label, label.strip().lower()) for label in labels]
+        not_found = []
+        for original_label, needle in wanted:
+            toggles = self.get_column_toggles()
+            match = None
+            for label_text, cb, is_checked in toggles:
+                if needle in label_text.strip().lower():
+                    match = (cb, is_checked)
+                    break
+            if match is None:
+                continue
+            cb, is_checked = match
+            if not is_checked:
+                try:
+                    cb.scroll_into_view_if_needed()
+                    cb.click(force=True)
+                    self.page.wait_for_timeout(800)
+                except Exception:
+                    not_found.append(original_label)
+        return not_found
+
     def uncheck_first_optional_column(self):
         self.open_column_toggle()
         checkboxes = self.page.locator(self.COLUMN_CHECKBOXES)
@@ -872,13 +951,35 @@ class SMSSenderIDPage(BasePage):
 
         # Exact <td> match (mirrors Java locator) plus a contains() fallback
         # for a cell that isn't a bare text node (badge/whitespace wrapping).
+        #
+        # Real-run fix (2026-10-10): the contains() fallback matches ANY
+        # <td> in the WHOLE table (never scoped to a confirmed "Sender ID"
+        # column -- no such column locator/index has been confirmed from a
+        # real DOM dump for this page), so for a very short needle it can
+        # match unrelated text in a completely different column/row (a
+        # status badge, a date, another longer sender ID that merely
+        # contains these same characters, ...). A real run showed exactly
+        # this: checking for the 2-char invalid test ID "AB" via this same
+        # method reported it as "present" even though the user's own
+        # manual check of the real app confirmed invalid rows are NOT
+        # created at all -- i.e. that was a false positive, not a real
+        # match. Below a length floor, only the EXACT match is trusted;
+        # the contains() fallback is skipped rather than trusted blindly,
+        # since a short needle has nowhere near enough specificity for a
+        # table-wide substring search. 4+ chars is still short enough to
+        # cover every REAL sender id this suite generates (minimum valid
+        # length is a 3-char international ID; this floor only disables
+        # contains() for the even-shorter known-invalid test values like
+        # "AB"/"A").
+        _CONTAINS_FALLBACK_MIN_LEN = 4
+        allow_contains = len(sender_id) >= _CONTAINS_FALLBACK_MIN_LEN
         by_exact = f"xpath=//td[normalize-space()='{sender_id}']"
         by_contains = f"xpath=//td[contains(normalize-space(),'{sender_id}')]"
 
         # 1. Check without search (covers first page of results)
         if self.is_element_present(by_exact, timeout=5000):
             return True
-        if self.is_element_present(by_contains, timeout=2000):
+        if allow_contains and self.is_element_present(by_contains, timeout=2000):
             return True
 
         # 2. Search to narrow results, then check both match styles again
@@ -887,7 +988,7 @@ class SMSSenderIDPage(BasePage):
             self.page.wait_for_timeout(1500)
             if self.is_element_present(by_exact, timeout=5000):
                 return True
-            return self.is_element_present(by_contains, timeout=2000)
+            return allow_contains and self.is_element_present(by_contains, timeout=2000)
         except Exception:
             return False
 

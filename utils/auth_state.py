@@ -84,6 +84,24 @@ against):
      raised to comfortably cover a full multi-attempt login under load,
      so scaling PLAYWRIGHT_WORKERS up doesn't require also editing this
      file — see the constants below for the worst-case math.
+
+UPDATED (2026-10-09): the failure marker now has a COOLDOWN, not just a TTL
+-----------------------------------------------------------------------------
+Two separate real runs each hit exactly one genuine, transient login
+failure (a 15-45s timeout mid-login) that then correctly stopped a login
+storm — but also correctly-per-design blocked EVERY other test in that
+run (250+ ERRORs each time) until a brand-new `pytest` invocation, since
+the old behavior was "blocked for the full _FAILURE_MARKER_TTL_SECONDS
+(1800s), no exceptions". That recovery cost was too harsh for a
+one-off blip. _raise_if_recently_failed() now has a middle window,
+AUTH_FAILURE_COOLDOWN_SECONDS (default 360s, comfortably above this
+platform's own ~5-minute repeated-login lockout window): once that many
+seconds have passed since the recorded failure, the next caller is let
+through to attempt ONE more real login — still exactly one, still fully
+lock-guarded (see _acquire_lock/_LockHeartbeat below), so this can never
+become the login storm the whole module exists to prevent. If that retry
+also fails, a fresh failure marker is written and the next cooldown
+window starts from there.
 """
 import os
 import sys
@@ -129,6 +147,26 @@ _FAILURE_MARKER_PATH = STATE_PATH + ".failed"
 # Comfortably longer than any single suite run, comfortably shorter than
 # "the next time someone reruns the suite" in practice.
 _FAILURE_MARKER_TTL_SECONDS = 1800
+
+# UPDATED (2026-10-09): after two real runs each hit a genuine, one-off
+# login failure (a 15-45s timeout mid-login under load) that then
+# cascaded into 250+ unrelated test ERRORs for the rest of that run --
+# the circuit breaker was doing exactly its job (stop a login storm), but
+# "stop everyone until a brand-new pytest invocation, or someone manually
+# deletes the marker" is a harsher recovery than this needs. Once this
+# many seconds have passed since the recorded failure, the NEXT caller to
+# reach _raise_if_recently_failed() is allowed through to attempt ONE
+# more real login (still exactly one -- still fully lock-guarded below,
+# so this never becomes a login storm: only the single worker that wins
+# the lock actually logs in; everyone else either reuses its success or,
+# if it fails again, sees a freshly-timestamped marker and is blocked for
+# another full cooldown window). Deliberately set well above this
+# platform's documented ~5-minute repeated-login lockout window (see this
+# module's top docstring), so a cooldown retry can never itself trigger
+# that lockout. Set to something >= _FAILURE_MARKER_TTL_SECONDS to go
+# back to the old "block for the rest of this TTL window, no cooldown
+# retry" behavior.
+_FAILURE_COOLDOWN_SECONDS = int(os.getenv("AUTH_FAILURE_COOLDOWN_SECONDS", "360"))
 
 # ── Login attempt tuning (env-var configurable — see module docstring) ─────
 # How long a single login attempt waits for the app to redirect away from
@@ -288,13 +326,37 @@ def _raise_if_recently_failed() -> None:
     raise immediately with the SAME error instead of letting the caller
     attempt its own login. Call this before acquiring the lock (fast path)
     AND again after acquiring it (in case the failure happened while this
-    caller was waiting)."""
+    caller was waiting).
+
+    Three windows, not two: within _FAILURE_COOLDOWN_SECONDS of the
+    recorded failure, this still raises (unchanged -- give any transient
+    load spike / the platform's own lockout window time to clear before
+    anyone tries again). Past the cooldown but within
+    _FAILURE_MARKER_TTL_SECONDS, this now RETURNS instead of raising --
+    the caller is allowed through to _acquire_lock() and attempt one real
+    login, still single-flight (see the lock-guarded callers below): only
+    whichever worker actually wins the lock logs in, and if that attempt
+    fails too, _record_failure() stamps a brand-new marker, so the next
+    cooldown window starts counting from THAT failure, not the original
+    one -- at most one real login attempt per cooldown window, never a
+    burst. Past the TTL entirely, this returns because the marker belongs
+    to an earlier, separate run."""
     try:
-        age = time.time() - os.path.getmtime(_FAILURE_MARKER_PATH)
+        mtime = os.path.getmtime(_FAILURE_MARKER_PATH)
     except OSError:
         return
+    age = time.time() - mtime
     if age > _FAILURE_MARKER_TTL_SECONDS:
         return  # stale marker from an earlier, separate run -- ignore it
+    if age > _FAILURE_COOLDOWN_SECONDS:
+        _auth_log(
+            f"Authentication failure marker is {age:.0f}s old (past the "
+            f"{_FAILURE_COOLDOWN_SECONDS}s cooldown, still within the "
+            f"{_FAILURE_MARKER_TTL_SECONDS}s TTL) -- allowing one more "
+            "single-flight login attempt instead of staying blocked for "
+            "the rest of this TTL window"
+        )
+        return
     try:
         with open(_FAILURE_MARKER_PATH, "r", encoding="utf-8") as f:
             message = f.read().strip()
@@ -303,7 +365,9 @@ def _raise_if_recently_failed() -> None:
     raise AuthenticationError(
         "Authentication already failed earlier in this run -- not attempting "
         f"another login (that would be exactly the login storm this suite "
-        f"must avoid). Original error: {message}"
+        f"must avoid). Original error: {message}. Will allow one retry "
+        f"attempt automatically once {_FAILURE_COOLDOWN_SECONDS}s have "
+        "passed since that failure."
     )
 
 
@@ -566,6 +630,67 @@ def reauthenticate_if_still_stale(browser, observed_mtime) -> str:
     finally:
         _release_lock(fd)
     return STATE_PATH
+
+
+def apply_storage_state_to_page(page, storage_state_path) -> None:
+    """Replace an ALREADY-OPEN page/context's cookies + localStorage with
+    the contents of `storage_state_path`, in place. Used for mid-test
+    session recovery where a fresh context/page isn't an option -- the
+    caller (a page object method, or a module-scoped fixture) already
+    holds a reference to this exact Page and can't swap it out. Mirrors
+    conftest.py's own `_apply_storage_state_to_page` (kept there too, for
+    its already-proven autouse `_recover_shared_session` fixture) -- this
+    public copy exists so page objects under pages/ can reach the same
+    logic without importing conftest.py (which locally imports page
+    objects itself, to avoid an import cycle)."""
+    import json
+    with open(storage_state_path, encoding="utf-8") as f:
+        state = json.load(f)
+    page.context.clear_cookies()
+    if state.get("cookies"):
+        page.context.add_cookies(state["cookies"])
+    for origin in state.get("origins", []):
+        page.goto(origin["origin"])
+        for item in origin.get("localStorage", []):
+            page.evaluate(
+                "([k, v]) => window.localStorage.setItem(k, v)",
+                [item["name"], item["value"]],
+            )
+    page.goto(Config.BASE_URL)
+
+
+def recover_if_logged_out(page) -> bool:
+    """Real-run fix (2026-10-10): a module-scoped shared page's session
+    can expire mid-test, between conftest.py's autouse
+    `_recover_shared_session` check (which only runs BEFORE each test
+    body) and some later navigation inside that same test body -- a real
+    run hit this with test_campaign_creation.py's
+    _find_campaign_name_input() raising its generic "input not found"
+    exception while the page was actually sitting on /login (confirmed
+    via a captured screenshot), not the campaign-create page at all.
+
+    Call this from WITHIN a test body (typically from a page-object
+    method, right before it would otherwise fail confusingly) when a
+    lookup comes up empty and a stale session is a plausible cause.
+    Returns True if a login-page redirect was detected AND recovery
+    completed (so the caller should re-navigate to wherever it needs to
+    be and retry its own lookup once); False if the page was never on
+    /login in the first place (so the caller's original failure is real
+    and unrelated to auth). Raises AuthenticationError if recovery itself
+    fails -- same single-flight, lock-guarded, mtime-guarded
+    re-authentication as every other recovery path in this module."""
+    if "login" not in page.url:
+        return False
+    observed_mtime = state_mtime()
+    browser = page.context.browser
+    refreshed_path = reauthenticate_if_still_stale(browser, observed_mtime)
+    apply_storage_state_to_page(page, refreshed_path)
+    if "login" in page.url:
+        raise AuthenticationError(
+            "Mid-test session recovery failed -- still on /login after "
+            "re-authenticating. Not retrying further."
+        )
+    return True
 
 
 def invalidate_authenticated_state(reason: str = "") -> None:

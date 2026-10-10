@@ -87,6 +87,29 @@ def ensure_on_messages_page(p):
     if not p.is_messages_page():
         p.navigate()
         p.page.wait_for_timeout(1500)
+    # Real-run fix (2026-10-10): the page's default "Created" filter is a
+    # 1-day (today-only) window, which can hide genuinely-real data from
+    # the previous day -- see
+    # SMSMessagePage.ensure_records_visible_with_previous_day_fallback's
+    # docstring. Widen to include yesterday whenever the table is empty,
+    # before any test's own assertions run.
+    try:
+        p.ensure_records_visible_with_previous_day_fallback()
+    except Exception:
+        pass
+    # Real-run fix (2026-10-10): column visibility on this page's
+    # underlying Livewire table ("sms_messages") is shared, persisted
+    # state -- a column left hidden here (an interrupted TC022-style
+    # toggle-and-restore) leaks into every page using that same table,
+    # including tests/sms/campaigns' Campaign Message Report (see
+    # SMSMessagePage.restore_default_columns's docstring, and
+    # utils/campaign_dlr.py's matching self-heal for a real run this bit).
+    # Restoring defaults here, at the source, before every Messages test,
+    # closes the leak instead of only patching its symptom elsewhere.
+    try:
+        p.restore_default_columns()
+    except Exception:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -424,6 +447,10 @@ def test_TC020B_export_headers_today(message_page):
     print(f"[FILTER] To-date probe: {diag['to']}")
 
     print("[DOWNLOAD] SMS Messages export (today) requested")
+    try:
+        message_page.restore_default_columns()
+    except Exception:
+        pass
     result = message_page.export()
     file_path = result["file_path"]
 

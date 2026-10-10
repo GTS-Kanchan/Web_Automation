@@ -250,6 +250,10 @@ def test_country_report_TC15_export_csv(country_report_page):
     assert country_report_page.is_report_page()
 
     print("[DOWNLOAD] SMS Country Report export requested")
+    try:
+        country_report_page.ensure_columns_checked(EXPECTED_SMS_COUNTRY_REPORT_HEADERS)
+    except Exception:
+        pass
     result = country_report_page.click_export_csv(timeout_ms=30000)
     assert result is not None, "Export CSV should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"

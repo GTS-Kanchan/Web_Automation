@@ -169,6 +169,27 @@ class RcsErrorCodesPage(BasePage):
 
     # ── Columns dropdown ─────────────────────────────────────────────────────
 
+    def ensure_columns_checked(self, values):
+        """Make sure each column in `values` (the checkbox's own `value`
+        attribute, e.g. 'name'/'code'/'description') is checked, toggling
+        it on via toggle_column() if currently unchecked. Self-heal so a
+        UI/export header check doesn't depend on whatever column-
+        visibility state an earlier test in this module-scoped session
+        left behind -- same convention as every other report page in
+        this project (see sms_error_code_report_page.py's
+        ensure_columns_checked)."""
+        self.open_columns_dropdown()
+        for value in values:
+            needle = value.strip().lower()
+            try:
+                cb = self.page.locator(f"input[type='checkbox'][value='{needle}']")
+                if cb.count() == 0:
+                    continue
+                if not cb.first.is_checked():
+                    self.toggle_column(needle)
+            except Exception:
+                pass
+
     def open_columns_dropdown(self):
         if self._is_visible(self.COLUMN_CHECKBOXES, timeout=1000):
             return

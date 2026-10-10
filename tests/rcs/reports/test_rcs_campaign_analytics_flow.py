@@ -300,13 +300,21 @@ def test_campaign_analytics_TC13_search_invalid_campaign_name(campaign_analytics
 @pytest.mark.regression
 def test_campaign_analytics_TC14_filter_by_product(campaign_analytics_page):
     """TC_14: Filtering by Transactional/OTP/Promotional shows only
-    matching data. Uses toggle_product_filter_option() (checkbox-based,
-    see its docstring) instead of the old unconfirmed select_product_filter()
-    guess -- get_product_filter_value() doesn't apply to a checkbox
-    multiselect, so it's dropped rather than asserted on."""
+    matching data.
+
+    CORRECTED (2026-10-09): real captured DOM shows this filter is a plain
+    <select id="rcs_campaign_report-filter-product">, not a checkbox
+    multiselect -- the previous "checkbox-based" assumption was an
+    unconfirmed guess (by analogy with RCS Usage Analytics, which really
+    does use checkboxes) that timed out waiting for a checkbox input that
+    doesn't exist on this page. toggle_product_filter_option() now
+    delegates to the confirmed select, so get_product_filter_value() DOES
+    apply here again -- asserting on it makes this a real check instead of
+    just "didn't crash"."""
     ensure_on_report_page(campaign_analytics_page)
     campaign_analytics_page.toggle_product_filter_option("transactional")
     campaign_analytics_page.page.wait_for_timeout(1000)
+    assert campaign_analytics_page.get_product_filter_value() == "Transactional"
     assert campaign_analytics_page.has_records() or campaign_analytics_page.has_no_records_message()
 
 
@@ -369,6 +377,10 @@ def test_campaign_analytics_TC15_export_csv(campaign_analytics_page):
     click-and-sleep pattern that never verified anything (see the page
     object's click_export_csv() docstring)."""
     ensure_on_report_page(campaign_analytics_page)
+    try:
+        campaign_analytics_page.ensure_columns_checked(EXPECTED_RCS_CAMPAIGN_ANALYTICS_HEADERS)
+    except Exception:
+        pass
     result = campaign_analytics_page.click_export_csv()
     if result is None:
         pytest.skip("Export CSV did not produce a downloaded file within 30s")

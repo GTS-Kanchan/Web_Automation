@@ -308,6 +308,10 @@ def test_tc018_export_csv_button(incoming_messages_page):
     ensure_on_page(incoming_messages_page)
 
     print("[DOWNLOAD] SMS Incoming Messages export requested")
+    try:
+        incoming_messages_page.restore_default_columns()
+    except Exception:
+        pass
     result = incoming_messages_page.export_csv(timeout=30000)
     assert result is not None, "Export CSV should produce a downloaded file"
     assert result["file_size"] > 0, "Downloaded export file should not be empty"
@@ -450,6 +454,10 @@ def test_ui_default_table_headers_full(incoming_messages_page):
     EXPECTED_SMS_INCOMING_MESSAGES_UI_HEADERS), following this suite's established
     case-insensitive substring-per-header convention."""
     ensure_on_page(incoming_messages_page)
+    try:
+        incoming_messages_page.restore_default_columns()
+    except Exception:
+        pass
     headers = incoming_messages_page.get_visible_column_headers()
     for col in EXPECTED_SMS_INCOMING_MESSAGES_UI_HEADERS:
         assert any(col.lower() in h.lower() for h in headers), \
@@ -495,9 +503,21 @@ def test_date_datetime_verification_ui_vs_export(incoming_messages_page):
     )
     print(f"[Incoming Messages] UI date columns detected: {ui_date_columns} ({row_count} row(s))")
 
+    # Real-run fix (2026-10-10): export_csv() never actually returns a
+    # "background_job_triggered.csv" sentinel -- that check was dead code
+    # (nothing in SmsIncomingMessagesPage.export_csv ever produced it);
+    # the real failure mode is expect_download() timing out and the
+    # method returning None, which this skip now names accurately. See
+    # that method's own real-run fix: the timeout was raised 30000ms ->
+    # 90000ms and the click now retries once, since a small on-screen row
+    # count doesn't mean a small export (the export covers the full
+    # unfiltered dataset, not just the visible page).
     result = incoming_messages_page.export_csv()
-    if result is None or result.get("file_path") == "background_job_triggered.csv":
-        pytest.skip("Export did not produce a direct download within the wait window (background job).")
+    if result is None:
+        pytest.skip("Export did not produce a download within the extended wait "
+                     "window (90s x 2 attempts) -- either a genuinely large "
+                     "background export, or the Export CSV control needs a fresh "
+                     "locator check.")
 
     _headers, rows = read_file_rows(result["file_path"])
     if not rows:
